@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-05)
 ## Current Position
 
 Phase: 1 of 9 (Base Appliance Architecture)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-05 -- Completed 01-01-PLAN.md (SuperLink appliance specification)
+Last activity: 2026-02-05 -- Completed 01-02-PLAN.md (SuperNode appliance specification)
 
-Progress: [█░░░░░░░░░░░░░░░░░░░] 5% (1/20 plans)
+Progress: [██░░░░░░░░░░░░░░░░░░] 10% (2/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
+- Total plans completed: 2
 - Average duration: 4 min
-- Total execution time: 4 min
+- Total execution time: 8 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Base Appliance Architecture | 1/3 | 4 min | 4 min |
+| 1. Base Appliance Architecture | 2/3 | 8 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4 min)
-- Trend: baseline
+- Last 5 plans: 01-01 (4 min), 01-02 (4 min)
+- Trend: consistent
 
 *Updated after each plan completion*
 
@@ -53,6 +53,12 @@ Recent decisions affecting current work:
 - [01-01]: Subprocess isolation mode as default (single container per VM)
 - [01-01]: OneGate publication is best-effort (degraded but functional without it)
 - [01-01]: FL_* prefix for Flower-specific context variables
+- [01-02]: Dual discovery model: static IP override > OneGate dynamic > fail
+- [01-02]: Discovery retry: 30 retries, 10s fixed interval, 5min total timeout
+- [01-02]: Container running-state health check (no port check for outbound-only SuperNode)
+- [01-02]: Flower-native reconnection delegation (--max-retries 0 = unlimited)
+- [01-02]: No persistent state volume for SuperNode (training state is ephemeral)
+- [01-02]: Data mount read-only (/opt/flower/data -> /app/data:ro)
 
 ### Pending Todos
 
@@ -66,6 +72,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-05T12:36:51Z
-Stopped at: Completed 01-01-PLAN.md (SuperLink appliance specification)
+Last session: 2026-02-05T12:37:25Z
+Stopped at: Completed 01-02-PLAN.md (SuperNode appliance specification)
 Resume file: None
