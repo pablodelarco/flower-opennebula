@@ -9,9 +9,9 @@ Requirements for initial release of the technical specification.
 
 ### Appliance Design
 
-- [ ] **APPL-01**: Spec defines SuperLink (server) appliance with QCOW2 packaging, Docker-in-VM architecture, boot-time Flower container pull, and all contextualization parameters
-- [ ] **APPL-02**: Spec defines SuperNode (client) appliance with pre-configured server connectivity, local data mount points, and ML framework selection via contextualization
-- [ ] **APPL-03**: Spec maps all Flower configuration parameters to OpenNebula contextualization variables (USER_INPUTS) with types, defaults, and validation rules
+- [x] **APPL-01**: Spec defines SuperLink (server) appliance with QCOW2 packaging, Docker-in-VM architecture, boot-time Flower container pull, and all contextualization parameters
+- [x] **APPL-02**: Spec defines SuperNode (client) appliance with pre-configured server connectivity, local data mount points, and ML framework selection via contextualization
+- [x] **APPL-03**: Spec maps all Flower configuration parameters to OpenNebula contextualization variables (USER_INPUTS) with types, defaults, and validation rules
 - [ ] **APPL-04**: Spec defines TLS certificate automation — generation on server boot, distribution to clients via OneGate, correct file ownership for Flower containers (UID 49999)
 - [ ] **APPL-05**: Spec defines appliance variants for ML frameworks (PyTorch-focused, TensorFlow-focused, lightweight/scikit-learn) with image size targets
 
@@ -69,9 +69,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| APPL-01 | Phase 1: Base Appliance Architecture | Pending |
-| APPL-02 | Phase 1: Base Appliance Architecture | Pending |
-| APPL-03 | Phase 1: Base Appliance Architecture | Pending |
+| APPL-01 | Phase 1: Base Appliance Architecture | Complete |
+| APPL-02 | Phase 1: Base Appliance Architecture | Complete |
+| APPL-03 | Phase 1: Base Appliance Architecture | Complete |
 | APPL-04 | Phase 2: Security and Certificate Automation | Pending |
 | APPL-05 | Phase 3: ML Framework Variants and Use Cases | Pending |
 | ORCH-01 | Phase 4: Single-Site Orchestration | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-05 after roadmap creation*
+*Last updated: 2026-02-05 after Phase 1 completion*

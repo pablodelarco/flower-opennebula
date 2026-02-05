@@ -12,7 +12,7 @@ This roadmap delivers the complete technical specification for integrating the F
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Base Appliance Architecture** - Spec the SuperLink and SuperNode appliance designs with full contextualization parameter mapping
+- [x] **Phase 1: Base Appliance Architecture** - Spec the SuperLink and SuperNode appliance designs with full contextualization parameter mapping
 - [ ] **Phase 2: Security and Certificate Automation** - Spec TLS certificate lifecycle, OneGate-based distribution, and Flower container permissions
 - [ ] **Phase 3: ML Framework Variants and Use Cases** - Spec appliance variants per ML framework and pre-built use case templates
 - [ ] **Phase 4: Single-Site Orchestration** - Spec the OneFlow service template for coordinated Flower cluster deployment
@@ -36,9 +36,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- SuperLink appliance specification (APPL-01)
-- [ ] 01-02-PLAN.md -- SuperNode appliance specification (APPL-02)
-- [ ] 01-03-PLAN.md -- Contextualization reference table and spec overview (APPL-03)
+- [x] 01-01-PLAN.md -- SuperLink appliance specification (APPL-01)
+- [x] 01-02-PLAN.md -- SuperNode appliance specification (APPL-02)
+- [x] 01-03-PLAN.md -- Contextualization reference table and spec overview (APPL-03)
 
 ### Phase 2: Security and Certificate Automation
 **Goal**: The spec fully defines the TLS certificate lifecycle -- generation on server boot, automated distribution to clients via OneGate, correct file permissions for Flower containers, and the trust chain model
@@ -169,7 +169,7 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Base Appliance Architecture | 0/3 | Planned | - |
+| 1. Base Appliance Architecture | 3/3 | Complete | 2026-02-05 |
 | 2. Security and Certificate Automation | 0/2 | Not started | - |
 | 3. ML Framework Variants and Use Cases | 0/2 | Not started | - |
 | 4. Single-Site Orchestration | 0/2 | Not started | - |
