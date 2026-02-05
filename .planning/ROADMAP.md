@@ -33,12 +33,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A reader can identify every component in the SuperNode appliance (base OS, Docker engine, ML framework dependencies, Flower container) and how it discovers and connects to the SuperLink
   3. Every Flower configuration parameter has a corresponding OpenNebula USER_INPUT variable with defined type, default value, and validation rule
   4. The spec includes a complete contextualization variable reference table that an engineer could use to implement the appliance without further questions
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md -- SuperLink appliance specification (APPL-01)
+- [ ] 01-02-PLAN.md -- SuperNode appliance specification (APPL-02)
+- [ ] 01-03-PLAN.md -- Contextualization reference table and spec overview (APPL-03)
 
 ### Phase 2: Security and Certificate Automation
 **Goal**: The spec fully defines the TLS certificate lifecycle -- generation on server boot, automated distribution to clients via OneGate, correct file permissions for Flower containers, and the trust chain model
@@ -169,7 +169,7 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Base Appliance Architecture | 0/3 | Not started | - |
+| 1. Base Appliance Architecture | 0/3 | Planned | - |
 | 2. Security and Certificate Automation | 0/2 | Not started | - |
 | 3. ML Framework Variants and Use Cases | 0/2 | Not started | - |
 | 4. Single-Site Orchestration | 0/2 | Not started | - |
