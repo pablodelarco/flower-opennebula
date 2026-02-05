@@ -69,27 +69,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| APPL-01 | TBD | Pending |
-| APPL-02 | TBD | Pending |
-| APPL-03 | TBD | Pending |
-| APPL-04 | TBD | Pending |
-| APPL-05 | TBD | Pending |
-| ORCH-01 | TBD | Pending |
-| ORCH-02 | TBD | Pending |
-| ORCH-03 | TBD | Pending |
-| ML-01 | TBD | Pending |
-| ML-02 | TBD | Pending |
-| ML-03 | TBD | Pending |
-| ML-04 | TBD | Pending |
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| EDGE-01 | TBD | Pending |
+| APPL-01 | Phase 1: Base Appliance Architecture | Pending |
+| APPL-02 | Phase 1: Base Appliance Architecture | Pending |
+| APPL-03 | Phase 1: Base Appliance Architecture | Pending |
+| APPL-04 | Phase 2: Security and Certificate Automation | Pending |
+| APPL-05 | Phase 3: ML Framework Variants and Use Cases | Pending |
+| ORCH-01 | Phase 4: Single-Site Orchestration | Pending |
+| ORCH-02 | Phase 7: Multi-Site Federation | Pending |
+| ORCH-03 | Phase 9: Edge and Auto-Scaling | Pending |
+| ML-01 | Phase 5: Training Configuration | Pending |
+| ML-02 | Phase 6: GPU Acceleration | Pending |
+| ML-03 | Phase 3: ML Framework Variants and Use Cases | Pending |
+| ML-04 | Phase 5: Training Configuration | Pending |
+| OBS-01 | Phase 8: Monitoring and Observability | Pending |
+| OBS-02 | Phase 8: Monitoring and Observability | Pending |
+| EDGE-01 | Phase 9: Edge and Auto-Scaling | Pending |
 
 **Coverage:**
 - v1 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 (pending roadmap creation)
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-05 after initial definition*
+*Last updated: 2026-02-05 after roadmap creation*
