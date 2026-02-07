@@ -5,32 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 1 COMPLETE. Ready for Phase 2, 3, or 6 (parallelizable).
+**Current focus:** Phase 2 in progress (Security and Certificate Automation). Plan 02-01 complete, Plan 02-02 remaining.
 
 ## Current Position
 
-Phase: 1 of 9 (Base Appliance Architecture) -- COMPLETE
-Plan: 3 of 3 in current phase (all done)
-Status: Phase complete
-Last activity: 2026-02-05 -- Completed 01-03-PLAN.md (Contextualization reference and spec overview)
+Phase: 2 of 9 (Security and Certificate Automation)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-07 -- Completed 02-01-PLAN.md (TLS certificate lifecycle specification)
 
-Progress: [███░░░░░░░░░░░░░░░░░] 15% (3/20 plans)
+Progress: [████░░░░░░░░░░░░░░░░] 20% (4/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 4 min
-- Total execution time: 13 min
+- Total execution time: 18 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Base Appliance Architecture | 3/3 | 13 min | 4 min |
+| 2. Security and Certificate Automation | 1/2 | 5 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4 min), 01-02 (4 min), 01-03 (5 min)
+- Last 5 plans: 01-01 (4 min), 01-02 (4 min), 01-03 (5 min), 02-01 (5 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -63,6 +64,12 @@ Recent decisions affecting current work:
 - [01-03]: Fail-fast validation checks all variables before aborting (not one-at-a-time)
 - [01-03]: FL_MIN_FIT_CLIENTS <= FL_MIN_AVAILABLE_CLIENTS is a warning, not hard error
 - [01-03]: Placeholder variables logged when ignored in Phase 1 (not silently dropped)
+- [02-01]: Self-signed CA generated at boot is default; operator-provided certs via FL_SSL_* are override path
+- [02-01]: CA key retained on SuperLink (root:root 0600) for potential Phase 7 cross-zone use
+- [02-01]: FL_SSL_CA_CERTFILE is the decision variable (all-or-none rule for three FL_SSL_* vars)
+- [02-01]: OneGate FL_CA_CERT publication is best-effort (matches Phase 1 model)
+- [02-01]: 365-day cert validity with no rotation (immutable appliance: redeploy to renew)
+- [02-01]: ca.key NOT mounted into container (defense-in-depth via root:root 0600)
 
 ### Pending Todos
 
@@ -76,6 +83,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-05T12:44:49Z
-Stopped at: Completed 01-03-PLAN.md -- Phase 1 (Base Appliance Architecture) COMPLETE
+Last session: 2026-02-07T17:35:06Z
+Stopped at: Completed 02-01-PLAN.md (TLS certificate lifecycle specification)
 Resume file: None
