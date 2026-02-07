@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Base Appliance Architecture** - Spec the SuperLink and SuperNode appliance designs with full contextualization parameter mapping
 - [x] **Phase 2: Security and Certificate Automation** - Spec TLS certificate lifecycle, OneGate-based distribution, and Flower container permissions
-- [ ] **Phase 3: ML Framework Variants and Use Cases** - Spec appliance variants per ML framework and pre-built use case templates
+- [x] **Phase 3: ML Framework Variants and Use Cases** - Spec appliance variants per ML framework and pre-built use case templates
 - [ ] **Phase 4: Single-Site Orchestration** - Spec the OneFlow service template for coordinated Flower cluster deployment
 - [ ] **Phase 5: Training Configuration** - Spec aggregation strategy selection, parameter exposure, and model checkpointing
 - [ ] **Phase 6: GPU Acceleration** - Spec NVIDIA GPU passthrough, CUDA memory management, and validation procedures
@@ -66,8 +66,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- ML framework variant strategy and Dockerfiles (APPL-05)
-- [ ] 03-02-PLAN.md -- Pre-built use case templates with contextualization-only deployment (ML-03)
+- [x] 03-01-PLAN.md -- ML framework variant strategy and Dockerfiles (APPL-05)
+- [x] 03-02-PLAN.md -- Pre-built use case templates with contextualization-only deployment (ML-03)
 
 ### Phase 4: Single-Site Orchestration
 **Goal**: The spec defines the OneFlow service template that deploys a complete Flower cluster (1 SuperLink + N SuperNodes) with automatic dependency ordering, OneGate service discovery, and configurable cardinality
@@ -171,7 +171,7 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 |-------|----------------|--------|-----------|
 | 1. Base Appliance Architecture | 3/3 | Complete | 2026-02-05 |
 | 2. Security and Certificate Automation | 2/2 | Complete | 2026-02-07 |
-| 3. ML Framework Variants and Use Cases | 0/2 | Not started | - |
+| 3. ML Framework Variants and Use Cases | 2/2 | Complete | 2026-02-07 |
 | 4. Single-Site Orchestration | 0/2 | Not started | - |
 | 5. Training Configuration | 0/2 | Not started | - |
 | 6. GPU Acceleration | 0/2 | Not started | - |
