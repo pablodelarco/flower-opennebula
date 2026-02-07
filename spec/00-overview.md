@@ -1,24 +1,24 @@
 # Flower-OpenNebula Integration: Appliance Specification
 
-**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation
-**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04
+**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration
+**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01
 **Status:** Specification
 
 ---
 
 ## 1. Scope
 
-This specification defines the base appliance architecture for running the Flower federated learning framework on the OpenNebula cloud platform. It covers two marketplace appliances (SuperLink and SuperNode), their Docker-in-VM packaging, boot sequences, and every contextualization parameter needed for zero-config deployment.
+This specification defines the Flower federated learning appliances for the OpenNebula cloud platform. It covers two marketplace appliances (SuperLink and SuperNode), their Docker-in-VM packaging, boot sequences, contextualization parameters, TLS certificate automation, ML framework variants, and single-site OneFlow orchestration.
 
-**What this phase covers:**
-- SuperLink appliance: FL coordinator that orchestrates training rounds and aggregates model updates.
-- SuperNode appliance: FL client that trains locally on private data and reports model updates.
-- Contextualization variable reference: the complete mapping from OpenNebula USER_INPUTs to Flower configuration.
+**What this specification covers (Phases 1-4):**
+- SuperLink appliance: FL coordinator that orchestrates training rounds and aggregates model updates (Phase 1).
+- SuperNode appliance: FL client that trains locally on private data and reports model updates (Phase 1).
+- Contextualization variable reference: the complete mapping from OpenNebula USER_INPUTs to Flower configuration (Phase 1).
+- TLS certificate automation: self-signed CA generation, cert distribution via OneGate, SuperNode trust (Phase 2).
+- ML framework variants: PyTorch, TensorFlow, scikit-learn appliance variants and pre-built use case templates (Phase 3).
+- Single-site orchestration: OneFlow service template, deployment sequencing, OneGate coordination, scaling operations (Phase 4).
 
-**What this phase does NOT cover (deferred to later phases):**
-- TLS certificate automation (Phase 2)
-- ML framework variants and use case templates (Phase 3)
-- OneFlow service template orchestration (Phase 4)
+**What this specification does NOT cover (deferred to later phases):**
 - Training configuration and checkpointing (Phase 5)
 - GPU passthrough (Phase 6)
 - Multi-site federation (Phase 7)
@@ -109,7 +109,20 @@ This specification defines the base appliance architecture for running the Flowe
 | TLS Certificate Lifecycle | [`spec/04-tls-certificate-lifecycle.md`](04-tls-certificate-lifecycle.md) | APPL-04 | SuperLink TLS: self-signed CA generation (OpenSSL), dual provisioning (auto-gen vs operator-provided), boot sequence changes (Step 7a), Docker TLS flags, OneGate CA cert publication (FL_TLS, FL_CA_CERT). |
 | SuperNode TLS Trust | [`spec/05-supernode-tls-trust.md`](05-supernode-tls-trust.md) | APPL-04 | SuperNode TLS: CA cert retrieval from OneGate, static provisioning fallback, TLS mode detection (4-case priority), boot sequence changes (Step 7b), Docker `--root-certificates`, end-to-end TLS handshake walkthrough. |
 
-**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS implementation, continue with Phase 2 specs (04 for SuperLink TLS, then 05 for SuperNode TLS and end-to-end walkthrough).
+### Phase 3: ML Framework Variants and Use Cases
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| ML Framework Variants | [`spec/06-ml-framework-variants.md`](06-ml-framework-variants.md) | APPL-05 | Framework-specific QCOW2 images: PyTorch (+ LLM deps), TensorFlow, scikit-learn. Custom Docker images, validation rules, build matrix. |
+| Use Case Templates | [`spec/07-use-case-templates.md`](07-use-case-templates.md) | APPL-06 | Pre-built Flower App Bundles: image-classification, anomaly-detection, llm-fine-tuning. FL_USE_CASE variable, data provisioning, demo mode. |
+
+### Phase 4: Single-Site Orchestration
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| Single-Site Orchestration | [`spec/08-single-site-orchestration.md`](08-single-site-orchestration.md) | ORCH-01 | OneFlow service template: role structure, user_inputs hierarchy, cardinality config, deployment sequencing, OneGate coordination protocol, scaling operations, service lifecycle, anti-patterns. |
+
+**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08) which ties together all previous phases.
 
 ---
 
@@ -191,7 +204,7 @@ Decisions made during Phase 1 specification that constrain future phases.
 
 | # | Question | Impact | Status | Resolution Path |
 |---|----------|--------|--------|-----------------|
-| 1 | Does OneFlow wait for `REPORT_READY` before marking a role as ready for child roles? | If not, SuperNode deployment starts before SuperLink is actually healthy. | Unresolved | Validate during Phase 4 implementation. SuperNode retry loop provides defense-in-depth. |
+| 1 | Does OneFlow wait for `REPORT_READY` before marking a role as ready for child roles? | If not, SuperNode deployment starts before SuperLink is actually healthy. | Resolved: YES | When `ready_status_gate: true` is set at the service level, OneFlow requires `READY=YES` in the VM's user template before considering the VM running for role dependency purposes. See `spec/08-single-site-orchestration.md` Section 6. |
 | 2 | What is the exact JSON path for `FL_ENDPOINT` in the OneGate `/service` response? | Incorrect path breaks dynamic discovery. | Partially verified | jq path `.SERVICE.roles[].nodes[0].vm_info.VM.USER_TEMPLATE.FL_ENDPOINT` matches documentation but needs runtime validation. |
 | 3 | Can `${parent.template.context.eth0_ip}` resolve IPs reliably in OneFlow? | If not, OneGate discovery is the only reliable method. | Unresolved | Validate during Phase 4. OneGate discovery is the primary mechanism regardless. |
 | 4 | What is the compressed QCOW2 size with all components pre-baked? | If >3 GB, marketplace delivery may be slow. | Estimated ~2 GB | Measure during image build. Soft target: under 3 GB. |
@@ -228,5 +241,5 @@ This spec is Phase 1 of a 9-phase specification project. Each subsequent phase b
 ---
 
 *Specification Overview: Flower-OpenNebula Appliance Architecture*
-*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation*
-*Version: 1.1*
+*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration*
+*Version: 1.2*

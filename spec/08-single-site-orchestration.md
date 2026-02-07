@@ -948,3 +948,26 @@ During the outage, the service may transition to WARNING state in OneFlow. The `
 **A SuperNode VM crashes after service is RUNNING:**
 
 The remaining SuperNodes continue training. The SuperLink detects the disconnection and adjusts the active client count. If the remaining count is still at or above `FL_MIN_FIT_CLIENTS`, training rounds continue normally. If below, the SuperLink waits for reconnection or new clients before starting the next round.
+
+---
+
+## 10. Anti-Patterns and Pitfalls
+
+Common misconfigurations that cause deployment failures or degraded operation. Each entry describes what goes wrong and the correct approach.
+
+| Anti-Pattern | What Goes Wrong | Correct Approach |
+|-------------|----------------|-----------------|
+| Setting `ready_status_gate: false` | SuperNode VMs deploy before the SuperLink application is ready. SuperNodes enter the discovery retry loop (30 attempts, 10-second interval) and waste up to 5 minutes waiting. In the worst case, the SuperLink is still pulling a Docker image and SuperNodes time out entirely. | Always set `ready_status_gate: true` at the service level. This gates SuperNode creation on SuperLink application-level health, ensuring first-attempt discovery success. |
+| SuperLink cardinality > 1 | Multiple independent SuperLink instances create a split-brain federation. Each SuperLink maintains its own `state.db`, tracks a different subset of SuperNodes, and produces different aggregation results. SuperNode discovery selects one SuperLink (via `nodes[0]` or the first `FL_READY=YES` match), leaving the other SuperLink idle or partially connected. | Enforce `min_vms: 1, max_vms: 1` on the SuperLink role. Never use `--force` to scale above 1. See Section 4 for the singleton constraint rationale. |
+| Duplicating `user_inputs` at both service and role level | Role-level `user_inputs` silently override service-level values for the same key. If `FLOWER_VERSION` is defined at both levels with different defaults, the role-level value wins. This creates version mismatch between SuperLink and SuperNode (e.g., SuperLink runs 1.25.0 while SuperNode runs 1.26.0), causing gRPC protocol errors. | Define each variable at exactly one level. Service-level for variables that must be identical across roles (FLOWER_VERSION, FL_TLS_ENABLED, FL_LOG_LEVEL). Role-level for variables specific to one role. See Section 2, Variable Placement Rule. |
+| Missing `TOKEN=YES` in VM template CONTEXT | All OneGate API calls fail with HTTP 401 (Unauthorized). The SuperLink cannot publish `FL_ENDPOINT` or `FL_CA_CERT`. SuperNodes cannot discover the SuperLink. `REPORT_READY` cannot set `READY=YES`, so the `ready_status_gate` is never satisfied and the service hangs in DEPLOYING state indefinitely. | Always include `TOKEN=YES` in each role's `template_contents` CONTEXT section. This is an infrastructure variable, not a user_input. See Section 2, Infrastructure CONTEXT Variables. |
+| Putting infrastructure vars (`TOKEN`, `REPORT_READY`) in `user_inputs` instead of `template_contents` | The variables appear in the Sunstone instantiation form, confusing deployers who may change or remove them. If a deployer sets `TOKEN=NO` or deletes the field, OneGate authentication breaks silently. | Place infrastructure variables in `template_contents` at the role level. They are injected unconditionally and do not appear in the user-facing instantiation form. See Section 3, template_contents. |
+| Setting `FL_SUPERLINK_ADDRESS` in OneFlow deployment | Bypasses OneGate discovery entirely. The static address must match the SuperLink VM's actual IP, which is not known until the VM is created. If the operator guesses wrong or the IP changes on redeployment, all SuperNodes fail to connect. Defeats the purpose of OneFlow orchestration. | Leave `FL_SUPERLINK_ADDRESS` unset in OneFlow deployments. Let SuperNodes discover the SuperLink via OneGate automatically. Static addresses are intended for standalone VM deployments or cross-site federation (Phase 7), not single-site OneFlow services. |
+| Elasticity policies on the `superlink` role | Auto-scaling the singleton coordinator triggers split-brain (same as cardinality > 1). Even if `max_vms: 1` prevents the scale-up, the policy evaluation adds unnecessary overhead and signals a misunderstanding of the architecture. | Never define `elasticity_policies` or `scheduled_policies` on the SuperLink role. Elasticity policies apply only to the `supernode` role. See Section 8, Elasticity Policies. |
+| Using `deployment: "none"` instead of `"straight"` | All roles deploy simultaneously. SuperNode VMs boot before the SuperLink VM, enter the discovery retry loop, and spend up to 5 minutes in retries. With `ready_status_gate: true`, SuperNode creation is still gated, but with `ready_status_gate: false` (or if accidentally set), the race condition is fully exposed. Even with the gate, `"none"` loses the clear sequential semantics that make the deployment predictable. | Always use `deployment: "straight"`. Roles deploy in array order (SuperLink first, SuperNode second), and the `parents` dependency combined with `ready_status_gate` ensures correct ordering. |
+
+---
+
+*Specification for ORCH-01: Single-Site Orchestration*
+*Phase: 04 - Single-Site Orchestration*
+*Version: 1.0*
