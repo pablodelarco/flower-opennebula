@@ -260,3 +260,148 @@ The following JSON defines the complete OneFlow service template for a Flower fe
 | `template_contents` | `vm_template_contents` | 6.x uses a string format (`"KEY=VALUE\nKEY2=VALUE2"`); 7.0 uses a JSON object. |
 
 The spec targets OpenNebula 7.0+ as the primary platform. When deploying on 6.x, replace field names accordingly and convert `template_contents` from JSON object to string format.
+
+---
+
+## 4. Cardinality Configuration
+
+Cardinality defines how many VMs each role deploys. The SuperLink and SuperNode roles have fundamentally different cardinality models: the SuperLink is a hard singleton, while SuperNode cardinality is elastic within a bounded range.
+
+### SuperLink: Hard Singleton (cardinality = 1)
+
+The SuperLink role MUST have exactly 1 VM. This is enforced by setting `min_vms: 1` and `max_vms: 1` in the service template.
+
+**Why singleton:** Flower's SuperLink is a centralized coordinator. It maintains a single SQLite state database (`state.db`) tracking all connected SuperNodes, training round progress, and aggregated model weights. Running multiple SuperLink instances creates independent coordinators with no shared state -- each would track a different subset of SuperNodes, produce different aggregation results, and advance through training rounds independently. This is a split-brain failure mode with no recovery path.
+
+**What happens if cardinality exceeds 1:** OneFlow enforces the `max_vms` bound and rejects any scaling request that would exceed it:
+
+```bash
+# This fails:
+oneflow scale <service_id> superlink 2
+# Error: cannot scale role "superlink" above max_vms (1)
+```
+
+The `--force` flag bypasses min/max bounds. Operators MUST NOT use `--force` to scale the SuperLink role. If they do, the jq discovery filter in SuperNode's `discover.sh` selects `.nodes[0]` -- the first SuperLink VM -- and ignores any additional instances. The result is that some SuperNodes connect to one SuperLink while new SuperNodes may discover a different one, causing a silent federation split.
+
+**No elasticity policies:** The SuperLink role MUST NOT have `elasticity_policies` or `scheduled_policies` defined. Auto-scaling the singleton coordinator is a dangerous misconfiguration. The `min_vms: 1, max_vms: 1` constraint makes elasticity policies ineffective, but they should be omitted entirely for clarity.
+
+### SuperNode: Elastic Range (cardinality = 2, range 2-10)
+
+The SuperNode role has a configurable cardinality within a bounded range.
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `cardinality` | `2` | Default deployment size. The minimum for meaningful federated learning: FedAvg requires at least 2 clients to compute a weighted average. |
+| `min_vms` | `2` | Floor for scale-down operations. Scaling below 2 SuperNodes makes FL non-functional (FedAvg with 1 client degenerates to local training). |
+| `max_vms` | `10` | Reasonable ceiling for single-site deployments. Prevents accidental over-provisioning. Operators can increase this in their template for larger clusters. |
+
+**Interaction with FL_MIN_AVAILABLE_CLIENTS:** The `FL_MIN_AVAILABLE_CLIENTS` SuperLink parameter (default: 2) controls when the SuperLink starts accepting training rounds. For the service to become fully operational:
+
+```
+SuperNode cardinality (min_vms) >= FL_MIN_AVAILABLE_CLIENTS
+```
+
+If `min_vms` is 2 and `FL_MIN_AVAILABLE_CLIENTS` is 2 (both defaults), the SuperLink begins training as soon as both SuperNodes connect. If an operator sets `FL_MIN_AVAILABLE_CLIENTS` to 5 but leaves `min_vms` at 2, the SuperLink will wait indefinitely for 3 more clients that will never arrive. The service template does not enforce this constraint -- it is documented as a configuration guideline.
+
+### Cardinality Override at Instantiation
+
+The deployer can override the default SuperNode cardinality when instantiating a service, without modifying the service template:
+
+```bash
+# Deploy with 5 SuperNodes instead of the default 2
+oneflow-template instantiate <template_id> \
+  --extra_template '{"roles": [{"name": "supernode", "cardinality": 5}]}'
+```
+
+In Sunstone, the cardinality can be adjusted in the service instantiation dialog. The override is bounded by `min_vms` and `max_vms` -- requesting a cardinality outside this range requires modifying the service template or using `--force`.
+
+### Cardinality Summary Table
+
+| Property | SuperLink | SuperNode |
+|----------|-----------|-----------|
+| Default cardinality | 1 | 2 |
+| Minimum (`min_vms`) | 1 | 2 |
+| Maximum (`max_vms`) | 1 | 10 |
+| Scaling allowed | No (singleton) | Yes (within range) |
+| Elasticity policies | Not applicable | Supported (Phase 9) |
+| Override at instantiation | No (hard constraint) | Yes (within min/max) |
+| Scale command | Rejected by OneFlow | `oneflow scale <id> supernode <N>` |
+
+---
+
+## 5. Per-SuperNode Differentiation (FL_NODE_CONFIG)
+
+### Problem Statement
+
+OneFlow's `user_inputs` mechanism applies the same value to all VMs in a role. When a deployer sets `FL_NODE_CONFIG` at the SuperNode role level, every SuperNode receives an identical copy. But federated learning data partitioning requires each SuperNode to train on a different subset of data -- each needs a unique `partition-id` value and all need to know the total `num-partitions`.
+
+Setting `FL_NODE_CONFIG` manually per-SuperNode is not possible through the service template alone: OneFlow does not support per-VM variable overrides within a role.
+
+### Solution: Auto-Computed Partition ID from OneGate
+
+The SuperNode boot script automatically computes a unique `partition-id` from the VM's position in the OneFlow service. This computation happens during the discovery phase (Step 7 in the SuperNode boot sequence -- see `spec/02-supernode-appliance.md`, Section 7), which already queries the OneGate service API.
+
+**Mechanism:**
+
+1. During OneGate discovery, the SuperNode queries `GET /service` and receives the full service definition including the list of nodes in each role.
+2. The response contains the `supernode` role's `nodes` array, where each entry has a `deploy_id` matching the VM's ID.
+3. The boot script finds its own VMID in the `nodes` array and uses its 0-based index as `partition-id`.
+4. The total number of entries in the `nodes` array provides `num-partitions`.
+5. These values are injected into `FL_NODE_CONFIG` automatically -- but only if `FL_NODE_CONFIG` is empty or unset.
+6. If `FL_NODE_CONFIG` is already set by the user (non-empty), the auto-computed values are NOT applied. User-provided configuration takes precedence.
+
+### Auto-Partition Pseudocode
+
+The following logic runs as part of the SuperNode's `discover.sh` script, after the SuperLink endpoint has been successfully resolved:
+
+```bash
+# Auto-compute partition-id from OneGate service response
+# Prerequisite: SERVICE_JSON already populated from OneGate GET /service
+
+if [ -z "${FL_NODE_CONFIG}" ]; then
+    # Extract the supernode role's nodes array
+    NODES=$(echo "$SERVICE_JSON" | jq '.SERVICE.roles[] | select(.name == "supernode") | .nodes')
+
+    # Total number of SuperNode VMs in this service
+    NUM_PARTITIONS=$(echo "$NODES" | jq 'length')
+
+    # Find this VM's 0-based index in the nodes array
+    MY_INDEX=$(echo "$NODES" | jq --arg vmid "$VMID" \
+        '[.[].deploy_id | tostring] | to_entries[] | select(.value == $vmid) | .key')
+
+    if [ -n "$MY_INDEX" ] && [ -n "$NUM_PARTITIONS" ]; then
+        FL_NODE_CONFIG="partition-id=${MY_INDEX} num-partitions=${NUM_PARTITIONS}"
+        log "INFO" "Auto-computed FL_NODE_CONFIG: ${FL_NODE_CONFIG}"
+    else
+        log "WARN" "Could not determine partition-id from OneGate service response"
+        log "WARN" "FL_NODE_CONFIG left empty; ClientApp must handle partitioning internally"
+    fi
+else
+    log "INFO" "FL_NODE_CONFIG provided by user: ${FL_NODE_CONFIG} (skipping auto-computation)"
+fi
+```
+
+### Precedence Rule
+
+| FL_NODE_CONFIG State | Behavior |
+|---------------------|----------|
+| Empty or unset (default) | Auto-computed from OneGate: `partition-id=<index> num-partitions=<total>` |
+| Set by user (non-empty) | User value used as-is. Auto-computation skipped entirely. |
+
+**Rationale:** User override takes precedence because the deployer may have a custom partitioning scheme that does not follow sequential 0-based indexing. For example, a deployer running multiple OneFlow services against the same dataset may assign partition ranges manually to avoid overlap.
+
+### Edge Cases
+
+**Standalone deployment (no OneFlow):** If the SuperNode is deployed as a standalone VM (not part of a OneFlow service), the OneGate `GET /service` call fails or returns no service context. In this case:
+- Auto-computation is skipped.
+- If `FL_NODE_CONFIG` is unset, it remains empty.
+- The user MUST provide `FL_NODE_CONFIG` manually via the VM's CONTEXT variables.
+- The boot script logs: "Not part of a OneFlow service; FL_NODE_CONFIG must be set manually if data partitioning is required."
+
+**SuperNode added after initial deployment (scaling):** When a new SuperNode VM is added via `oneflow scale`, it queries the current service state from OneGate. The `nodes` array reflects the current set of VMs, including the newly added one. The new SuperNode receives a `partition-id` equal to its index in the updated array. Existing SuperNodes retain their original partition-id values (set at their boot time) and do NOT recompute.
+
+**Node index stability:** The `deploy_id` ordering in the OneGate response is determined by VM creation order. For the initial deployment, this matches the cardinality sequence (0, 1, 2, ...). For scaled-in/scaled-out scenarios, indices may have gaps if VMs were removed. The auto-computation uses the current array index, not the deploy_id value, so the partition-id sequence is always contiguous (0 through N-1) at the time each SuperNode boots.
+
+### Scope Limitation
+
+Auto-computed `partition-id` is relevant only when using pre-built use case templates (`FL_USE_CASE != none`) that rely on `partition-id` and `num-partitions` in `--node-config` for data sharding. Custom ClientApps may implement their own partitioning logic (e.g., using VMID modulo, hostname hashing, or external coordination) and would set `FL_NODE_CONFIG` explicitly or ignore it entirely.
