@@ -78,11 +78,11 @@ Plans:
   2. The spec defines the OneGate coordination protocol -- SuperLink readiness signaling, endpoint advertisement, and SuperNode discovery polling with backoff
   3. A reader can understand how to deploy a 1+N Flower cluster from the marketplace and what happens at each stage of the deployment sequence
   4. The spec defines cardinality configuration (min, max, default SuperNode count) and how it maps to OneFlow scaling
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- OneFlow service template definition, user_inputs mapping, cardinality, and per-node differentiation
+- [ ] 04-02-PLAN.md -- Deployment sequence walkthrough, OneGate coordination protocol, scaling, and service lifecycle
 
 ### Phase 5: Training Configuration
 **Goal**: The spec defines how users select aggregation strategies and configure training parameters through contextualization, and how model checkpoints are persisted and recovered
