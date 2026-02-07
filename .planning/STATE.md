@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 2 in progress (Security and Certificate Automation). Plan 02-01 complete, Plan 02-02 remaining.
+**Current focus:** Phase 2 COMPLETE (Security and Certificate Automation). Ready for Phase 3, 4, or 6.
 
 ## Current Position
 
 Phase: 2 of 9 (Security and Certificate Automation)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-07 -- Completed 02-01-PLAN.md (TLS certificate lifecycle specification)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-07 -- Completed 02-02-PLAN.md (SuperNode TLS trust and end-to-end handshake)
 
-Progress: [████░░░░░░░░░░░░░░░░] 20% (4/20 plans)
+Progress: [█████░░░░░░░░░░░░░░░] 25% (5/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 4 min
-- Total execution time: 18 min
+- Total plans completed: 5
+- Average duration: 5 min
+- Total execution time: 24 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Base Appliance Architecture | 3/3 | 13 min | 4 min |
-| 2. Security and Certificate Automation | 1/2 | 5 min | 5 min |
+| 2. Security and Certificate Automation | 2/2 | 11 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4 min), 01-02 (4 min), 01-03 (5 min), 02-01 (5 min)
+- Last 5 plans: 01-02 (4 min), 01-03 (5 min), 02-01 (5 min), 02-02 (6 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -70,6 +70,12 @@ Recent decisions affecting current work:
 - [02-01]: OneGate FL_CA_CERT publication is best-effort (matches Phase 1 model)
 - [02-01]: 365-day cert validity with no rotation (immutable appliance: redeploy to renew)
 - [02-01]: ca.key NOT mounted into container (defense-in-depth via root:root 0600)
+- [02-02]: TLS mode detection: 4-case priority (explicit CONTEXT YES > explicit NO > OneGate auto > insecure default)
+- [02-02]: FL_SSL_CA_CERTFILE overrides OneGate FL_CA_CERT (operator CA takes precedence)
+- [02-02]: FL_TLS=YES without FL_CA_CERT is FATAL on SuperNode (no silent security downgrade)
+- [02-02]: FL_TLS_ENABLED=NO overrides OneGate FL_TLS=YES (respects operator intent, logs warning)
+- [02-02]: Single-file mount for SuperNode (ca.crt only, not directory)
+- [02-02]: Step 7b inserted in SuperNode boot for CA cert PEM validation
 
 ### Pending Todos
 
@@ -83,6 +89,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-07T17:35:06Z
-Stopped at: Completed 02-01-PLAN.md (TLS certificate lifecycle specification)
+Last session: 2026-02-07T17:44:15Z
+Stopped at: Completed 02-02-PLAN.md (SuperNode TLS trust and end-to-end handshake) -- Phase 2 complete
 Resume file: None
