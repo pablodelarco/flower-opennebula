@@ -63,11 +63,11 @@ Plans:
   2. Each use case template (image classification, anomaly detection, LLM fine-tuning) is defined with its required contextualization parameters and expected outputs
   3. A reader can deploy any use case template by setting only contextualization variables -- no SSH, no code changes
   4. The spec includes a decision record for the variant strategy (why these frameworks, why not a single fat image)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md -- ML framework variant strategy and Dockerfiles (APPL-05)
+- [ ] 03-02-PLAN.md -- Pre-built use case templates with contextualization-only deployment (ML-03)
 
 ### Phase 4: Single-Site Orchestration
 **Goal**: The spec defines the OneFlow service template that deploys a complete Flower cluster (1 SuperLink + N SuperNodes) with automatic dependency ordering, OneGate service discovery, and configurable cardinality
