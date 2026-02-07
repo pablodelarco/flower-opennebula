@@ -13,7 +13,7 @@ Requirements for initial release of the technical specification.
 - [x] **APPL-02**: Spec defines SuperNode (client) appliance with pre-configured server connectivity, local data mount points, and ML framework selection via contextualization
 - [x] **APPL-03**: Spec maps all Flower configuration parameters to OpenNebula contextualization variables (USER_INPUTS) with types, defaults, and validation rules
 - [x] **APPL-04**: Spec defines TLS certificate automation — generation on server boot, distribution to clients via OneGate, correct file ownership for Flower containers (UID 49999)
-- [ ] **APPL-05**: Spec defines appliance variants for ML frameworks (PyTorch-focused, TensorFlow-focused, lightweight/scikit-learn) with image size targets
+- [x] **APPL-05**: Spec defines appliance variants for ML frameworks (PyTorch-focused, TensorFlow-focused, lightweight/scikit-learn) with image size targets
 
 ### Orchestration & Deployment
 
@@ -25,7 +25,7 @@ Requirements for initial release of the technical specification.
 
 - [ ] **ML-01**: Spec defines aggregation strategy selection via contextualization — FedAvg, FedProx, FedAdam, byzantine-robust options with parameter exposure
 - [ ] **ML-02**: Spec defines GPU passthrough configuration — NVIDIA PCI passthrough, UEFI/q35 VM template, Container Toolkit, CUDA memory management, validation script
-- [ ] **ML-03**: Spec defines pre-built use case templates — at minimum: image classification (ResNet), anomaly detection (IoT), LLM fine-tuning (FlowerTune/PEFT) with contextualization-only deployment
+- [x] **ML-03**: Spec defines pre-built use case templates — at minimum: image classification (ResNet), anomaly detection (IoT), LLM fine-tuning (FlowerTune/PEFT) with contextualization-only deployment
 - [ ] **ML-04**: Spec defines model checkpointing to persistent storage — automatic save every N rounds, resume from checkpoint after failure, storage backend options
 
 ### Observability
@@ -73,13 +73,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APPL-02 | Phase 1: Base Appliance Architecture | Complete |
 | APPL-03 | Phase 1: Base Appliance Architecture | Complete |
 | APPL-04 | Phase 2: Security and Certificate Automation | Complete |
-| APPL-05 | Phase 3: ML Framework Variants and Use Cases | Pending |
+| APPL-05 | Phase 3: ML Framework Variants and Use Cases | Complete |
 | ORCH-01 | Phase 4: Single-Site Orchestration | Pending |
 | ORCH-02 | Phase 7: Multi-Site Federation | Pending |
 | ORCH-03 | Phase 9: Edge and Auto-Scaling | Pending |
 | ML-01 | Phase 5: Training Configuration | Pending |
 | ML-02 | Phase 6: GPU Acceleration | Pending |
-| ML-03 | Phase 3: ML Framework Variants and Use Cases | Pending |
+| ML-03 | Phase 3: ML Framework Variants and Use Cases | Complete |
 | ML-04 | Phase 5: Training Configuration | Pending |
 | OBS-01 | Phase 8: Monitoring and Observability | Pending |
 | OBS-02 | Phase 8: Monitoring and Observability | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-07 after Phase 2 completion*
+*Last updated: 2026-02-07 after Phase 3 completion*
