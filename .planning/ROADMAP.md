@@ -93,11 +93,11 @@ Plans:
   2. The spec defines the checkpointing mechanism -- automatic save frequency, storage backend options (Longhorn PV, NFS, S3-compatible), file format, and resume-from-checkpoint workflow
   3. A reader can configure a non-default aggregation strategy and checkpoint frequency using only contextualization variables
   4. The spec addresses failure recovery -- what happens when a SuperLink or SuperNode crashes mid-training, and how checkpoints enable resumption
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md -- Aggregation strategy reference, selection architecture, and checkpointing mechanism (ML-01, ML-04)
+- [ ] 05-02-PLAN.md -- Cross-cutting updates: contextualization reference, OneFlow service template, and overview (ML-01, ML-04)
 
 ### Phase 6: GPU Acceleration
 **Goal**: The spec defines the complete GPU passthrough stack from host BIOS configuration through VM template to container runtime, including memory management and a validation procedure
