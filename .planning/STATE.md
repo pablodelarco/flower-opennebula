@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 3 COMPLETE (ML Framework Variants and Use Cases). Phase 4 (Single-Site Orchestration) is next.
+**Current focus:** Phase 4 IN PROGRESS (Single-Site Orchestration). Plan 1 complete, Plan 2 next.
 
 ## Current Position
 
-Phase: 3 of 9 (ML Framework Variants and Use Cases)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-07 -- Completed 03-02-PLAN.md (Pre-built use case templates)
+Phase: 4 of 9 (Single-Site Orchestration)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-07 -- Completed 04-01-PLAN.md (OneFlow service template definition)
 
-Progress: [███████░░░░░░░░░░░░░] 35% (7/20 plans)
+Progress: [████████░░░░░░░░░░░░] 40% (8/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 4 min
-- Total execution time: 31 min
+- Total execution time: 35 min
 
 **By Phase:**
 
@@ -30,9 +30,10 @@ Progress: [███████░░░░░░░░░░░░░] 35% (7/
 | 1. Base Appliance Architecture | 3/3 | 13 min | 4 min |
 | 2. Security and Certificate Automation | 2/2 | 11 min | 6 min |
 | 3. ML Framework Variants and Use Cases | 2/2 | 7 min | 4 min |
+| 4. Single-Site Orchestration | 1/2 | 4 min | 4 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (5 min), 02-02 (6 min), 03-01 (3 min), 03-02 (4 min)
+- Last 5 plans: 02-02 (6 min), 03-01 (3 min), 03-02 (4 min), 04-01 (4 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -88,6 +89,12 @@ Recent decisions affecting current work:
 - [03-02]: LLM fine-tuning has no demo mode (requires pre-provisioned data)
 - [03-02]: Data provisioning auto-selects: /app/data has files -> local; otherwise -> flwr-datasets download
 - [03-02]: image-classification supports both PyTorch (primary) and TensorFlow (alternate)
+- [04-01]: Service-level user_inputs for FLOWER_VERSION, FL_TLS_ENABLED, FL_LOG_LEVEL (consistency across roles)
+- [04-01]: SuperLink hard singleton via min_vms=1, max_vms=1 (no elasticity policies)
+- [04-01]: SuperNode default cardinality 2, min 2, max 10 (FL requires >= 2 clients)
+- [04-01]: Auto-computed partition-id from OneGate VM index when FL_NODE_CONFIG is empty
+- [04-01]: User-provided FL_NODE_CONFIG overrides auto-computation (explicit operator intent)
+- [04-01]: Infrastructure CONTEXT vars (TOKEN, REPORT_READY, etc.) in template_contents per-role, not user_inputs
 
 ### Pending Todos
 
@@ -97,11 +104,10 @@ None.
 
 - GPU passthrough validation needed on target hardware (affects Phase 6 scope -- may need CPU-only fallback)
 - OneGate cross-zone behavior unverified (affects Phase 7 -- may need explicit endpoint config instead of dynamic discovery)
-- REPORT_READY + OneFlow role dependency interaction needs validation (affects Phase 4 -- SuperNode retry loop provides defense-in-depth)
 - PyTorch variant QCOW2 size (~4-5 GB) needs validation during implementation; revisit LLM dep placement if exceeds 5 GB
 
 ## Session Continuity
 
-Last session: 2026-02-07T19:50:28Z
-Stopped at: Completed 03-02-PLAN.md (Pre-built use case templates)
+Last session: 2026-02-07T21:38:13Z
+Stopped at: Completed 04-01-PLAN.md (OneFlow service template definition)
 Resume file: None
