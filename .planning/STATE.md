@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 4 IN PROGRESS (Single-Site Orchestration). Plan 1 complete, Plan 2 next.
+**Current focus:** Phase 4 COMPLETE (Single-Site Orchestration). Ready for Phase 5 (Training Configuration).
 
 ## Current Position
 
 Phase: 4 of 9 (Single-Site Orchestration)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-07 -- Completed 04-01-PLAN.md (OneFlow service template definition)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-07 -- Completed 04-02-PLAN.md (deployment sequence and service lifecycle)
 
-Progress: [████████░░░░░░░░░░░░] 40% (8/20 plans)
+Progress: [█████████░░░░░░░░░░░] 45% (9/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 4 min
-- Total execution time: 35 min
+- Total execution time: 37 min
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [████████░░░░░░░░░░░░] 40% (8/
 | 1. Base Appliance Architecture | 3/3 | 13 min | 4 min |
 | 2. Security and Certificate Automation | 2/2 | 11 min | 6 min |
 | 3. ML Framework Variants and Use Cases | 2/2 | 7 min | 4 min |
-| 4. Single-Site Orchestration | 1/2 | 4 min | 4 min |
+| 4. Single-Site Orchestration | 2/2 | 6 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (6 min), 03-01 (3 min), 03-02 (4 min), 04-01 (4 min)
-- Trend: consistent
+- Last 5 plans: 03-01 (3 min), 03-02 (4 min), 04-01 (4 min), 04-02 (2 min)
+- Trend: consistent, slightly accelerating
 
 *Updated after each plan completion*
 
@@ -95,6 +95,10 @@ Recent decisions affecting current work:
 - [04-01]: Auto-computed partition-id from OneGate VM index when FL_NODE_CONFIG is empty
 - [04-01]: User-provided FL_NODE_CONFIG overrides auto-computation (explicit operator intent)
 - [04-01]: Infrastructure CONTEXT vars (TOKEN, REPORT_READY, etc.) in template_contents per-role, not user_inputs
+- [04-02]: ready_status_gate resolves Open Question #1: YES, OneFlow waits for READY=YES before child role deployment
+- [04-02]: Discovery succeeds on first attempt in ready_status_gate deployments (retry loop is defense-in-depth only)
+- [04-02]: Reverse shutdown order: SuperNodes terminated first to prevent reconnection storms
+- [04-02]: Anti-patterns documented as table format for quick reference
 
 ### Pending Todos
 
@@ -108,6 +112,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-07T21:38:13Z
-Stopped at: Completed 04-01-PLAN.md (OneFlow service template definition)
+Last session: 2026-02-07T22:11:31Z
+Stopped at: Completed 04-02-PLAN.md (deployment sequence and service lifecycle)
 Resume file: None
