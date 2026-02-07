@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 2 COMPLETE (Security and Certificate Automation). Ready for Phase 3, 4, or 6.
+**Current focus:** Phase 3 IN PROGRESS (ML Framework Variants and Use Cases). Plan 03-01 complete, Plan 03-02 next.
 
 ## Current Position
 
-Phase: 2 of 9 (Security and Certificate Automation)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-07 -- Completed 02-02-PLAN.md (SuperNode TLS trust and end-to-end handshake)
+Phase: 3 of 9 (ML Framework Variants and Use Cases)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-07 -- Completed 03-01-PLAN.md (ML framework variant strategy and Dockerfiles)
 
-Progress: [█████░░░░░░░░░░░░░░░] 25% (5/20 plans)
+Progress: [██████░░░░░░░░░░░░░░] 30% (6/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: 5 min
-- Total execution time: 24 min
+- Total execution time: 27 min
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [█████░░░░░░░░░░░░░░░] 25% (5/
 |-------|-------|-------|----------|
 | 1. Base Appliance Architecture | 3/3 | 13 min | 4 min |
 | 2. Security and Certificate Automation | 2/2 | 11 min | 6 min |
+| 3. ML Framework Variants and Use Cases | 1/2 | 3 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (4 min), 01-03 (5 min), 02-01 (5 min), 02-02 (6 min)
+- Last 5 plans: 01-03 (5 min), 02-01 (5 min), 02-02 (6 min), 03-01 (3 min)
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -76,6 +77,12 @@ Recent decisions affecting current work:
 - [02-02]: FL_TLS_ENABLED=NO overrides OneGate FL_TLS=YES (respects operator intent, logs warning)
 - [02-02]: Single-file mount for SuperNode (ca.crt only, not directory)
 - [02-02]: Step 7b inserted in SuperNode boot for CA cert PEM validation
+- [03-01]: Multiple framework-specific QCOW2 images over single fat image (size, conflict isolation, marketplace clarity)
+- [03-01]: PyTorch, TensorFlow, scikit-learn as the three supported frameworks
+- [03-01]: LLM deps (bitsandbytes, peft, transformers) in PyTorch variant, not a fourth variant
+- [03-01]: flower-supernode-{framework}:{VERSION} naming convention for custom Docker images
+- [03-01]: No fallback between framework variants (wrong QCOW2 for requested framework is fatal)
+- [03-01]: CPU-only framework installs in Phase 3 (GPU variants deferred to Phase 6)
 
 ### Pending Todos
 
@@ -86,9 +93,10 @@ None.
 - GPU passthrough validation needed on target hardware (affects Phase 6 scope -- may need CPU-only fallback)
 - OneGate cross-zone behavior unverified (affects Phase 7 -- may need explicit endpoint config instead of dynamic discovery)
 - REPORT_READY + OneFlow role dependency interaction needs validation (affects Phase 4 -- SuperNode retry loop provides defense-in-depth)
+- PyTorch variant QCOW2 size (~4-5 GB) needs validation during implementation; revisit LLM dep placement if exceeds 5 GB
 
 ## Session Continuity
 
-Last session: 2026-02-07T17:44:15Z
-Stopped at: Completed 02-02-PLAN.md (SuperNode TLS trust and end-to-end handshake) -- Phase 2 complete
+Last session: 2026-02-07T19:44:40Z
+Stopped at: Completed 03-01-PLAN.md (ML framework variant strategy and Dockerfiles)
 Resume file: None
