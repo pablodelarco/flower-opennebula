@@ -17,7 +17,7 @@ Requirements for initial release of the technical specification.
 
 ### Orchestration & Deployment
 
-- [ ] **ORCH-01**: Spec defines OneFlow service template with SuperLink parent role and SuperNode child roles, "straight" deployment ordering, and cardinality configuration
+- [x] **ORCH-01**: Spec defines OneFlow service template with SuperLink parent role and SuperNode child roles, "straight" deployment ordering, and cardinality configuration
 - [ ] **ORCH-02**: Spec defines multi-site federation architecture — SuperLink in Zone A, SuperNodes across Zones B/C, cross-zone networking (VPN/overlay), certificate trust distribution
 - [ ] **ORCH-03**: Spec defines auto-scaling via OneFlow elasticity rules — scale triggers, client join/leave during training, min/max bounds
 
@@ -74,7 +74,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APPL-03 | Phase 1: Base Appliance Architecture | Complete |
 | APPL-04 | Phase 2: Security and Certificate Automation | Complete |
 | APPL-05 | Phase 3: ML Framework Variants and Use Cases | Complete |
-| ORCH-01 | Phase 4: Single-Site Orchestration | Pending |
+| ORCH-01 | Phase 4: Single-Site Orchestration | Complete |
 | ORCH-02 | Phase 7: Multi-Site Federation | Pending |
 | ORCH-03 | Phase 9: Edge and Auto-Scaling | Pending |
 | ML-01 | Phase 5: Training Configuration | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-07 after Phase 3 completion*
+*Last updated: 2026-02-07 after Phase 4 completion*
