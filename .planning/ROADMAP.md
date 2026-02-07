@@ -13,7 +13,7 @@ This roadmap delivers the complete technical specification for integrating the F
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Base Appliance Architecture** - Spec the SuperLink and SuperNode appliance designs with full contextualization parameter mapping
-- [ ] **Phase 2: Security and Certificate Automation** - Spec TLS certificate lifecycle, OneGate-based distribution, and Flower container permissions
+- [x] **Phase 2: Security and Certificate Automation** - Spec TLS certificate lifecycle, OneGate-based distribution, and Flower container permissions
 - [ ] **Phase 3: ML Framework Variants and Use Cases** - Spec appliance variants per ML framework and pre-built use case templates
 - [ ] **Phase 4: Single-Site Orchestration** - Spec the OneFlow service template for coordinated Flower cluster deployment
 - [ ] **Phase 5: Training Configuration** - Spec aggregation strategy selection, parameter exposure, and model checkpointing
@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- TLS certificate lifecycle specification (SuperLink: generation, provisioning, OneGate publication)
-- [ ] 02-02-PLAN.md -- SuperNode TLS trust and end-to-end handshake walkthrough
+- [x] 02-01-PLAN.md -- TLS certificate lifecycle specification (SuperLink: generation, provisioning, OneGate publication)
+- [x] 02-02-PLAN.md -- SuperNode TLS trust and end-to-end handshake walkthrough
 
 ### Phase 3: ML Framework Variants and Use Cases
 **Goal**: The spec defines appliance variant strategy (which ML frameworks get dedicated images, with size targets) and provides at least three pre-built use case templates deployable purely through contextualization
@@ -170,7 +170,7 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Base Appliance Architecture | 3/3 | Complete | 2026-02-05 |
-| 2. Security and Certificate Automation | 0/2 | Not started | - |
+| 2. Security and Certificate Automation | 2/2 | Complete | 2026-02-07 |
 | 3. ML Framework Variants and Use Cases | 0/2 | Not started | - |
 | 4. Single-Site Orchestration | 0/2 | Not started | - |
 | 5. Training Configuration | 0/2 | Not started | - |
