@@ -1,7 +1,7 @@
-# Flower-OpenNebula Integration: Base Appliance Architecture
+# Flower-OpenNebula Integration: Appliance Specification
 
-**Phase:** 01 - Base Appliance Architecture
-**Requirements:** APPL-01, APPL-02, APPL-03
+**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation
+**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04
 **Status:** Specification
 
 ---
@@ -74,6 +74,8 @@ This specification defines the base appliance architecture for running the Flowe
 4. SuperLink orchestrates training rounds; SuperNode trains locally and reports model updates.
 5. Data never leaves the SuperNode VM -- only model weights/gradients are transmitted.
 
+**TLS mode (Phase 2):** When `FL_TLS_ENABLED=YES`, the gRPC connection on port 9092 is encrypted with TLS 1.2+. The SuperLink generates a self-signed CA and server certificate at boot, publishes the CA cert to OneGate, and SuperNodes retrieve it automatically. See `spec/04-tls-certificate-lifecycle.md` and `spec/05-supernode-tls-trust.md` for the complete TLS specification.
+
 ---
 
 ## 3. Design Principles
@@ -92,13 +94,22 @@ This specification defines the base appliance architecture for running the Flowe
 
 ## 4. Spec Sections
 
+### Phase 1: Base Appliance Architecture
+
 | Section | File | Requirement | Summary |
 |---------|------|-------------|---------|
 | SuperLink Appliance | [`spec/01-superlink-appliance.md`](01-superlink-appliance.md) | APPL-01 | FL coordinator: QCOW2 packaging, 12-step boot sequence, Docker container config, OneGate publication contract, 11 contextualization parameters. |
 | SuperNode Appliance | [`spec/02-supernode-appliance.md`](02-supernode-appliance.md) | APPL-02 | FL client: dual SuperLink discovery (OneGate + static), 13-step boot sequence, connection lifecycle delegation to Flower, 7 contextualization parameters. |
 | Contextualization Reference | [`spec/03-contextualization-reference.md`](03-contextualization-reference.md) | APPL-03 | Complete variable reference: 29 variables total, USER_INPUT definitions, validation rules, zero-config walkthrough, parameter interaction notes. |
 
-**Reading order:** Start with this overview, then read the SuperLink spec (01), then SuperNode spec (02), then the contextualization reference (03) for implementation.
+### Phase 2: Security and Certificate Automation
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| TLS Certificate Lifecycle | [`spec/04-tls-certificate-lifecycle.md`](04-tls-certificate-lifecycle.md) | APPL-04 | SuperLink TLS: self-signed CA generation (OpenSSL), dual provisioning (auto-gen vs operator-provided), boot sequence changes (Step 7a), Docker TLS flags, OneGate CA cert publication (FL_TLS, FL_CA_CERT). |
+| SuperNode TLS Trust | [`spec/05-supernode-tls-trust.md`](05-supernode-tls-trust.md) | APPL-04 | SuperNode TLS: CA cert retrieval from OneGate, static provisioning fallback, TLS mode detection (4-case priority), boot sequence changes (Step 7b), Docker `--root-certificates`, end-to-end TLS handshake walkthrough. |
+
+**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS implementation, continue with Phase 2 specs (04 for SuperLink TLS, then 05 for SuperNode TLS and end-to-end walkthrough).
 
 ---
 
@@ -216,6 +227,6 @@ This spec is Phase 1 of a 9-phase specification project. Each subsequent phase b
 
 ---
 
-*Specification Overview: Base Appliance Architecture*
-*Phase: 01 - Base Appliance Architecture*
-*Version: 1.0*
+*Specification Overview: Flower-OpenNebula Appliance Architecture*
+*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation*
+*Version: 1.1*
