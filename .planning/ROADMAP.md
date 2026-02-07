@@ -48,11 +48,11 @@ Plans:
   1. The spec defines the exact certificate generation sequence (CA creation, server cert signing, file paths, and ownership set to UID 49999)
   2. The spec defines how the SuperLink publishes its CA certificate to OneGate and how SuperNodes retrieve and trust it
   3. A reader can trace the complete TLS handshake path from SuperNode boot through certificate retrieval to authenticated gRPC connection
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md -- TLS certificate lifecycle specification (SuperLink: generation, provisioning, OneGate publication)
+- [ ] 02-02-PLAN.md -- SuperNode TLS trust and end-to-end handshake walkthrough
 
 ### Phase 3: ML Framework Variants and Use Cases
 **Goal**: The spec defines appliance variant strategy (which ML frameworks get dedicated images, with size targets) and provides at least three pre-built use case templates deployable purely through contextualization
