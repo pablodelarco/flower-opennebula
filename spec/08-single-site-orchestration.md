@@ -405,3 +405,546 @@ fi
 ### Scope Limitation
 
 Auto-computed `partition-id` is relevant only when using pre-built use case templates (`FL_USE_CASE != none`) that rely on `partition-id` and `num-partitions` in `--node-config` for data sharding. Custom ClientApps may implement their own partitioning logic (e.g., using VMID modulo, hostname hashing, or external coordination) and would set `FL_NODE_CONFIG` explicitly or ignore it entirely.
+
+---
+
+## 6. Deployment Sequence
+
+This section traces the complete lifecycle of a Flower federated learning service from the moment a deployer clicks "Instantiate" to the moment the service reaches RUNNING state. The sequence demonstrates how `ready_status_gate: true` gates SuperNode deployment on SuperLink application-level readiness, ensuring that SuperNodes never boot before the SuperLink is healthy.
+
+### End-to-End Walkthrough
+
+**Step 1: User instantiates service template** (~0s)
+
+The deployer instantiates the Flower Federated Learning service template via Sunstone UI or CLI. Sunstone presents the `user_inputs` form (FLOWER_VERSION, FL_TLS_ENABLED, FL_LOG_LEVEL at service level; FL_NUM_ROUNDS, FL_STRATEGY, etc. at SuperLink role level; ML_FRAMEWORK, FL_USE_CASE at SuperNode role level). The deployer accepts defaults or customizes values.
+
+```bash
+# CLI equivalent
+oneflow-template instantiate <template_id>
+
+# With custom values
+oneflow-template instantiate <template_id> \
+  --extra_template '{"custom_attrs_values": {"FLOWER_VERSION": "1.26.0", "FL_TLS_ENABLED": "YES"}}'
+```
+
+OneFlow creates a new service instance and sets its state to PENDING.
+
+**Step 2: OneFlow creates SuperLink VM** (~5-15s)
+
+OneFlow processes the `superlink` role first (array index 0 in `"deployment": "straight"`). It creates 1 VM from the SuperLink `template_id`, injecting the merged CONTEXT variables: service-level `user_inputs` (FLOWER_VERSION, FL_TLS_ENABLED, FL_LOG_LEVEL), role-level `user_inputs` (FL_NUM_ROUNDS, FL_STRATEGY, FL_MIN_FIT_CLIENTS, FL_MIN_EVALUATE_CLIENTS, FL_MIN_AVAILABLE_CLIENTS), and infrastructure `template_contents` (TOKEN=YES, REPORT_READY=YES, READY_SCRIPT_PATH, NETWORK=YES).
+
+The service state transitions to DEPLOYING. The SuperLink VM enters PENDING, then RUNNING at the hypervisor level.
+
+**Step 3: SuperLink boot sequence executes** (~30-90s)
+
+The SuperLink VM runs its 12-step boot sequence (see [`spec/01-superlink-appliance.md`](01-superlink-appliance.md), Section 6):
+
+1. OS boots, contextualization agent initializes (Step 1).
+2. `configure.sh` sources context variables, validates configuration, sets defaults (Steps 2-5).
+3. Docker environment file and systemd unit are generated (Steps 6-8).
+4. If `FL_TLS_ENABLED=YES`: TLS certificate setup executes (Step 7a, see [`spec/04-tls-certificate-lifecycle.md`](04-tls-certificate-lifecycle.md), Section 5).
+5. Docker daemon readiness wait, version override handling (Steps 9-10).
+6. Flower SuperLink container starts and begins listening on port 9092 (Step 10).
+7. Health check loop polls TCP port 9092 until the Fleet API accepts connections (Step 11).
+
+**Step 4: SuperLink publishes to OneGate** (~0s after health check)
+
+Once the health check passes, `bootstrap.sh` publishes the SuperLink state to OneGate via HTTP PUT (see [`spec/01-superlink-appliance.md`](01-superlink-appliance.md), Section 10):
+
+| Attribute | Value | Source |
+|-----------|-------|--------|
+| `FL_READY` | `YES` | Health check passed |
+| `FL_ENDPOINT` | `{vm_ip}:9092` | VM IP detection |
+| `FL_VERSION` | `1.25.0` (or override) | FLOWER_VERSION variable |
+| `FL_ROLE` | `superlink` | Fixed |
+| `FL_TLS` | `YES` or `NO` | FL_TLS_ENABLED check (see [`spec/04-tls-certificate-lifecycle.md`](04-tls-certificate-lifecycle.md), Section 7) |
+| `FL_CA_CERT` | base64 CA cert (if TLS) | `/opt/flower/certs/ca.crt` |
+
+This publication makes the SuperLink endpoint and TLS state available to all VMs in the service via OneGate `GET /service`.
+
+**Step 5: SuperLink VM reports READY** (~0s after publication)
+
+The `REPORT_READY=YES` contextualization mechanism executes `READY_SCRIPT_PATH=/opt/flower/scripts/health-check.sh`. Since the health check already passed in Step 3, the script returns exit code 0. The contextualization agent calls OneGate to set `READY=YES` in the SuperLink VM's user template (see [`spec/01-superlink-appliance.md`](01-superlink-appliance.md), Section 9).
+
+**Step 6: ready_status_gate satisfied -- SuperLink role becomes RUNNING** (CRITICAL)
+
+OneFlow detects `READY=YES` on the SuperLink VM. Because `ready_status_gate: true` is set at the service level, OneFlow's definition of "running" requires BOTH the hypervisor reporting the VM as running AND the VM's user template containing `READY=YES`. With both conditions met, OneFlow marks the `superlink` role as RUNNING.
+
+**This is the critical gate.** Without `ready_status_gate: true`, OneFlow would consider the SuperLink VM "running" as soon as the hypervisor boots it -- before the OS loads, before Docker starts, before Flower listens on port 9092. The `supernode` role's `parents: ["superlink"]` dependency means SuperNode VMs are NOT created until the `superlink` role reaches RUNNING state. The `ready_status_gate` ensures this transition happens only after the SuperLink application is genuinely ready to accept connections.
+
+**Step 7: OneFlow creates SuperNode VMs** (~5-15s)
+
+With the `superlink` role RUNNING, OneFlow creates the `supernode` role's VMs. All SuperNode VMs (default: 2) are created in parallel from the SuperNode `template_id`, with the same CONTEXT injection pattern: service-level user_inputs, role-level user_inputs (ML_FRAMEWORK, FL_USE_CASE, FL_NODE_CONFIG), and infrastructure template_contents (TOKEN=YES, REPORT_READY=YES, READY_SCRIPT_PATH, NETWORK=YES).
+
+SuperNode VMs enter PENDING, then RUNNING at the hypervisor level.
+
+**Step 8: SuperNode boot sequence executes on each VM** (~20-35s per VM, in parallel)
+
+Each SuperNode VM runs its 13-step boot sequence (see [`spec/02-supernode-appliance.md`](02-supernode-appliance.md), Section 7):
+
+1. OS boots, contextualization agent initializes (Step 1).
+2. `configure.sh` sources context variables, validates configuration (Steps 2-3).
+3. Mount directories created, Docker configuration generated, systemd unit written (Steps 4-6).
+4. If `FL_TLS_ENABLED=YES`: TLS mode detection and CA cert retrieval executes (Step 7b, see [`spec/05-supernode-tls-trust.md`](05-supernode-tls-trust.md)).
+5. SuperLink discovery executes (Step 7) -- see Step 9 below.
+6. Docker daemon wait, version override, container start (Steps 8-10).
+7. Container health check (Step 11), OneGate publication (Step 12), REPORT_READY (Step 13).
+
+**Step 9: SuperNode discovers SuperLink via OneGate** (~0s, first attempt)
+
+During the discovery phase (Step 7 of the SuperNode boot sequence), each SuperNode queries `GET ${ONEGATE_ENDPOINT}/service` and parses the response to extract `FL_ENDPOINT` from the `superlink` role's nodes (see [`spec/02-supernode-appliance.md`](02-supernode-appliance.md), Section 6c-6d).
+
+In a OneFlow deployment with `ready_status_gate: true`, discovery succeeds on the first attempt. The reason: SuperNode VMs were not created until the SuperLink role was RUNNING (Step 6), and the SuperLink published its `FL_ENDPOINT` to OneGate before reporting READY (Steps 4-5). By the time any SuperNode queries OneGate, the SuperLink's attributes are already available.
+
+The discovery retry loop (30 attempts, 10-second interval, 5-minute timeout) remains in the SuperNode boot script as defense-in-depth for edge cases: OneGate caching delays, transient network issues, or non-OneFlow deployments where `ready_status_gate` is not applicable.
+
+**Step 10: SuperNode containers start and connect** (~10-20s per VM)
+
+Each SuperNode's Flower container starts with the discovered SuperLink address and connects to the Fleet API on port 9092 via gRPC. The connection is immediate because the SuperLink is already listening. If TLS is enabled, the SuperNode uses the CA certificate retrieved from OneGate (or provided statically) to verify the SuperLink's server certificate.
+
+**Step 11: SuperNode VMs report READY** (~0s after container start)
+
+Each SuperNode completes its boot sequence: the container health check passes (Docker running-state check), the SuperNode publishes its status to OneGate (FL_NODE_READY=YES, FL_NODE_ID, FL_VERSION), and `REPORT_READY` sets `READY=YES` on the VM's user template.
+
+**Step 12: Service reaches RUNNING state** (~0s after all VMs ready)
+
+Once all SuperNode VMs have `READY=YES` (satisfying the `ready_status_gate` for the `supernode` role), OneFlow marks the `supernode` role as RUNNING. With all roles RUNNING, the service state transitions from DEPLOYING to RUNNING. The Flower federated learning cluster is fully operational.
+
+### Deployment Timeline
+
+```
+t=0s    User instantiates service template
+        |
+        +-- Service state: PENDING -> DEPLOYING
+        |
+t=5s    OneFlow creates SuperLink VM
+        |
+        +-- SuperLink boot: OS -> configure.sh -> bootstrap.sh
+        |
+t=35s   SuperLink health check passes (port 9092 listening)
+t=35s   SuperLink publishes to OneGate (FL_READY=YES, FL_ENDPOINT)
+t=35s   SuperLink reports READY=YES
+        |
+        +-- ready_status_gate SATISFIED
+        +-- superlink role: RUNNING
+        |
+t=40s   OneFlow creates SuperNode VMs (all in parallel)
+        |
+        +-- SuperNode boot (parallel): OS -> configure.sh -> discover -> bootstrap.sh
+        |
+t=55s   SuperNode discovery: first attempt succeeds (SuperLink already published)
+t=65s   SuperNode containers running, connected to SuperLink
+t=70s   All SuperNode VMs report READY=YES
+        |
+        +-- supernode role: RUNNING
+        +-- Service state: RUNNING
+        |
+t=70s   Flower cluster fully operational
+```
+
+**Nominal total time:** 60-90 seconds from instantiation to RUNNING. The dominant factor is SuperLink boot time (30-90 seconds depending on hardware and TLS generation). SuperNode boot adds ~30 seconds after the `ready_status_gate` is satisfied.
+
+**Worst case (version override with Docker pull):** If `FLOWER_VERSION` differs from the pre-baked version, the SuperLink boot includes a Docker pull (Step 10 of its boot sequence). This can add 30-120 seconds depending on network speed, extending total deployment time to 120-210 seconds.
+
+---
+
+## 7. OneGate Coordination Protocol (Service Context)
+
+This section describes how the existing OneGate publication and discovery contracts -- defined individually in Phase 1 and Phase 2 specs -- function together within the OneFlow service context. No new contracts are introduced; the orchestration spec ties together what is already specified.
+
+### Data Flow Overview
+
+```
+SuperLink VM                       OneGate                        SuperNode VM(s)
+     |                                |                                |
+     | (1) Health check passes        |                                |
+     |                                |                                |
+     | (2) PUT /vm                    |                                |
+     |   FL_READY=YES                 |                                |
+     |   FL_ENDPOINT=ip:9092  ------->| Stores in                     |
+     |   FL_TLS=YES|NO                | USER_TEMPLATE                 |
+     |   FL_CA_CERT=<base64>          |                                |
+     |                                |                                |
+     | (3) REPORT_READY -> READY=YES  |                                |
+     |                                |                                |
+     |                                |   ready_status_gate satisfied  |
+     |                                |   OneFlow creates SuperNodes   |
+     |                                |                                |
+     |                                |  (4) GET /service <------------|
+     |                                |                                |
+     |                                |  (5) Full service JSON ------->|
+     |                                |                                |
+     |                                |      Parse: extract            |
+     |                                |      FL_ENDPOINT from          |
+     |                                |      superlink role nodes      |
+     |                                |                                |
+     |<------ (6) gRPC connect to FL_ENDPOINT (port 9092) ------------|
+     |                                                                 |
+```
+
+### SuperLink Publication (Phase 1 + Phase 2 Contracts)
+
+The SuperLink publishes its state to OneGate as part of Step 12 of its boot sequence ([`spec/01-superlink-appliance.md`](01-superlink-appliance.md), Section 10). When TLS is enabled, two additional attributes are published ([`spec/04-tls-certificate-lifecycle.md`](04-tls-certificate-lifecycle.md), Section 7).
+
+**Complete published attributes:**
+
+| Attribute | Value | Defined In | Purpose |
+|-----------|-------|------------|---------|
+| `FL_READY` | `YES` | `spec/01`, Section 10 | Readiness flag -- used by defensive jq filter |
+| `FL_ENDPOINT` | `{vm_ip}:9092` | `spec/01`, Section 10 | Fleet API address for SuperNode connections |
+| `FL_VERSION` | `1.25.0` (or override) | `spec/01`, Section 10 | Running Flower version |
+| `FL_ROLE` | `superlink` | `spec/01`, Section 10 | Appliance role identifier |
+| `FL_TLS` | `YES` or `NO` | `spec/04`, Section 7 | TLS mode indicator |
+| `FL_CA_CERT` | base64 CA cert | `spec/04`, Section 7 | CA certificate for TLS verification (only when FL_TLS=YES) |
+
+**Publication timing relative to ready_status_gate:** OneGate publication happens BEFORE `REPORT_READY` marks the VM as `READY=YES`. The sequence is:
+
+1. Health check passes (port 9092 listening).
+2. `bootstrap.sh` publishes FL_READY, FL_ENDPOINT, FL_TLS, FL_CA_CERT to OneGate via PUT.
+3. `REPORT_READY` mechanism executes `health-check.sh`, which returns 0 (already passing).
+4. Contextualization agent sets `READY=YES` on the VM's user template.
+5. OneFlow detects `READY=YES` and satisfies the `ready_status_gate`.
+
+This ordering guarantees that by the time OneFlow creates SuperNode VMs, all SuperLink attributes are already available in OneGate. SuperNode discovery is not a race condition.
+
+### SuperNode Discovery (Phase 1 Contract)
+
+The SuperNode discovers the SuperLink via OneGate during Step 7 of its boot sequence ([`spec/02-supernode-appliance.md`](02-supernode-appliance.md), Section 6c-6d). In the OneFlow service context, discovery queries the service-scoped OneGate endpoint.
+
+**OneGate query:**
+
+```bash
+SERVICE_JSON=$(curl -s "${ONEGATE_ENDPOINT}/service" \
+  -H "X-ONEGATE-TOKEN: ${ONEGATE_TOKEN}" \
+  -H "X-ONEGATE-VMID: ${VMID}")
+```
+
+**OneGate /service response structure:**
+
+```json
+{
+  "SERVICE": {
+    "id": "42",
+    "name": "Flower Federated Learning",
+    "roles": [
+      {
+        "name": "superlink",
+        "cardinality": 1,
+        "state": "2",
+        "nodes": [
+          {
+            "deploy_id": 100,
+            "running": true,
+            "vm_info": {
+              "VM": {
+                "USER_TEMPLATE": {
+                  "FL_READY": "YES",
+                  "FL_ENDPOINT": "192.168.1.100:9092",
+                  "FL_VERSION": "1.25.0",
+                  "FL_ROLE": "superlink",
+                  "FL_TLS": "YES",
+                  "FL_CA_CERT": "<base64-encoded-ca-cert>"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "supernode",
+        "cardinality": 2,
+        "state": "1",
+        "nodes": [
+          {
+            "deploy_id": 101,
+            "running": true,
+            "vm_info": { "VM": { "USER_TEMPLATE": {} } }
+          },
+          {
+            "deploy_id": 102,
+            "running": true,
+            "vm_info": { "VM": { "USER_TEMPLATE": {} } }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Parsing -- standard jq filter:**
+
+```bash
+FL_ENDPOINT=$(echo "$SERVICE_JSON" | jq -r '
+  .SERVICE.roles[]
+  | select(.name == "superlink")
+  | .nodes[0].vm_info.VM.USER_TEMPLATE.FL_ENDPOINT // empty
+')
+```
+
+**Parsing -- defensive jq filter (recommended):**
+
+For defense-in-depth, the discovery script should filter by `FL_READY=YES` rather than relying on `nodes[0]`. This handles the theoretical case where the SuperLink cardinality is incorrectly set above 1 and the first node is unhealthy:
+
+```bash
+FL_ENDPOINT=$(echo "$SERVICE_JSON" | jq -r '
+  .SERVICE.roles[]
+  | select(.name == "superlink")
+  | .nodes[]
+  | select(.vm_info.VM.USER_TEMPLATE.FL_READY == "YES")
+  | .vm_info.VM.USER_TEMPLATE.FL_ENDPOINT
+' | head -1)
+```
+
+Similarly, TLS attributes are extracted from the same node:
+
+```bash
+FL_TLS=$(echo "$SERVICE_JSON" | jq -r '
+  .SERVICE.roles[]
+  | select(.name == "superlink")
+  | .nodes[]
+  | select(.vm_info.VM.USER_TEMPLATE.FL_READY == "YES")
+  | .vm_info.VM.USER_TEMPLATE.FL_TLS // empty
+')
+
+FL_CA_CERT=$(echo "$SERVICE_JSON" | jq -r '
+  .SERVICE.roles[]
+  | select(.name == "superlink")
+  | .nodes[]
+  | select(.vm_info.VM.USER_TEMPLATE.FL_READY == "YES")
+  | .vm_info.VM.USER_TEMPLATE.FL_CA_CERT // empty
+')
+```
+
+### Discovery Behavior in OneFlow vs Standalone
+
+| Scenario | Discovery Behavior | Retry Expected |
+|----------|-------------------|----------------|
+| OneFlow with `ready_status_gate: true` | First attempt succeeds. SuperLink published before SuperNode was created. | No (defense-in-depth only) |
+| OneFlow with `ready_status_gate: false` | SuperLink may not be ready. Retry loop executes until FL_ENDPOINT appears. | Yes (1-30 attempts typical) |
+| OneFlow with `"deployment": "none"` | Race condition. SuperNodes and SuperLink boot simultaneously. Retry loop handles timing. | Yes (often full 30 attempts) |
+| Standalone VM (no OneFlow) | OneGate unavailable (no service context). Static `FL_SUPERLINK_ADDRESS` required. | N/A (static mode) |
+
+### OneGate Prerequisite: TOKEN=YES
+
+Both SuperLink and SuperNode VM templates MUST have `TOKEN=YES` in their CONTEXT section. This variable instructs the contextualization agent to request an authentication token from OpenNebula and write it to `/run/one-context/token.txt`. Without this token:
+
+- SuperLink cannot publish to OneGate (PUT fails with HTTP 401).
+- SuperNode cannot query OneGate (GET fails with HTTP 401).
+- `REPORT_READY` cannot set `READY=YES` on the VM (OneGate call fails).
+
+`TOKEN=YES` is set in the `template_contents` of each role (see Section 3). It is an infrastructure-level variable, not a user_input, because deployers should never need to modify it.
+
+---
+
+## 8. Scaling Operations
+
+The SuperNode role supports runtime scaling within the bounds defined by `min_vms` and `max_vms`. The SuperLink role is a hard singleton and cannot be scaled.
+
+### Scale SuperNode Count Up
+
+```bash
+# Scale to 5 SuperNodes (from current count)
+oneflow scale <service_id> supernode 5
+```
+
+New SuperNode VMs follow the same boot sequence as the initial deployment (Steps 8-13 from Section 6):
+
+1. OneFlow creates the additional SuperNode VMs from the `template_id` with the same CONTEXT variables.
+2. Each new VM boots, runs `configure.sh`, and executes OneGate discovery.
+3. Discovery succeeds immediately -- the SuperLink has been publishing its endpoint since the initial deployment.
+4. New containers start, connect to the SuperLink's Fleet API, and report READY.
+5. The service may temporarily enter SCALING state while new VMs are deploying, then returns to RUNNING once all VMs report READY.
+
+**Partition-id for scaled VMs:** New SuperNode VMs compute their `partition-id` from the updated `nodes` array in the OneGate service response (see Section 5). The new VM's index in the current array determines its `partition-id`. Existing SuperNodes retain their original values computed at their boot time.
+
+**Limitation:** Partition-id values assigned during scale-up may conflict with the original partitioning scheme if VMs were previously removed (see Section 5, Edge Cases). For production deployments requiring strict data partition isolation, use `FL_NODE_CONFIG` override with externally managed partition assignments.
+
+**Interaction with FL_MIN_FIT_CLIENTS:** Scaling up the SuperNode count is useful when the current count is below `FL_MIN_FIT_CLIENTS` or `FL_MIN_AVAILABLE_CLIENTS`. Adding SuperNodes to meet the threshold allows training rounds to begin. Conversely, scaling above the threshold provides more data diversity per round.
+
+### Scale SuperNode Count Down
+
+```bash
+# Scale down to 3 SuperNodes (from current count)
+oneflow scale <service_id> supernode 3
+```
+
+OneFlow removes VMs to reach the target cardinality (newest VMs removed first by default):
+
+1. OneFlow sends shutdown to the excess SuperNode VMs.
+2. Docker receives SIGTERM, the Flower SuperNode container shuts down gracefully.
+3. The SuperLink detects client disconnection and removes the SuperNode from its active client list.
+4. Active training rounds continue if the remaining connected clients meet the `FL_MIN_FIT_CLIENTS` threshold.
+5. If the remaining client count drops below `FL_MIN_FIT_CLIENTS`, the current training round fails and the SuperLink waits for enough clients before starting the next round.
+
+**Floor enforcement:** OneFlow rejects scale-down requests below `min_vms` (default: 2):
+
+```bash
+# This fails:
+oneflow scale <service_id> supernode 1
+# Error: cannot scale role "supernode" below min_vms (2)
+```
+
+### SuperLink Cannot Be Scaled
+
+The SuperLink role has `min_vms: 1` and `max_vms: 1`. Any scaling request is rejected by OneFlow:
+
+```bash
+# This fails:
+oneflow scale <service_id> superlink 2
+# Error: cannot scale role "superlink" above max_vms (1)
+```
+
+The `--force` flag bypasses min/max bounds but MUST NOT be used on the SuperLink role. Multiple SuperLink instances create independent coordinators with no shared state, causing a split-brain federation failure (see Section 4).
+
+### Service Status Inspection
+
+```bash
+# Show full service status including role states and VM details
+oneflow show <service_id>
+
+# JSON output for programmatic access
+oneflow show <service_id> --json
+```
+
+The output includes each role's current state, cardinality, and per-VM details (ID, IP, READY status).
+
+### Elasticity Policies (Preview)
+
+OneFlow supports automatic scaling via elasticity policies that evaluate expressions at configurable intervals. These are only applicable to the `supernode` role. Detailed auto-scaling trigger configuration is deferred to Phase 9 (Edge and Auto-Scaling).
+
+**Example structure (Phase 9 scope):**
+
+```json
+{
+  "name": "supernode",
+  "elasticity_policies": [
+    {
+      "type": "CHANGE",
+      "adjust": 1,
+      "cooldown": 300,
+      "expression": "ATT > 0.8"
+    }
+  ]
+}
+```
+
+Elasticity policies MUST NOT be defined on the `superlink` role.
+
+---
+
+## 9. Service Lifecycle Management
+
+This section defines the operational lifecycle of a deployed Flower federated learning service: state transitions, management commands, failure handling, and shutdown behavior.
+
+### Service State Machine
+
+```
+PENDING ──> DEPLOYING ──> RUNNING ──> UNDEPLOYING ──> DONE
+                |             |
+                |             +──> SCALING ──> RUNNING
+                |             |
+                |             +──> WARNING
+                |
+                +──> FAILED_DEPLOYING
+```
+
+| State | Meaning |
+|-------|---------|
+| PENDING | Service created, no VMs deployed yet. |
+| DEPLOYING | Roles are being deployed sequentially (straight deployment). SuperLink role deploys first, then SuperNode role after `ready_status_gate` is satisfied. |
+| RUNNING | All roles have reached RUNNING state. The Flower cluster is fully operational. |
+| SCALING | A scale operation is in progress. New VMs are being created or excess VMs are being removed. |
+| WARNING | One or more VMs are in an unexpected state (e.g., SuperLink VM rebooted). The service is partially operational. |
+| UNDEPLOYING | VMs are being terminated in reverse dependency order. |
+| DONE | All VMs terminated. Service is complete. |
+| FAILED_DEPLOYING | A role failed to deploy (e.g., SuperLink health check timed out). Manual intervention required. |
+
+### Deploy
+
+**Via Sunstone UI:** Navigate to OneFlow Templates, select "Flower Federated Learning", click Instantiate. Fill in user_inputs when prompted. Click Deploy.
+
+**Via CLI:**
+
+```bash
+# Default deployment
+oneflow-template instantiate <template_id>
+
+# With parameter overrides
+oneflow-template instantiate <template_id> \
+  --extra_template '{"custom_attrs_values": {
+    "FLOWER_VERSION": "1.26.0",
+    "FL_TLS_ENABLED": "YES",
+    "FL_NUM_ROUNDS": "10",
+    "FL_STRATEGY": "FedProx",
+    "ML_FRAMEWORK": "tensorflow"
+  }}'
+```
+
+### Show Status
+
+```bash
+oneflow show <service_id>
+```
+
+The output displays the service state, each role's state and cardinality, and per-VM details.
+
+### Undeploy
+
+```bash
+oneflow delete <service_id>
+```
+
+OneFlow terminates VMs in reverse dependency order:
+
+1. **SuperNode VMs terminated first.** Each SuperNode container receives SIGTERM (via the `"shutdown_action": "shutdown"` setting). Docker forwards SIGTERM to the Flower process, which disconnects from the SuperLink and exits cleanly.
+
+2. **SuperLink VM terminated last.** After all SuperNode VMs are terminated, the SuperLink VM is shut down. The SuperLink's SQLite state database is written cleanly during the graceful shutdown.
+
+**Why reverse order matters:** Terminating the SuperLink first would cause all SuperNode containers to lose their gRPC connection simultaneously, triggering reconnection loops that will never succeed. The reverse order ensures SuperNodes shut down gracefully while the SuperLink is still available.
+
+### Shutdown Action
+
+The service template specifies `"shutdown_action": "shutdown"` at both the service and role levels. This means:
+
+- VMs receive an ACPI shutdown signal (equivalent to pressing the power button).
+- The guest OS processes the signal, systemd stops services in order, and Docker sends SIGTERM to containers.
+- Flower processes handle SIGTERM gracefully: in-progress operations complete, connections close, and the process exits with code 0.
+
+The alternative `"shutdown-hard"` sends an immediate power-off (equivalent to pulling the power cord). This risks corrupting the SuperLink's SQLite state database and is NOT recommended.
+
+### Failure Handling
+
+**SuperLink fails to report READY during initial deployment:**
+
+The service remains in DEPLOYING state. OneFlow waits for the `ready_status_gate` to be satisfied. If the SuperLink VM's health check times out (120 seconds), the VM publishes `FL_READY=NO` and does not report `READY=YES`. The service eventually transitions to FAILED_DEPLOYING after the OneFlow service timeout.
+
+The operator should inspect SuperLink logs:
+```bash
+# SSH into the SuperLink VM
+ssh root@<superlink_ip>
+
+# Check boot logs
+cat /var/log/one-appliance/flower-configure.log
+cat /var/log/one-appliance/flower-bootstrap.log
+
+# Check container logs
+docker logs flower-superlink
+
+# Check systemd service
+journalctl -u flower-superlink
+```
+
+**A SuperNode fails to report READY:**
+
+Other SuperNode VMs may still report READY independently. Whether the service transitions to RUNNING depends on whether the minimum VM threshold is met. If `min_vms: 2` and only 1 of 2 SuperNodes reports READY, the `supernode` role does not reach RUNNING and the service remains in DEPLOYING.
+
+**SuperLink VM crashes after service is RUNNING:**
+
+The SuperLink VM's systemd restart policy (`RestartPolicy: unless-stopped` on the Docker container) restarts the Flower container automatically. SuperNode containers, configured with `--max-retries 0` (unlimited reconnection), continuously attempt to reconnect to the SuperLink's Fleet API. Once the SuperLink container restarts and begins listening on port 9092, SuperNodes reconnect and training resumes.
+
+During the outage, the service may transition to WARNING state in OneFlow. The `REPORT_READY` mechanism re-evaluates on container restart: when the health check passes again, `READY=YES` is restored.
+
+**A SuperNode VM crashes after service is RUNNING:**
+
+The remaining SuperNodes continue training. The SuperLink detects the disconnection and adjusts the active client count. If the remaining count is still at or above `FL_MIN_FIT_CLIENTS`, training rounds continue normally. If below, the SuperLink waits for reconnection or new clients before starting the next round.
