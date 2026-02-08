@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Security and Certificate Automation** - Spec TLS certificate lifecycle, OneGate-based distribution, and Flower container permissions
 - [x] **Phase 3: ML Framework Variants and Use Cases** - Spec appliance variants per ML framework and pre-built use case templates
 - [x] **Phase 4: Single-Site Orchestration** - Spec the OneFlow service template for coordinated Flower cluster deployment
-- [ ] **Phase 5: Training Configuration** - Spec aggregation strategy selection, parameter exposure, and model checkpointing
+- [x] **Phase 5: Training Configuration** - Spec aggregation strategy selection, parameter exposure, and model checkpointing
 - [ ] **Phase 6: GPU Acceleration** - Spec NVIDIA GPU passthrough, CUDA memory management, and validation procedures
 - [ ] **Phase 7: Multi-Site Federation** - Spec cross-zone deployment architecture, networking, and certificate trust distribution
 - [ ] **Phase 8: Monitoring and Observability** - Spec structured logging, Prometheus/Grafana monitoring stack, dashboards, and alerting
@@ -96,8 +96,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Aggregation strategy reference, selection architecture, and checkpointing mechanism (ML-01, ML-04)
-- [ ] 05-02-PLAN.md -- Cross-cutting updates: contextualization reference, OneFlow service template, and overview (ML-01, ML-04)
+- [x] 05-01-PLAN.md -- Aggregation strategy reference, selection architecture, and checkpointing mechanism (ML-01, ML-04)
+- [x] 05-02-PLAN.md -- Cross-cutting updates: contextualization reference, OneFlow service template, and overview (ML-01, ML-04)
 
 ### Phase 6: GPU Acceleration
 **Goal**: The spec defines the complete GPU passthrough stack from host BIOS configuration through VM template to container runtime, including memory management and a validation procedure
@@ -173,7 +173,7 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 | 2. Security and Certificate Automation | 2/2 | Complete | 2026-02-07 |
 | 3. ML Framework Variants and Use Cases | 2/2 | Complete | 2026-02-07 |
 | 4. Single-Site Orchestration | 2/2 | Complete | 2026-02-07 |
-| 5. Training Configuration | 0/2 | Not started | - |
+| 5. Training Configuration | 2/2 | Complete | 2026-02-08 |
 | 6. GPU Acceleration | 0/2 | Not started | - |
 | 7. Multi-Site Federation | 0/3 | Not started | - |
 | 8. Monitoring and Observability | 0/2 | Not started | - |
