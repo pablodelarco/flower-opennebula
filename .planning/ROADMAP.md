@@ -108,11 +108,11 @@ Plans:
   2. The spec defines CUDA memory management options (per-process GPU memory fraction, multi-instance GPU support) and when each applies
   3. The spec includes a GPU validation script specification that an engineer could implement to verify the stack is correctly configured
   4. The spec addresses the CPU-only fallback path for environments without GPU passthrough capability
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
+- [ ] 06-01-PLAN.md -- GPU passthrough stack specification (Layers 1-4: host, VM template, container, application)
+- [ ] 06-02-PLAN.md -- Validation scripts and contextualization integration (FL_GPU_* variables, SuperNode boot sequence update)
 
 ### Phase 7: Multi-Site Federation
 **Goal**: The spec defines how to deploy a Flower federation across multiple OpenNebula zones with cross-zone networking, certificate trust, and gRPC connection resilience
@@ -174,7 +174,7 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 | 3. ML Framework Variants and Use Cases | 2/2 | Complete | 2026-02-07 |
 | 4. Single-Site Orchestration | 2/2 | Complete | 2026-02-07 |
 | 5. Training Configuration | 2/2 | Complete | 2026-02-08 |
-| 6. GPU Acceleration | 0/2 | Not started | - |
+| 6. GPU Acceleration | 0/2 | Planned | - |
 | 7. Multi-Site Federation | 0/3 | Not started | - |
 | 8. Monitoring and Observability | 0/2 | Not started | - |
 | 9. Edge and Auto-Scaling | 0/2 | Not started | - |
