@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 5 IN PROGRESS (Training Configuration). Plan 1 complete, Plan 2 pending.
+**Current focus:** Phase 5 COMPLETE (Training Configuration). Ready for Phase 6 (GPU) or implementation.
 
 ## Current Position
 
 Phase: 5 of 9 (Training Configuration)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-08 -- Completed 05-01-PLAN.md (aggregation strategy reference, selection architecture, and checkpointing)
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase complete
+Last activity: 2026-02-08 -- Completed 05-02-PLAN.md (spec integration for training configuration)
 
-Progress: [██████████░░░░░░░░░░] 50% (10/20 plans)
+Progress: [███████████░░░░░░░░░] 55% (11/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 6 min
-- Total execution time: 55 min
+- Total plans completed: 11
+- Average duration: 5 min
+- Total execution time: 57 min
 
 **By Phase:**
 
@@ -31,11 +31,11 @@ Progress: [██████████░░░░░░░░░░] 50% (10
 | 2. Security and Certificate Automation | 2/2 | 11 min | 6 min |
 | 3. ML Framework Variants and Use Cases | 2/2 | 7 min | 4 min |
 | 4. Single-Site Orchestration | 2/2 | 6 min | 3 min |
-| 5. Training Configuration | 1/2 | 18 min | 18 min |
+| 5. Training Configuration | 2/2 | 20 min | 10 min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (4 min), 04-01 (4 min), 04-02 (2 min), 05-01 (18 min)
-- Trend: 05-01 is the most comprehensive plan so far (949-line spec with 6 strategies, checkpointing, and failure recovery)
+- Last 5 plans: 04-01 (4 min), 04-02 (2 min), 05-01 (18 min), 05-02 (2 min)
+- Trend: 05-01 was comprehensive (949-line spec); 05-02 was quick integration update
 
 *Updated after each plan completion*
 
@@ -108,6 +108,9 @@ Recent decisions affecting current work:
 - [05-01]: FL_RESUME_ROUND NOT implemented (Flower has no round offset concept)
 - [05-01]: Boot-time byzantine client count validation (n >= 2f+3 for Krum, n >= 4f+3 for Bulyan)
 - [05-01]: Appliance does NOT manage storage backends (checkpoint storage is infrastructure concern)
+- [05-02]: Phase 5 variables are functional (not placeholders) in contextualization reference
+- [05-02]: Strategy-specific parameters exposed at SuperLink role level only
+- [05-02]: Checkpointing configuration (FL_CHECKPOINT_*) grouped as SuperLink role-level user_inputs
 
 ### Pending Todos
 
@@ -121,6 +124,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-07T23:25:15Z
-Stopped at: Completed 05-01-PLAN.md (aggregation strategy reference, selection architecture, and checkpointing)
+Last session: 2026-02-08T07:58:02Z
+Stopped at: Completed 05-02-PLAN.md (spec integration for training configuration)
 Resume file: None
