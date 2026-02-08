@@ -1,7 +1,7 @@
 # Flower-OpenNebula Integration: Appliance Specification
 
-**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration
-**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01
+**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration
+**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01, ML-01, ML-04
 **Status:** Specification
 
 ---
@@ -17,9 +17,9 @@ This specification defines the Flower federated learning appliances for the Open
 - TLS certificate automation: self-signed CA generation, cert distribution via OneGate, SuperNode trust (Phase 2).
 - ML framework variants: PyTorch, TensorFlow, scikit-learn appliance variants and pre-built use case templates (Phase 3).
 - Single-site orchestration: OneFlow service template, deployment sequencing, OneGate coordination, scaling operations (Phase 4).
+- Training configuration: aggregation strategy selection, strategy-specific parameters, model checkpointing, and failure recovery (Phase 5).
 
 **What this specification does NOT cover (deferred to later phases):**
-- Training configuration and checkpointing (Phase 5)
 - GPU passthrough (Phase 6)
 - Multi-site federation (Phase 7)
 - Monitoring and observability (Phase 8)
@@ -122,7 +122,13 @@ This specification defines the Flower federated learning appliances for the Open
 |---------|------|-------------|---------|
 | Single-Site Orchestration | [`spec/08-single-site-orchestration.md`](08-single-site-orchestration.md) | ORCH-01 | OneFlow service template: role structure, user_inputs hierarchy, cardinality config, deployment sequencing, OneGate coordination protocol, scaling operations, service lifecycle, anti-patterns. |
 
-**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08) which ties together all previous phases.
+### Phase 5: Training Configuration
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| Training Configuration | [`spec/09-training-configuration.md`](09-training-configuration.md) | ML-01, ML-04 | Aggregation strategy selection (6 strategies), strategy-specific parameters, model checkpointing, resume workflow, failure recovery. |
+
+**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08). For training configuration, read Phase 5 (09) which builds on the orchestration foundation.
 
 ---
 
@@ -241,5 +247,5 @@ This spec is Phase 1 of a 9-phase specification project. Each subsequent phase b
 ---
 
 *Specification Overview: Flower-OpenNebula Appliance Architecture*
-*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration*
-*Version: 1.2*
+*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration*
+*Version: 1.3*
