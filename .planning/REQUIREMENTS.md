@@ -23,10 +23,10 @@ Requirements for initial release of the technical specification.
 
 ### Machine Learning & Training
 
-- [ ] **ML-01**: Spec defines aggregation strategy selection via contextualization — FedAvg, FedProx, FedAdam, byzantine-robust options with parameter exposure
+- [x] **ML-01**: Spec defines aggregation strategy selection via contextualization — FedAvg, FedProx, FedAdam, byzantine-robust options with parameter exposure
 - [ ] **ML-02**: Spec defines GPU passthrough configuration — NVIDIA PCI passthrough, UEFI/q35 VM template, Container Toolkit, CUDA memory management, validation script
 - [x] **ML-03**: Spec defines pre-built use case templates — at minimum: image classification (ResNet), anomaly detection (IoT), LLM fine-tuning (FlowerTune/PEFT) with contextualization-only deployment
-- [ ] **ML-04**: Spec defines model checkpointing to persistent storage — automatic save every N rounds, resume from checkpoint after failure, storage backend options
+- [x] **ML-04**: Spec defines model checkpointing to persistent storage — automatic save every N rounds, resume from checkpoint after failure, storage backend options
 
 ### Observability
 
@@ -77,10 +77,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ORCH-01 | Phase 4: Single-Site Orchestration | Complete |
 | ORCH-02 | Phase 7: Multi-Site Federation | Pending |
 | ORCH-03 | Phase 9: Edge and Auto-Scaling | Pending |
-| ML-01 | Phase 5: Training Configuration | Pending |
+| ML-01 | Phase 5: Training Configuration | Complete |
 | ML-02 | Phase 6: GPU Acceleration | Pending |
 | ML-03 | Phase 3: ML Framework Variants and Use Cases | Complete |
-| ML-04 | Phase 5: Training Configuration | Pending |
+| ML-04 | Phase 5: Training Configuration | Complete |
 | OBS-01 | Phase 8: Monitoring and Observability | Pending |
 | OBS-02 | Phase 8: Monitoring and Observability | Pending |
 | EDGE-01 | Phase 9: Edge and Auto-Scaling | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-07 after Phase 4 completion*
+*Last updated: 2026-02-08 after Phase 5 completion*
