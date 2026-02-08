@@ -21,9 +21,10 @@ This section defines the OneFlow service template that deploys a complete Flower
 - Scaling operations and service lifecycle management (Phase 4, Plan 2).
 - Multi-site federation across OpenNebula zones (Phase 7).
 - Auto-scaling triggers and elasticity policies (Phase 9).
-- Training configuration, aggregation strategy internals, and checkpointing (Phase 5).
+- Training configuration internals and checkpointing (see [`spec/09-training-configuration.md`](09-training-configuration.md)).
 
 **Cross-references:**
+- Training configuration: [`spec/09-training-configuration.md`](09-training-configuration.md) -- aggregation strategy selection, strategy-specific parameters, model checkpointing, failure recovery.
 - SuperLink appliance: [`spec/01-superlink-appliance.md`](01-superlink-appliance.md) -- VM template, boot sequence, OneGate publication contract (Section 10), parameters (Section 12).
 - SuperNode appliance: [`spec/02-supernode-appliance.md`](02-supernode-appliance.md) -- VM template, discovery model (Section 6), parameters (Section 13).
 - Contextualization reference: [`spec/03-contextualization-reference.md`](03-contextualization-reference.md) -- complete variable definitions, USER_INPUT format, validation rules.
@@ -91,6 +92,14 @@ OneFlow automatically propagates service-level user_inputs to all roles' VM CONT
 | `FL_MIN_FIT_CLIENTS` | Minimum client thresholds are SuperLink configuration. They control when the server initiates training rounds. |
 | `FL_MIN_EVALUATE_CLIENTS` | Same rationale as above -- evaluation gating is server-side. |
 | `FL_MIN_AVAILABLE_CLIENTS` | Same rationale -- availability gating is server-side. |
+| `FL_PROXIMAL_MU` | FedProx proximal term is a server-side strategy parameter. |
+| `FL_SERVER_LR` | FedAdam server learning rate is a server-side parameter. |
+| `FL_CLIENT_LR` | FedAdam client learning rate is configured at server level (forwarded to clients via strategy). |
+| `FL_NUM_MALICIOUS` | Byzantine client count is a server-side aggregation parameter. |
+| `FL_TRIM_BETA` | FedTrimmedAvg trim fraction is a server-side aggregation parameter. |
+| `FL_CHECKPOINT_ENABLED` | Only the SuperLink saves checkpoints. |
+| `FL_CHECKPOINT_INTERVAL` | Only the SuperLink saves checkpoints. |
+| `FL_CHECKPOINT_PATH` | Only the SuperLink saves checkpoints. |
 
 These variables appear only in the SuperLink role's user_inputs. SuperNode VMs do not receive them in their CONTEXT.
 
@@ -157,10 +166,18 @@ The following JSON defines the complete OneFlow service template for a Flower fe
 
       "user_inputs": {
         "FL_NUM_ROUNDS": "O|number|Number of federated learning rounds||3",
-        "FL_STRATEGY": "O|list|Aggregation strategy|FedAvg,FedProx,FedAdam|FedAvg",
+        "FL_STRATEGY": "O|list|Aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg",
         "FL_MIN_FIT_CLIENTS": "O|number|Minimum clients for training round||2",
         "FL_MIN_EVALUATE_CLIENTS": "O|number|Minimum clients for evaluation||2",
-        "FL_MIN_AVAILABLE_CLIENTS": "O|number|Minimum available clients to start||2"
+        "FL_MIN_AVAILABLE_CLIENTS": "O|number|Minimum available clients to start||2",
+        "FL_PROXIMAL_MU": "O|number-float|FedProx proximal term (mu)||1.0",
+        "FL_SERVER_LR": "O|number-float|Server-side learning rate||0.1",
+        "FL_CLIENT_LR": "O|number-float|Client-side learning rate||0.1",
+        "FL_NUM_MALICIOUS": "O|number|Expected malicious clients (Krum/Bulyan)||0",
+        "FL_TRIM_BETA": "O|number-float|Trim fraction per tail (FedTrimmedAvg)||0.2",
+        "FL_CHECKPOINT_ENABLED": "O|boolean|Enable model checkpointing||NO",
+        "FL_CHECKPOINT_INTERVAL": "O|number|Save checkpoint every N rounds||5",
+        "FL_CHECKPOINT_PATH": "O|text|Checkpoint directory (container path)||/app/checkpoints"
       },
 
       "template_contents": {
@@ -225,7 +242,7 @@ The following JSON defines the complete OneFlow service template for a Flower fe
 | `min_vms` | `1` | Prevents scaling below 1. Combined with `max_vms: 1`, this creates a hard singleton constraint. |
 | `max_vms` | `1` | Prevents scaling above 1. OneFlow enforces this bound and rejects scale requests. |
 | `shutdown_action` | `"shutdown"` | Graceful shutdown for this role's VMs specifically. Ensures the SuperLink's SQLite state database is written cleanly. |
-| `user_inputs` | (5 variables) | SuperLink-specific parameters: training rounds, aggregation strategy, client thresholds. Not propagated to SuperNode VMs. |
+| `user_inputs` | (13 variables) | SuperLink-specific parameters: training rounds, aggregation strategy, client thresholds, strategy-specific parameters (Phase 5), and checkpointing configuration (Phase 5). Not propagated to SuperNode VMs. |
 | `template_contents` | (CONTEXT object) | Infrastructure variables injected into the VM's CONTEXT at instantiation. `TOKEN=YES` enables OneGate; `REPORT_READY=YES` with `READY_SCRIPT_PATH` gates readiness on Flower health. |
 
 **SuperNode role fields:**
@@ -944,6 +961,8 @@ Other SuperNode VMs may still report READY independently. Whether the service tr
 The SuperLink VM's systemd restart policy (`RestartPolicy: unless-stopped` on the Docker container) restarts the Flower container automatically. SuperNode containers, configured with `--max-retries 0` (unlimited reconnection), continuously attempt to reconnect to the SuperLink's Fleet API. Once the SuperLink container restarts and begins listening on port 9092, SuperNodes reconnect and training resumes.
 
 During the outage, the service may transition to WARNING state in OneFlow. The `REPORT_READY` mechanism re-evaluates on container restart: when the health check passes again, `READY=YES` is restored.
+
+When checkpointing is enabled (`FL_CHECKPOINT_ENABLED=YES`), the restarted container loads the latest checkpoint as the initial model weights, resuming training from the last saved state rather than starting from scratch. See [`spec/09-training-configuration.md`](09-training-configuration.md), Sections 7 and 9 for the complete failure recovery specification.
 
 **A SuperNode VM crashes after service is RUNNING:**
 
