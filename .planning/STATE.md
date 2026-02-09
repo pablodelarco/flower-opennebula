@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 8 COMPLETE (Monitoring and Observability). Phase 9 next.
+**Current focus:** Phase 9 IN PROGRESS (Edge and Auto-Scaling). Plan 09-01 complete, plan 09-02 next.
 
 ## Current Position
 
-Phase: 8 of 9 (Monitoring and Observability)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-09 -- Completed 08-02-PLAN.md (spec integration for monitoring)
+Phase: 9 of 9 (Edge and Auto-Scaling)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-09 -- Completed 09-01-PLAN.md (edge and auto-scaling specification)
 
-Progress: [█████████████████░░░] 85% (17/20 plans)
+Progress: [██████████████████░░] 90% (18/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
+- Total plans completed: 18
 - Average duration: 5 min
-- Total execution time: 92 min
+- Total execution time: 98 min
 
 **By Phase:**
 
@@ -35,9 +35,10 @@ Progress: [█████████████████░░░] 85% (17
 | 6. GPU Acceleration | 2/2 | 13 min | 7 min |
 | 7. Multi-Site Federation | 2/2 | 11 min | 6 min |
 | 8. Monitoring and Observability | 2/2 | 11 min | 6 min |
+| 9. Edge and Auto-Scaling | 1/2 | 6 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 07-01 (6 min), 07-02 (5 min), 08-01 (5 min), 08-02 (6 min)
+- Last 5 plans: 07-02 (5 min), 08-01 (5 min), 08-02 (6 min), 09-01 (6 min)
 - Trend: Consistent 5-6 min per plan
 
 *Updated after each plan completion*
@@ -146,6 +147,13 @@ Recent decisions affecting current work:
 - [08-02]: FL_LOG_FORMAT as service-level variable in new Section 5a of contextualization reference
 - [08-02]: SuperNode boot sequence expanded from 14 to 15 steps (DCGM sidecar at Step 14a)
 - [08-02]: SuperLink port table extended with optional port 9101 for metrics
+- [09-01]: Ubuntu Minimal over Alpine for edge base OS (one-apps compatibility, consistency)
+- [09-01]: Base Flower image only at edge, no framework pre-baked (size target under 2 GB, flexibility)
+- [09-01]: Exponential backoff as default edge discovery retry (WAN-friendly, unlimited retries, caps at 300s)
+- [09-01]: FaultTolerantFedAvg recommended for edge (tolerates 50% dropout)
+- [09-01]: Numeric encoding for FL_CLIENT_STATUS (1=IDLE, 2=TRAINING, 3=DISCONNECTED) for OneFlow expressions
+- [09-01]: min_vms >= FL_MIN_FIT_CLIENTS constraint for auto-scaling (prevents training deadlock)
+- [09-01]: 600s default cooldown for scale-down policies (protects rounds up to 10 minutes)
 
 ### Pending Todos
 
@@ -157,9 +165,10 @@ None.
 - PyTorch variant QCOW2 size (~4-5 GB) needs validation during implementation; revisit LLM dep placement if exceeds 5 GB
 - gRPC keepalive implementation depends on Flower's configuration surface for channel options (LOW confidence from research)
 - DCGM Exporter boot-time pull requires network access; air-gapped environments must pre-pull manually
+- Ubuntu Minimal + one-apps contextualization compatibility needs implementation validation (fallback: standard Ubuntu with aggressive cleanup)
 
 ## Session Continuity
 
-Last session: 2026-02-09T16:55:00Z
-Stopped at: Completed 08-02-PLAN.md (spec integration for monitoring)
+Last session: 2026-02-09T18:40:00Z
+Stopped at: Completed 09-01-PLAN.md (edge and auto-scaling specification)
 Resume file: None
