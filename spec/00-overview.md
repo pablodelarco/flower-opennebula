@@ -1,16 +1,16 @@
 # Flower-OpenNebula Integration: Appliance Specification
 
-**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration, 07 - Multi-Site Federation, 08 - Monitoring and Observability
-**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01, ORCH-02, ML-01, ML-04, OBS-01, OBS-02
+**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration, 06 - GPU Acceleration, 07 - Multi-Site Federation, 08 - Monitoring and Observability, 09 - Edge and Auto-Scaling
+**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01, ORCH-02, ORCH-03, EDGE-01, ML-01, ML-04, OBS-01, OBS-02
 **Status:** Specification
 
 ---
 
 ## 1. Scope
 
-This specification defines the Flower federated learning appliances for the OpenNebula cloud platform. It covers two marketplace appliances (SuperLink and SuperNode), their Docker-in-VM packaging, boot sequences, contextualization parameters, TLS certificate automation, ML framework variants, single-site OneFlow orchestration, multi-site federation across OpenNebula zones, and monitoring and observability.
+This specification defines the Flower federated learning appliances for the OpenNebula cloud platform. It covers two marketplace appliances (SuperLink and SuperNode), their Docker-in-VM packaging, boot sequences, contextualization parameters, TLS certificate automation, ML framework variants, single-site OneFlow orchestration, training configuration, GPU acceleration, multi-site federation across OpenNebula zones, monitoring and observability, and edge optimization with auto-scaling.
 
-**What this specification covers (Phases 1-5, 7-8):**
+**What this specification covers (Phases 1-9):**
 - SuperLink appliance: FL coordinator that orchestrates training rounds and aggregates model updates (Phase 1).
 - SuperNode appliance: FL client that trains locally on private data and reports model updates (Phase 1).
 - Contextualization variable reference: the complete mapping from OpenNebula USER_INPUTs to Flower configuration (Phase 1).
@@ -18,12 +18,12 @@ This specification defines the Flower federated learning appliances for the Open
 - ML framework variants: PyTorch, TensorFlow, scikit-learn appliance variants and pre-built use case templates (Phase 3).
 - Single-site orchestration: OneFlow service template, deployment sequencing, OneGate coordination, scaling operations (Phase 4).
 - Training configuration: aggregation strategy selection, strategy-specific parameters, model checkpointing, and failure recovery (Phase 5).
+- GPU acceleration: NVIDIA GPU passthrough, CUDA configuration, driver binding, CPU fallback (Phase 6).
 - Multi-site federation: cross-zone deployment topology, per-zone OneFlow templates, WireGuard/direct IP networking, gRPC keepalive, TLS trust distribution (Phase 7).
 - Monitoring and observability: structured JSON logging for FL training events, Prometheus/Grafana metrics stack, GPU telemetry via DCGM, pre-built dashboards, alerting rules (Phase 8).
+- Edge optimization and auto-scaling: edge-optimized SuperNode appliance variant (<2GB), intermittent connectivity handling, OneFlow elasticity policies for dynamic client scaling (Phase 9).
 
-**What this specification does NOT cover (deferred to later phases):**
-- GPU passthrough (Phase 6)
-- Edge optimization and auto-scaling (Phase 9)
+All specification phases (1-9) are complete. No sections are deferred.
 
 ---
 
@@ -128,6 +128,12 @@ This specification defines the Flower federated learning appliances for the Open
 |---------|------|-------------|---------|
 | Training Configuration | [`spec/09-training-configuration.md`](09-training-configuration.md) | ML-01, ML-04 | Aggregation strategy selection (6 strategies), strategy-specific parameters, model checkpointing, resume workflow, failure recovery. |
 
+### Phase 6: GPU Acceleration
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| GPU Passthrough | [`spec/10-gpu-passthrough.md`](10-gpu-passthrough.md) | ML-02 | NVIDIA GPU passthrough via PCI pass-through, driverctl persistent driver binding, CUDA configuration, memory management (growth vs fraction), CPU fallback on GPU absence, 3 contextualization variables (FL_GPU_ENABLED, FL_CUDA_VISIBLE_DEVICES, FL_GPU_MEMORY_FRACTION). |
+
 ### Phase 7: Multi-Site Federation
 
 | Section | File | Requirement | Summary |
@@ -140,7 +146,13 @@ This specification defines the Flower federated learning appliances for the Open
 |---------|------|-------------|---------|
 | Monitoring and Observability | [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) | OBS-01, OBS-02 | Two-tier monitoring: structured JSON logging (12 FL event types), Prometheus metrics exporter (11 FL metrics on port 9101), DCGM GPU metrics sidecar (8 GPU metrics on port 9400), 3 Grafana dashboards, 8 alerting rules, 4 contextualization variables. |
 
-**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08). For training configuration, read Phase 5 (09) which builds on the orchestration foundation. For multi-site federation, read Phase 7 (12) which extends the single-site orchestration to cross-zone deployments. For monitoring, read Phase 8 (13) which adds observability to the training stack.
+### Phase 9: Edge and Auto-Scaling
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| Edge and Auto-Scaling | [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md) | ORCH-03, EDGE-01 | Edge-optimized SuperNode appliance (<2GB QCOW2, Ubuntu Minimal, no framework pre-baked), intermittent connectivity handling, OneFlow elasticity policies, custom FL metrics for scaling triggers, client join/leave semantics. |
+
+**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08). For training configuration, read Phase 5 (09) which builds on the orchestration foundation. For GPU acceleration, read Phase 6 (10) which adds GPU passthrough to SuperNode. For multi-site federation, read Phase 7 (12) which extends the single-site orchestration to cross-zone deployments. For monitoring, read Phase 8 (13) which adds observability to the training stack. For edge and auto-scaling, read Phase 9 (14) which defines edge-optimized deployments and dynamic scaling rules.
 
 ---
 
@@ -196,6 +208,24 @@ This specification defines the Flower federated learning appliances for the Open
 **Multi-site deployment (Phase 7):** In a multi-zone federation, the SuperLink resides in a coordinator zone while SuperNodes are distributed across remote training site zones. Each zone runs its own independent OneFlow service (OneFlow and OneGate are zone-local). Cross-zone connectivity uses WireGuard site-to-site VPN or direct public IP, with gRPC keepalive for WAN resilience. See [`spec/12-multi-site-federation.md`](12-multi-site-federation.md) for the complete multi-site architecture.
 
 **Monitoring (Phase 8):** The SuperLink exposes Flower training metrics on port 9101 when `FL_METRICS_ENABLED=YES`. GPU-enabled SuperNodes expose DCGM GPU metrics on port 9400 when `FL_DCGM_ENABLED=YES`. Both appliances emit structured JSON logs when `FL_LOG_FORMAT=json`. Operator-managed Prometheus scrapes these endpoints; pre-built Grafana dashboards and alerting rules provide visibility into training convergence, client health, and GPU utilization. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) for the complete monitoring architecture.
+
+### Edge Deployment (Phase 9)
+
+```
+     Coordinator Zone                Edge Sites (intermittent WAN)
+  +-----------------+          +-----------+     +-----------+
+  |   SuperLink     |<- - - - -| Edge Node |     | Edge Node |
+  |   (1 VM)        |   gRPC   | (<2GB)    |     | (<2GB)    |
+  |   4 vCPU, 8 GB  |<- - - - -| 2 vCPU    |     | 2 vCPU    |
+  +-----------------+   WAN    | 2 GB RAM  |     | 2 GB RAM  |
+                       (may    +-----------+     +-----------+
+                       drop)         |                 |
+                                     v                 v
+                              (Local data stays  (Local data stays
+                               at edge site)     at edge site)
+```
+
+**Edge deployment (Phase 9):** Edge SuperNodes use a stripped-down QCOW2 (<2GB) with Ubuntu Minimal and the base Flower image only (no ML framework pre-baked). They connect to a central SuperLink over intermittent WAN links with configurable exponential backoff for discovery retry. OneFlow elasticity policies enable auto-scaling of the SuperNode role based on CPU utilization or custom FL metrics. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md) for the complete edge and auto-scaling architecture.
 
 ---
 
@@ -261,5 +291,5 @@ This spec is Phase 1 of a 9-phase specification project. Each subsequent phase b
 ---
 
 *Specification Overview: Flower-OpenNebula Appliance Architecture*
-*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration, 07 - Multi-Site Federation, 08 - Monitoring and Observability*
-*Version: 1.5*
+*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration, 06 - GPU Acceleration, 07 - Multi-Site Federation, 08 - Monitoring and Observability, 09 - Edge and Auto-Scaling*
+*Version: 1.6*

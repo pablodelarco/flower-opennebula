@@ -827,27 +827,11 @@ oneflow show <service_id> --json
 
 The output includes each role's current state, cardinality, and per-VM details (ID, IP, READY status).
 
-### Elasticity Policies (Preview)
+### Elasticity Policies
 
-OneFlow supports automatic scaling via elasticity policies that evaluate expressions at configurable intervals. These are only applicable to the `supernode` role. Detailed auto-scaling trigger configuration is deferred to Phase 9 (Edge and Auto-Scaling).
+OneFlow supports automatic scaling of the SuperNode role via `elasticity_policies` that evaluate expression-based triggers at configurable intervals. The complete auto-scaling specification -- including expression syntax, FL-aware custom metrics, cooldown periods, and interaction with active training rounds -- is defined in [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md), Sections 6-9.
 
-**Example structure (Phase 9 scope):**
-
-```json
-{
-  "name": "supernode",
-  "elasticity_policies": [
-    {
-      "type": "CHANGE",
-      "adjust": 1,
-      "cooldown": 300,
-      "expression": "ATT > 0.8"
-    }
-  ]
-}
-```
-
-Elasticity policies MUST NOT be defined on the `superlink` role.
+Key constraints (restated from Section 4): Elasticity policies MUST NOT be defined on the `superlink` role. `min_vms` must be >= `FL_MIN_FIT_CLIENTS` to prevent training deadlock.
 
 ---
 
@@ -983,11 +967,11 @@ Common misconfigurations that cause deployment failures or degraded operation. E
 | Missing `TOKEN=YES` in VM template CONTEXT | All OneGate API calls fail with HTTP 401 (Unauthorized). The SuperLink cannot publish `FL_ENDPOINT` or `FL_CA_CERT`. SuperNodes cannot discover the SuperLink. `REPORT_READY` cannot set `READY=YES`, so the `ready_status_gate` is never satisfied and the service hangs in DEPLOYING state indefinitely. | Always include `TOKEN=YES` in each role's `template_contents` CONTEXT section. This is an infrastructure variable, not a user_input. See Section 2, Infrastructure CONTEXT Variables. |
 | Putting infrastructure vars (`TOKEN`, `REPORT_READY`) in `user_inputs` instead of `template_contents` | The variables appear in the Sunstone instantiation form, confusing deployers who may change or remove them. If a deployer sets `TOKEN=NO` or deletes the field, OneGate authentication breaks silently. | Place infrastructure variables in `template_contents` at the role level. They are injected unconditionally and do not appear in the user-facing instantiation form. See Section 3, template_contents. |
 | Setting `FL_SUPERLINK_ADDRESS` in OneFlow deployment | Bypasses OneGate discovery entirely. The static address must match the SuperLink VM's actual IP, which is not known until the VM is created. If the operator guesses wrong or the IP changes on redeployment, all SuperNodes fail to connect. Defeats the purpose of OneFlow orchestration. | Leave `FL_SUPERLINK_ADDRESS` unset in OneFlow deployments. Let SuperNodes discover the SuperLink via OneGate automatically. Static addresses are intended for standalone VM deployments or cross-site federation (Phase 7, see [`spec/12-multi-site-federation.md`](12-multi-site-federation.md)), not single-site OneFlow services. |
-| Elasticity policies on the `superlink` role | Auto-scaling the singleton coordinator triggers split-brain (same as cardinality > 1). Even if `max_vms: 1` prevents the scale-up, the policy evaluation adds unnecessary overhead and signals a misunderstanding of the architecture. | Never define `elasticity_policies` or `scheduled_policies` on the SuperLink role. Elasticity policies apply only to the `supernode` role. See Section 8, Elasticity Policies. |
+| Elasticity policies on the `superlink` role | Auto-scaling the singleton coordinator triggers split-brain (same as cardinality > 1). Even if `max_vms: 1` prevents the scale-up, the policy evaluation adds unnecessary overhead and signals a misunderstanding of the architecture. | Never define `elasticity_policies` or `scheduled_policies` on the SuperLink role. Elasticity policies apply only to the `supernode` role. See Section 8, Elasticity Policies. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md), Section 10 for additional auto-scaling anti-patterns. |
 | Using `deployment: "none"` instead of `"straight"` | All roles deploy simultaneously. SuperNode VMs boot before the SuperLink VM, enter the discovery retry loop, and spend up to 5 minutes in retries. With `ready_status_gate: true`, SuperNode creation is still gated, but with `ready_status_gate: false` (or if accidentally set), the race condition is fully exposed. Even with the gate, `"none"` loses the clear sequential semantics that make the deployment predictable. | Always use `deployment: "straight"`. Roles deploy in array order (SuperLink first, SuperNode second), and the `parents` dependency combined with `ready_status_gate` ensures correct ordering. |
 
 ---
 
 *Specification for ORCH-01: Single-Site Orchestration*
-*Phase: 04 - Single-Site Orchestration (updated Phase 7)*
-*Version: 1.1*
+*Phase: 04 - Single-Site Orchestration (updated Phase 9)*
+*Version: 1.2*

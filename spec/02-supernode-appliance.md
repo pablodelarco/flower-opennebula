@@ -32,6 +32,8 @@ The QCOW2 image SHALL contain the following pre-installed components:
 
 **ML framework dependencies:** The base SuperNode image does NOT include ML framework libraries (PyTorch, TensorFlow, etc.). Those are bundled inside the Flower Docker image or provided via framework-specific appliance variants (see Phase 3). The base `flwr/supernode:1.25.0` image includes only the Flower client runtime and Python 3.13.
 
+**Edge variant:** A stripped-down SuperNode QCOW2 targeting <2GB image size is specified for edge environments. The edge variant uses Ubuntu 24.04 Minimal and the base Flower image without ML framework pre-baking. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md) Section 2.
+
 ---
 
 ### 3. File Layout Inside the VM
@@ -91,6 +93,8 @@ IF REQUESTED_VERSION != PREBAKED_VERSION:
 **Version matching:** The SuperNode and SuperLink appliances MUST run the same Flower version. Version mismatch between SuperLink and SuperNode causes gRPC protocol errors (UNIMPLEMENTED or INTERNAL status codes). In OneFlow deployments, the `FLOWER_VERSION` variable SHOULD be set at the service level to ensure both roles use the same version.
 
 **Estimated image size:** ~2-3 GB (Ubuntu 24.04 base + Docker CE + pre-pulled Flower image).
+
+**Edge variant sizing:** The edge SuperNode targets <2GB by using Ubuntu Minimal (~300-400MB) and excluding ML framework Docker images. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md), Section 2 for the complete edge image size breakdown.
 
 ---
 
@@ -229,6 +233,8 @@ Do NOT report ready
 - The total window (5 minutes) is bounded and short enough that backoff provides minimal benefit.
 - A fixed interval makes log analysis straightforward (each attempt is exactly 10 seconds apart).
 - OneGate is a lightweight API; 1 request every 10 seconds is negligible load.
+
+**Edge variant backoff:** For edge deployments with intermittent connectivity, the discovery retry loop supports configurable exponential backoff via `FL_EDGE_BACKOFF` and `FL_EDGE_MAX_BACKOFF` context variables. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md), Section 3.
 
 #### 6e. OneGate Connectivity Pre-check
 
@@ -543,6 +549,13 @@ The following contextualization variables configure the SuperNode appliance at b
 | `FL_CUDA_VISIBLE_DEVICES` | `O\|text` | `all` | Docker env: `CUDA_VISIBLE_DEVICES` | GPU device IDs visible to container. Default `all` exposes every GPU assigned to the VM. Set to specific IDs (e.g., `0`, `0,1`) for multi-GPU selection. Only effective when `FL_GPU_ENABLED=YES`. |
 | `FL_GPU_MEMORY_FRACTION` | `O\|number-float` | `0.8` | PyTorch: `set_per_process_memory_fraction()` | GPU memory fraction for PyTorch (0.0-1.0). Soft limit. Only effective when `ML_FRAMEWORK=pytorch` and `FL_GPU_ENABLED=YES`. See `spec/10-gpu-passthrough.md` for complete GPU stack details. |
 
+#### Edge Configuration Variables (Phase 9)
+
+| Context Variable | Type | Default | Flower Mapping | Description |
+|-----------------|------|---------|----------------|-------------|
+| `FL_EDGE_BACKOFF` | `O\|list` | `exponential` | Discovery retry loop backoff algorithm | Edge discovery retry backoff strategy. Options: `exponential` (starts at 10s, doubles, caps at `FL_EDGE_MAX_BACKOFF`), `fixed` (30 retries at 10s intervals). Only effective on edge SuperNode variant. |
+| `FL_EDGE_MAX_BACKOFF` | `O\|number` | `300` | Cap for exponential backoff in discovery retry loop | Maximum backoff interval in seconds for edge discovery. Only effective when `FL_EDGE_BACKOFF=exponential`. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md) Section 3. |
+
 #### Infrastructure Variables
 
 | Context Variable | Type | Default | Purpose |
@@ -626,6 +639,7 @@ The SuperNode appliance specification depends on and complements the SuperLink a
 | `--insecure` flag | SuperLink `--insecure` flag | Both sides MUST agree on TLS mode. Phase 1: both use `--insecure`. Phase 2: both use certificates. |
 | Immutability model | SuperLink Section 13: Immutability Model | Same pattern: no reconfiguration, redeploy to change parameters. |
 | Pre-baked image strategy | SuperLink Section 4 | Same strategy: Docker image pre-pulled, version override with fallback. |
+| Edge variant | [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md), Section 2 | Edge SuperNode is a stripped-down variant; same discovery and connection model. |
 
 **Shared components:** Both appliances share the same QCOW2 base (Ubuntu 24.04 + Docker CE + one-apps contextualization) and the same script structure (`/opt/flower/scripts/`). The differences are in the Flower container image (`flwr/superlink` vs `flwr/supernode`), the boot sequence (SuperNode has a discovery phase), and the network role (SuperLink listens; SuperNode connects).
 
@@ -644,6 +658,6 @@ See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) for 
 ---
 
 *Document: spec/02-supernode-appliance.md*
-*Phase: 01-base-appliance-architecture (updated Phase 8)*
+*Phase: 01-base-appliance-architecture (updated Phase 9)*
 *Requirement: APPL-02, ML-02*
 *Status: Complete*
