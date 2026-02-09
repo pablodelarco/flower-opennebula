@@ -10,7 +10,7 @@
 
 This document is the single authoritative reference for every OpenNebula contextualization variable used by the Flower SuperLink and SuperNode marketplace appliances. It serves as an implementation checklist: an engineer building either appliance can print this document and check off each variable as it is implemented in the contextualization scripts.
 
-**Scope:** All variables defined in Phase 1 (base appliance architecture), Phase 5 (training configuration), plus placeholder variables for Phase 2 (TLS), Phase 3 (ML frameworks), and Phase 6 (GPU). Placeholder variables are documented here for completeness but are not functional in Phase 1. Phase 5 variables are functional and documented in Section 3.
+**Scope:** All variables defined in Phase 1 (base appliance architecture), Phase 5 (training configuration), Phase 7 (gRPC keepalive and certificate SAN for multi-site federation), plus placeholder variables for Phase 2 (TLS), Phase 3 (ML frameworks), and Phase 6 (GPU). Placeholder variables are documented here for completeness but are not functional in Phase 1. Phase 5 variables are functional and documented in Section 3. Phase 7 variables are functional and documented in Sections 3-4.
 
 **Source of truth hierarchy:**
 1. This document is the authoritative reference for variable names, types, defaults, and validation rules.
@@ -21,15 +21,16 @@ This document is the single authoritative reference for every OpenNebula context
 
 | Category | Count | Appliance |
 |----------|-------|-----------|
-| SuperLink parameters | 19 | SuperLink only |
-| SuperNode parameters | 10 | SuperNode only |
+| SuperLink parameters | 22 | SuperLink only |
+| SuperNode parameters | 12 | SuperNode only |
 | Shared infrastructure | 5 | Both |
 | Phase 5 strategy/checkpointing | 8 | SuperLink |
 | Phase 6 GPU configuration | 3 | SuperNode |
+| Phase 7 gRPC keepalive/cert | 3 | Both/SuperLink |
 | Phase 2+ placeholders | 5 | Both (not functional in Phase 1) |
-| **Total** | **39** | |
+| **Total** | **42** | |
 
-*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (19 = 11 original + 8 Phase 5). The Phase 6 count (3) is included in the SuperNode parameters count (10 = 7 original + 3 Phase 6). The separate Phase 5 and Phase 6 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3.
+*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (22 = 11 original + 8 Phase 5 + 3 Phase 7). The Phase 6 count (3) is included in the SuperNode parameters count (12 = 7 original + 3 Phase 6 + 2 Phase 7). The separate Phase 5, Phase 6, and Phase 7 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3. The Phase 7 count (3) reflects 3 unique variables: FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT apply to both appliances, FL_CERT_EXTRA_SAN applies to SuperLink only.
 
 ---
 
@@ -73,7 +74,7 @@ VARIABLE_NAME = "M|type|Description|options|default"
 
 ## 3. SuperLink Parameters
 
-These 19 variables configure the Flower SuperLink appliance. All are optional. Zero-config deployment works with all defaults (see Section 9). Variables #1-11 are Phase 1 (base architecture). Variables #12-19 are Phase 5 (training configuration: strategy parameters and checkpointing).
+These 22 variables configure the Flower SuperLink appliance. All are optional. Zero-config deployment works with all defaults (see Section 9). Variables #1-11 are Phase 1 (base architecture). Variables #12-19 are Phase 5 (training configuration: strategy parameters and checkpointing). Variables #20-22 are Phase 7 (multi-site federation: gRPC keepalive and certificate SAN).
 
 **Appliance:** SuperLink only
 **Spec reference:** `spec/01-superlink-appliance.md`, Section 12
@@ -99,6 +100,9 @@ These 19 variables configure the Flower SuperLink appliance. All are optional. Z
 | 17 | `FL_CHECKPOINT_ENABLED` | `O\|boolean\|Enable model checkpointing\|\|NO` | boolean | `NO` | `YES` or `NO` | ServerApp: enables checkpoint saving |
 | 18 | `FL_CHECKPOINT_INTERVAL` | `O\|number\|Save checkpoint every N rounds\|\|5` | number | `5` | Positive integer (>0); ignored if `FL_CHECKPOINT_ENABLED` != `YES` | ServerApp: checkpoint frequency |
 | 19 | `FL_CHECKPOINT_PATH` | `O\|text\|Checkpoint directory (container path)\|\|/app/checkpoints` | text | `/app/checkpoints` | Non-empty string; ignored if `FL_CHECKPOINT_ENABLED` != `YES` | Docker mount: `-v /opt/flower/checkpoints:{path}:rw` |
+| 20 | `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | number | `60` | Positive integer (>0). Warning if <10. | gRPC channel option: `grpc.keepalive_time_ms` (value * 1000) |
+| 21 | `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | number | `20` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | gRPC channel option: `grpc.keepalive_timeout_ms` (value * 1000) |
+| 22 | `FL_CERT_EXTRA_SAN` | `O\|text\|Additional SAN entries for auto-generated cert (comma-separated)\|\|` | text | (empty) | If set: comma-separated entries matching `IP:<addr>` or `DNS:<name>` pattern. Only effective when `FL_TLS_ENABLED=YES` and auto-generating certs. | Added to SAN in cert generation (`[alt_names]` section of CSR config) |
 
 ### SuperLink USER_INPUT Block (Copy-Paste Ready)
 
@@ -127,7 +131,12 @@ USER_INPUTS = [
   # Phase 5: Checkpointing (variables 17-19)
   FL_CHECKPOINT_ENABLED = "O|boolean|Enable model checkpointing||NO",
   FL_CHECKPOINT_INTERVAL = "O|number|Save checkpoint every N rounds||5",
-  FL_CHECKPOINT_PATH = "O|text|Checkpoint directory (container path)||/app/checkpoints"
+  FL_CHECKPOINT_PATH = "O|text|Checkpoint directory (container path)||/app/checkpoints",
+
+  # Phase 7: Multi-site federation (variables 20-22)
+  FL_GRPC_KEEPALIVE_TIME = "O|number|gRPC keepalive interval in seconds||60",
+  FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20",
+  FL_CERT_EXTRA_SAN = "O|text|Additional SAN entries for auto-generated cert (comma-separated)||"
 ]
 ```
 
@@ -135,7 +144,7 @@ USER_INPUTS = [
 
 ## 4. SuperNode Parameters
 
-These 10 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration).
+These 12 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration). Variables #11-12 are Phase 7 (multi-site federation: gRPC keepalive).
 
 **Appliance:** SuperNode only
 **Spec reference:** `spec/02-supernode-appliance.md`, Section 13
@@ -152,6 +161,8 @@ These 10 variables configure the Flower SuperNode appliance. All are optional. Z
 | 8 | `FL_GPU_ENABLED` | `O\|boolean\|Enable GPU passthrough (requires GPU-enabled VM template)\|\|NO` | boolean | `NO` | Must be `YES` or `NO` (case-insensitive) | Docker run flag: `--gpus all` when YES |
 | 9 | `FL_CUDA_VISIBLE_DEVICES` | `O\|text\|GPU device IDs visible to container (e.g., 0 or 0,1)\|\|all` | text | `all` | If not `all`, must be comma-separated integers (e.g., `0`, `0,1`, `0,1,2`). Only effective when `FL_GPU_ENABLED=YES`. | Docker env: `-e CUDA_VISIBLE_DEVICES` |
 | 10 | `FL_GPU_MEMORY_FRACTION` | `O\|number-float\|GPU memory fraction for PyTorch (0.0-1.0)\|\|0.8` | number-float | `0.8` | Float between 0.0 and 1.0 inclusive. Only effective when `ML_FRAMEWORK=pytorch` and `FL_GPU_ENABLED=YES`. | PyTorch: `torch.cuda.set_per_process_memory_fraction()` |
+| 11 | `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | number | `60` | Positive integer (>0). Warning if <10. | gRPC channel option: `grpc.keepalive_time_ms` (value * 1000) |
+| 12 | `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | number | `20` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | gRPC channel option: `grpc.keepalive_timeout_ms` (value * 1000) |
 
 **GPU configuration notes:**
 - `FL_GPU_ENABLED` is the master switch for GPU passthrough. When `NO` (default), variables #9-10 are ignored.
@@ -174,7 +185,11 @@ USER_INPUTS = [
   # Phase 6: GPU configuration (variables 8-10)
   FL_GPU_ENABLED = "O|boolean|Enable GPU passthrough (requires GPU-enabled VM template)||NO",
   FL_CUDA_VISIBLE_DEVICES = "O|text|GPU device IDs visible to container (e.g., 0 or 0,1)||all",
-  FL_GPU_MEMORY_FRACTION = "O|number-float|GPU memory fraction for PyTorch (0.0-1.0)||0.8"
+  FL_GPU_MEMORY_FRACTION = "O|number-float|GPU memory fraction for PyTorch (0.0-1.0)||0.8",
+
+  # Phase 7: Multi-site federation (variables 11-12)
+  FL_GRPC_KEEPALIVE_TIME = "O|number|gRPC keepalive interval in seconds||60",
+  FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20"
 ]
 ```
 
@@ -306,6 +321,9 @@ The appliance boot scripts SHALL validate all contextualization variables during
 | `FL_GPU_ENABLED` | Exact match: `YES` or `NO` (case-insensitive) | `"Invalid FL_GPU_ENABLED: '${VALUE}'. Must be YES or NO."` |
 | `FL_CUDA_VISIBLE_DEVICES` | If not `all`: must be comma-separated integers (e.g., `0`, `0,1`, `0,1,2`). Ignored if `FL_GPU_ENABLED != YES`. | `"Invalid FL_CUDA_VISIBLE_DEVICES: '${VALUE}'. Must be 'all' or comma-separated GPU IDs (e.g., 0,1)."` |
 | `FL_GPU_MEMORY_FRACTION` | Float between 0.0 and 1.0 inclusive. Ignored if `FL_GPU_ENABLED != YES`. | `"Invalid FL_GPU_MEMORY_FRACTION: '${VALUE}'. Must be a float between 0.0 and 1.0."` |
+| `FL_GRPC_KEEPALIVE_TIME` | Positive integer (>0). Warning if <10. | `"Invalid FL_GRPC_KEEPALIVE_TIME: '${VALUE}'. Must be a positive integer."` |
+| `FL_GRPC_KEEPALIVE_TIMEOUT` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | `"Invalid FL_GRPC_KEEPALIVE_TIMEOUT: '${VALUE}'. Must be a positive integer less than FL_GRPC_KEEPALIVE_TIME."` |
+| `FL_CERT_EXTRA_SAN` | If set: comma-separated entries matching pattern `IP:[0-9.]+` or `DNS:[a-zA-Z0-9.-]+`. | `"Invalid FL_CERT_EXTRA_SAN: '${VALUE}'. Must be comma-separated entries in format IP:<addr> or DNS:<name>."` |
 
 ### Validation Pseudocode
 
@@ -489,6 +507,41 @@ validate_config() {
             log "ERROR" "Invalid FL_GPU_MEMORY_FRACTION: '${FL_GPU_MEMORY_FRACTION}'. Must be a float between 0.0 and 1.0."
             errors=$((errors + 1))
         fi
+    fi
+
+    # --- Phase 7: gRPC keepalive and certificate SAN ---
+
+    # FL_GRPC_KEEPALIVE_TIME: positive integer
+    if [ -n "$FL_GRPC_KEEPALIVE_TIME" ] && ! [[ "$FL_GRPC_KEEPALIVE_TIME" =~ ^[1-9][0-9]*$ ]]; then
+        log "ERROR" "Invalid FL_GRPC_KEEPALIVE_TIME: '${FL_GRPC_KEEPALIVE_TIME}'. Must be a positive integer."
+        errors=$((errors + 1))
+    fi
+    if [ -n "$FL_GRPC_KEEPALIVE_TIME" ] && [ "${FL_GRPC_KEEPALIVE_TIME:-60}" -lt 10 ] 2>/dev/null; then
+        log "WARN" "FL_GRPC_KEEPALIVE_TIME=${FL_GRPC_KEEPALIVE_TIME} is aggressive and may cause excessive network traffic"
+    fi
+
+    # FL_GRPC_KEEPALIVE_TIMEOUT: positive integer, must be < keepalive_time
+    if [ -n "$FL_GRPC_KEEPALIVE_TIMEOUT" ] && ! [[ "$FL_GRPC_KEEPALIVE_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+        log "ERROR" "Invalid FL_GRPC_KEEPALIVE_TIMEOUT: '${FL_GRPC_KEEPALIVE_TIMEOUT}'. Must be a positive integer."
+        errors=$((errors + 1))
+    fi
+    if [ -n "$FL_GRPC_KEEPALIVE_TIMEOUT" ] && [ -n "$FL_GRPC_KEEPALIVE_TIME" ]; then
+        if [ "$FL_GRPC_KEEPALIVE_TIMEOUT" -ge "$FL_GRPC_KEEPALIVE_TIME" ] 2>/dev/null; then
+            log "ERROR" "FL_GRPC_KEEPALIVE_TIMEOUT (${FL_GRPC_KEEPALIVE_TIMEOUT}) must be less than FL_GRPC_KEEPALIVE_TIME (${FL_GRPC_KEEPALIVE_TIME})."
+            errors=$((errors + 1))
+        fi
+    fi
+
+    # FL_CERT_EXTRA_SAN: comma-separated IP:<addr> or DNS:<name> entries
+    if [ -n "$FL_CERT_EXTRA_SAN" ]; then
+        IFS=',' read -ra SAN_ENTRIES <<< "$FL_CERT_EXTRA_SAN"
+        for entry in "${SAN_ENTRIES[@]}"; do
+            entry=$(echo "$entry" | xargs)  # trim whitespace
+            if ! [[ "$entry" =~ ^IP:[0-9.]+ ]] && ! [[ "$entry" =~ ^DNS:[a-zA-Z0-9.-]+$ ]]; then
+                log "ERROR" "Invalid FL_CERT_EXTRA_SAN entry: '${entry}'. Expected format: IP:<addr> or DNS:<name>."
+                errors=$((errors + 1))
+            fi
+        done
     fi
 
     # Conditional ignore logging for GPU-specific params
@@ -709,6 +762,48 @@ GPU passthrough is disabled by default. When disabled, GPU-related variables are
 
 **Cross-reference:** See `spec/10-gpu-passthrough.md` for complete GPU stack configuration, validation procedures, and decision records.
 
+### 10j. FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT Coordination
+
+**Variables involved:** `FL_GRPC_KEEPALIVE_TIME`, `FL_GRPC_KEEPALIVE_TIMEOUT` (both SuperLink and SuperNode)
+
+Both keepalive variables must be set consistently on the SuperLink and SuperNode for correct operation. The gRPC client (SuperNode) sends keepalive pings at `FL_GRPC_KEEPALIVE_TIME` intervals. The gRPC server (SuperLink) must accept pings at this frequency.
+
+**Coordination rules:**
+
+- **Client keepalive_time >= server min_recv_ping_interval:** The server's minimum accepted ping interval is configured to 30 seconds (half of the default 60-second keepalive_time). If the client sends pings more frequently than the server permits, the server responds with a GOAWAY frame containing `ENHANCE_YOUR_CALM` and closes the connection.
+
+- **Both sides should use the same `FL_GRPC_KEEPALIVE_TIME` value.** With 60 seconds on both, the server's 30-second min_recv_ping_interval provides a 2x safety margin.
+
+- **`FL_GRPC_KEEPALIVE_TIMEOUT` < `FL_GRPC_KEEPALIVE_TIME`:** The timeout (default: 20s) must be shorter than the ping interval (default: 60s). If timeout >= ping interval, the connection may be declared dead before the next ping is sent.
+
+- **Single-site deployments do not need keepalive tuning.** The default 60-second interval is only necessary for WAN paths through middleboxes. In single-site deployments, keepalive is unnecessary but harmless (small periodic ping overhead).
+
+**Deployment order when changing values:** Update the server-side (SuperLink) first to accept the new ping frequency, then update clients (SuperNodes). Rolling out client changes first may trigger GOAWAY errors.
+
+**Cross-reference:** See `spec/12-multi-site-federation.md`, Section 7 for the complete gRPC keepalive specification including recommended values, firewall timeout analysis, and translation to gRPC channel options.
+
+### 10k. FL_CERT_EXTRA_SAN and TLS Certificate Generation
+
+**Variables involved:** `FL_CERT_EXTRA_SAN` (SuperLink), `FL_TLS_ENABLED` (both), `FL_SSL_CERTFILE`/`FL_SSL_KEYFILE` (SuperLink)
+
+`FL_CERT_EXTRA_SAN` is only effective when TLS is enabled AND the SuperLink auto-generates its certificates (the default path). If operator-provided certificates are used (`FL_SSL_CERTFILE` and `FL_SSL_KEYFILE` are set), `FL_CERT_EXTRA_SAN` is ignored -- the operator controls the SAN in their own certificate.
+
+**Interaction rules:**
+
+- **When `FL_TLS_ENABLED=NO`:** `FL_CERT_EXTRA_SAN` is ignored. No certificates are generated.
+
+- **When `FL_TLS_ENABLED=YES` and `FL_SSL_CERTFILE` is set:** `FL_CERT_EXTRA_SAN` is ignored. Operator-provided certs are used as-is. configure.sh logs: "INFO: FL_CERT_EXTRA_SAN ignored -- using operator-provided certificates."
+
+- **When `FL_TLS_ENABLED=YES` and auto-generating certs:** `FL_CERT_EXTRA_SAN` entries are appended to the `[alt_names]` section of the certificate signing request. The auto-generated SAN includes the VM's primary IP plus any entries from `FL_CERT_EXTRA_SAN`.
+
+**Use cases for FL_CERT_EXTRA_SAN:**
+- WireGuard tunnel IP: `IP:10.10.9.0` (SuperNodes connect via tunnel)
+- Public IP for direct access: `IP:203.0.113.50`
+- DNS name: `DNS:flower.example.com`
+- Multiple entries: `IP:10.10.9.0,DNS:flower.example.com`
+
+**Cross-reference:** See `spec/12-multi-site-federation.md`, Sections 5 and 8 for complete multi-site TLS certificate trust distribution workflows.
+
 ---
 
 ## Appendix: Complete Variable Cross-Reference Matrix
@@ -753,11 +848,14 @@ This matrix shows every variable and which appliance uses it.
 | `FL_CUDA_VISIBLE_DEVICES` | -- | Y | -- | 6 |
 | `FL_GPU_MEMORY_FRACTION` | -- | Y | -- | 6 |
 | `ML_FRAMEWORK` | -- | Y | -- | 3 |
+| `FL_GRPC_KEEPALIVE_TIME` | Y | Y | -- | 7 |
+| `FL_GRPC_KEEPALIVE_TIMEOUT` | Y | Y | -- | 7 |
+| `FL_CERT_EXTRA_SAN` | Y | -- | -- | 7 |
 
 **Legend:** Y = used by this appliance, -- = not applicable
 
 ---
 
 *Specification for APPL-03: Contextualization Variable Reference*
-*Phase: 01 - Base Appliance Architecture (updated Phase 6)*
-*Version: 1.2*
+*Phase: 01 - Base Appliance Architecture (updated Phase 7)*
+*Version: 1.3*
