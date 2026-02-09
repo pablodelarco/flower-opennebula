@@ -38,6 +38,8 @@ The QCOW2 appliance image ships with all components pre-installed. No internet a
 | netcat (nmap variant)              | any                        | TCP port checking for health probes        |
 | Custom scripts                     | (appliance-specific)       | `/opt/flower/scripts/` -- configure, bootstrap, health check |
 
+**Note on `prometheus_client`:** The Prometheus metrics exporter library (`prometheus_client`) is NOT included in the base Flower Docker image or the QCOW2 appliance. It is a ServerApp FAB dependency declared in the FAB's `pyproject.toml`. This decouples the monitoring library from the Flower version and keeps the base image unchanged. See `spec/13-monitoring-observability.md` Section 5.
+
 **Base OS choice:** Ubuntu 24.04 LTS matches the base OS inside the official Flower Docker images (`flwr/superlink:1.25.0-py3.13-ubuntu24.04`). This eliminates library mismatch risks and provides LTS support through 2029. openSUSE was considered for EU-sovereignty alignment but has untested compatibility with Flower Docker images.
 
 **Docker CE minimum version:** Docker CE 24+ is required. Do not pin a specific patch version. The image build process installs the latest Docker CE from the official Docker APT repository. The minimum constraint ensures BuildKit support, compose v2 plugin availability, and current container runtime features.
@@ -170,6 +172,8 @@ The SuperLink boot follows a strict linear sequence. Each step validates its pre
 - **WHY:** Catching configuration errors early produces clear error messages. A misconfigured SuperLink that partially starts is harder to debug than one that fails immediately with a specific validation error.
 - **FAILURE:** Validation errors are logged to `/var/log/one-appliance/flower-configure.log` with the variable name, expected format, and actual value. The boot sequence aborts. The VM does not report READY.
 
+**Monitoring integration (Phase 8):** When `FL_LOG_FORMAT=json`, the JSON log formatter is configured on the `flwr` logger before container start. Call `configure_json_logging(role="superlink")` to replace the default text handler formatter. This ensures all subsequent log output (including boot messages) uses structured JSON format. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 3.
+
 ### Step 5: Set Defaults for Optional Variables
 
 - **WHAT:** Any optional variable not provided by the user is set to its default value: `FL_NUM_ROUNDS=3`, `FL_STRATEGY=FedAvg`, `FL_ISOLATION=subprocess`, `FL_LOG_LEVEL=INFO`, `FL_FLEET_API_ADDRESS=0.0.0.0:9092`, `FL_DATABASE=state/state.db`.
@@ -205,6 +209,8 @@ The SuperLink boot follows a strict linear sequence. Each step validates its pre
 - **WHAT:** `bootstrap.sh` checks if `FLOWER_VERSION` differs from the pre-baked version. If so, attempts a `docker pull` with fallback (see Section 4). Then starts the container via `systemctl start flower-superlink`.
 - **WHY:** The pre-baked image strategy ensures the container always starts. The version override provides flexibility for users who need a specific Flower release.
 - **FAILURE:** If `systemctl start` fails, check `docker logs flower-superlink` and `journalctl -u flower-superlink`. Common causes: port already in use, image not found (should not happen with fallback), permission errors on mount points.
+
+**Monitoring integration (Phase 8):** When `FL_METRICS_ENABLED=YES`, the Prometheus metrics HTTP server starts on `FL_METRICS_PORT` (default 9101) during ServerApp initialization inside the container. The ServerApp FAB must include `prometheus_client` in its dependencies. The metrics server is started as part of the `@app.main()` function, not as a separate boot step. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 5.
 
 ### Step 11: Health Check Loop (Wait for SuperLink to Listen)
 
@@ -256,6 +262,7 @@ docker run -d \
 | 9091      | 9091          | gRPC     | ServerAppIo    | Internal API for subprocess-managed ServerApp     |
 | 9092      | 9092          | gRPC     | Fleet API      | SuperNode connections (primary data plane)        |
 | 9093      | 9093          | gRPC     | Control API    | CLI management, run submission                   |
+| 9101      | 9101          | HTTP     | FL Metrics     | Prometheus metrics endpoint (optional, `FL_METRICS_ENABLED=YES`) |
 
 **Port 9092 is the critical port.** SuperNodes connect to this port for all training communication. It must be reachable from all SuperNode VMs. Ports 9091 and 9093 are for management and internal use.
 
@@ -624,9 +631,22 @@ This is sufficient for a demo or development deployment. Connect 2+ SuperNodes a
 | Phase 2 - TLS Security            | Replaces `--insecure` with certificate-based auth  |
 | Phase 4 - OneFlow Orchestration   | Deploys SuperLink as the parent role               |
 | Phase 5 - Training Configuration  | Extends strategy and checkpointing parameters      |
+| Phase 8 - Monitoring              | Structured JSON logging and Prometheus metrics     |
+
+---
+
+## Appendix C: Monitoring Integration
+
+The SuperLink supports two monitoring tiers defined in Phase 8:
+
+- **Tier 1 (OBS-01) -- Structured JSON Logging:** Enabled via `FL_LOG_FORMAT=json` (service-level). The FlowerJSONFormatter replaces Flower's default text formatter on the `flwr` logger. All Flower log output becomes single-line JSON objects with structured FL event data. Zero additional infrastructure required.
+
+- **Tier 2 (OBS-02) -- Prometheus Metrics Export:** Enabled via `FL_METRICS_ENABLED=YES` on port `FL_METRICS_PORT` (default 9101). Exposes 11 FL training metrics (round progress, loss, accuracy, client participation, checkpoint saves) as Prometheus gauges, counters, and histograms. The `prometheus_client` library is embedded in the ServerApp FAB, not in the base Flower Docker image.
+
+See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) for the complete monitoring specification including metric definitions, Grafana dashboards, and alerting rules.
 
 ---
 
 *Specification for APPL-01: SuperLink Appliance*
-*Phase: 01 - Base Appliance Architecture*
-*Version: 1.0*
+*Phase: 01 - Base Appliance Architecture (updated Phase 8)*
+*Version: 1.1*

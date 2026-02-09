@@ -28,6 +28,7 @@ The QCOW2 image SHALL contain the following pre-installed components:
 | curl | any | HTTP client for OneGate API calls during discovery and status publication. |
 | netcat (nc) | any | TCP connectivity checks used by health-check and OneGate pre-check scripts. |
 | Custom scripts | -- | `/opt/flower/scripts/` -- configure.sh, bootstrap.sh, discover.sh, health-check.sh, common.sh |
+| DCGM Exporter (optional) | 4.5.1+ (pulled at boot) | NVIDIA DCGM GPU metrics exporter. NOT pre-baked in QCOW2 -- pulled at boot when `FL_DCGM_ENABLED=YES`. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 6. |
 
 **ML framework dependencies:** The base SuperNode image does NOT include ML framework libraries (PyTorch, TensorFlow, etc.). Those are bundled inside the Flower Docker image or provided via framework-specific appliance variants (see Phase 3). The base `flwr/supernode:1.25.0` image includes only the Flower client runtime and Python 3.13.
 
@@ -261,13 +262,14 @@ Before entering the discovery retry loop, the SuperNode SHALL perform a connecti
 
 ### 7. Linear Boot Sequence
 
-The SuperNode boot follows a strict linear sequence. Each step validates its preconditions before proceeding. The sequence has 14 steps organized into three stages: OS initialization, configuration with discovery, and container startup.
+The SuperNode boot follows a strict linear sequence. Each step validates its preconditions before proceeding. The sequence has 15 steps organized into three stages: OS initialization, configuration with discovery, and container startup.
 
 | Step | Stage | Action | Why | Failure |
 |------|-------|--------|-----|---------|
 | 1 | OS Init | OS boots; one-apps contextualization packages execute | Configures networking, injects SSH keys, exports CONTEXT variables to `/run/one-context/one_env` | VM fails to reach RUNNING state; operator checks OpenNebula VM log |
 | 2 | Configure | `configure.sh` sources `/run/one-context/one_env` | Loads all CONTEXT variables (FL_SUPERLINK_ADDRESS, FLOWER_VERSION, FL_NODE_CONFIG, etc.) into the script environment | Missing one_env file indicates broken contextualization; script exits with error |
 | 3 | Configure | Validate required variables; set defaults for optional ones | Fail-fast on invalid configuration. Ensures all downstream scripts have valid inputs. | Validation errors logged to `flower-configure.log`; script exits non-zero; VM does not report ready |
+| 3a | Configure | **Monitoring integration (Phase 8):** When `FL_LOG_FORMAT=json`, configure JSON formatter on the `flwr` logger. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 3. | Structured JSON logging must be configured before any Flower log output is produced. | Non-blocking -- formatter replacement is lightweight. |
 | 4 | Configure | Create mount-target directories; set ownership to UID 49999 | Flower containers run as `app` (UID 49999). Directories created as root would cause "Permission denied" on container start. | Permission errors visible in `docker logs flower-supernode` |
 | 5 | Configure | Generate `supernode.env` file and Docker run configuration | Translates CONTEXT variables into Docker environment variables and CLI flags | Malformed env file causes container startup failure |
 | 6 | Configure | Write systemd unit file `flower-supernode.service` | Systemd manages container lifecycle, restart-on-failure, and dependency ordering with Docker daemon | Unit file write failure prevents service start |
@@ -278,12 +280,13 @@ The SuperNode boot follows a strict linear sequence. Each step validates its pre
 | 11 | Bootstrap | Create and start Flower SuperNode container via systemd | Launches the `flwr/supernode` container with the discovered SuperLink address, node config, `${DOCKER_GPU_FLAGS}`, and all CLI flags | Container creation failure: check `docker logs flower-supernode`. Common cause: UID permission errors on mounted directories. |
 | 12 | Bootstrap | Wait for SuperNode container to reach running state | Confirms the container process started successfully (not that it connected to SuperLink -- connection is Flower's responsibility) | Health check loop: `docker inspect --format='{{.State.Running}}' flower-supernode` with 60-second timeout |
 | 13 | Bootstrap | Publish status to OneGate: `FL_NODE_READY=YES`, `FL_NODE_ID`, `FL_VERSION`, `FL_GPU_AVAILABLE` | Signals to the OneFlow service that this SuperNode is operational. Enables monitoring and service-level readiness tracking. `FL_GPU_AVAILABLE` reports actual GPU status. | OneGate PUT failure: WARNING logged but does NOT block readiness. SuperNode can function without OneGate publication. |
-| 14 | Report | `REPORT_READY` contextualization reports VM as READY | OpenNebula marks the VM as READY. In OneFlow deployments, this signals role completion. | If any prior step failed, REPORT_READY is never reached; VM stays in boot state. |
+| 14a | Bootstrap | **DCGM Exporter sidecar (Phase 8):** When `FL_DCGM_ENABLED=YES` AND `FL_GPU_ENABLED=YES` AND GPU was detected in Step 9, start the DCGM Exporter sidecar container. Pull image `nvcr.io/nvidia/k8s/dcgm-exporter:4.5.1-4.8.0-distroless`, write systemd unit, start on port 9400. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 6. | GPU metrics require DCGM access to the GPU management interface. Sidecar lifecycle is tied to the SuperNode container via `PartOf=`. | Image pull failure: WARNING logged, boot continues without DCGM (degraded monitoring, not fatal). |
+| 15 | Report | `REPORT_READY` contextualization reports VM as READY | OpenNebula marks the VM as READY. In OneFlow deployments, this signals role completion. | If any prior step failed, REPORT_READY is never reached; VM stays in boot state. |
 
 **Total boot time estimate:**
 - Steps 1-6: ~10-15 seconds (OS boot + configuration)
 - Step 7: 0 seconds (static mode) or 10-300 seconds (OneGate discovery, depending on SuperLink readiness)
-- Steps 8-14: ~10-20 seconds (Docker + GPU check + container startup)
+- Steps 8-15: ~10-20 seconds (Docker + GPU check + container startup + optional DCGM sidecar)
 - **Typical total:** 20-35 seconds (static mode) or 30-335 seconds (OneGate mode)
 
 #### 7a. Step 9: GPU Detection (Phase 6)
@@ -628,7 +631,19 @@ The SuperNode appliance specification depends on and complements the SuperLink a
 
 ---
 
+### 17. Monitoring Integration
+
+The SuperNode supports two monitoring tiers defined in Phase 8:
+
+- **Tier 1 (OBS-01) -- Structured JSON Logging:** Enabled via `FL_LOG_FORMAT=json` (service-level). The FlowerJSONFormatter replaces Flower's default text formatter on the `flwr` logger. All Flower log output becomes single-line JSON objects with structured FL event data including `gpu_detected` and `gpu_unavailable` events during boot. Zero additional infrastructure required.
+
+- **Tier 2 (OBS-02) -- DCGM GPU Metrics Export:** Enabled via `FL_DCGM_ENABLED=YES` on port 9400. Starts a DCGM Exporter sidecar container that exposes 8 GPU metrics (utilization, memory, temperature, power, XID errors, clock speed). Requires `FL_GPU_ENABLED=YES` and GPU detection success. The DCGM image is pulled at boot time (not pre-baked) to keep the base QCOW2 image size stable.
+
+See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) for the complete monitoring specification including metric definitions, Grafana dashboards, and alerting rules.
+
+---
+
 *Document: spec/02-supernode-appliance.md*
-*Phase: 01-base-appliance-architecture (updated Phase 6)*
+*Phase: 01-base-appliance-architecture (updated Phase 8)*
 *Requirement: APPL-02, ML-02*
 *Status: Complete*
