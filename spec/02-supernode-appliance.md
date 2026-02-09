@@ -261,7 +261,7 @@ Before entering the discovery retry loop, the SuperNode SHALL perform a connecti
 
 ### 7. Linear Boot Sequence
 
-The SuperNode boot follows a strict linear sequence. Each step validates its preconditions before proceeding. The sequence has 13 steps organized into three stages: OS initialization, configuration with discovery, and container startup.
+The SuperNode boot follows a strict linear sequence. Each step validates its preconditions before proceeding. The sequence has 14 steps organized into three stages: OS initialization, configuration with discovery, and container startup.
 
 | Step | Stage | Action | Why | Failure |
 |------|-------|--------|-----|---------|
@@ -273,17 +273,67 @@ The SuperNode boot follows a strict linear sequence. Each step validates its pre
 | 6 | Configure | Write systemd unit file `flower-supernode.service` | Systemd manages container lifecycle, restart-on-failure, and dependency ordering with Docker daemon | Unit file write failure prevents service start |
 | 7 | Discover | Execute SuperLink discovery (static or OneGate) | The SuperNode cannot start without knowing the SuperLink Fleet API address | Static: immediate (no failure path here; connectivity checked by Flower). OneGate: may retry for up to 5 minutes. On timeout, script exits non-zero. See Section 6. |
 | 8 | Bootstrap | Wait for Docker daemon readiness | Docker may take 5-10 seconds to initialize after boot. Running `docker run` before daemon is ready causes "Cannot connect to the Docker daemon" errors. | Loop: `until docker info >/dev/null 2>&1; do sleep 1; done` with 60-second timeout |
-| 9 | Bootstrap | Handle version override | If `FLOWER_VERSION` differs from pre-baked version, pull the requested image. Fall back to pre-baked on failure. | Pull failure: WARNING logged, pre-baked version used. Network-free environments always use pre-baked. |
-| 10 | Bootstrap | Create and start Flower SuperNode container via systemd | Launches the `flwr/supernode` container with the discovered SuperLink address, node config, and all CLI flags | Container creation failure: check `docker logs flower-supernode`. Common cause: UID permission errors on mounted directories. |
-| 11 | Bootstrap | Wait for SuperNode container to reach running state | Confirms the container process started successfully (not that it connected to SuperLink -- connection is Flower's responsibility) | Health check loop: `docker inspect --format='{{.State.Running}}' flower-supernode` with 60-second timeout |
-| 12 | Bootstrap | Publish status to OneGate: `FL_NODE_READY=YES`, `FL_NODE_ID`, `FL_VERSION` | Signals to the OneFlow service that this SuperNode is operational. Enables monitoring and service-level readiness tracking. | OneGate PUT failure: WARNING logged but does NOT block readiness. SuperNode can function without OneGate publication. |
-| 13 | Report | `REPORT_READY` contextualization reports VM as READY | OpenNebula marks the VM as READY. In OneFlow deployments, this signals role completion. | If any prior step failed, REPORT_READY is never reached; VM stays in boot state. |
+| 9 | Bootstrap | GPU detection (Phase 6) | Check GPU availability when `FL_GPU_ENABLED=YES`. Sets `DOCKER_GPU_FLAGS` for container launch. See Section 7a. | GPU not available: WARNING logged. `DOCKER_GPU_FLAGS` left empty. Boot continues; training falls back to CPU. |
+| 10 | Bootstrap | Handle version override | If `FLOWER_VERSION` differs from pre-baked version, pull the requested image. Fall back to pre-baked on failure. | Pull failure: WARNING logged, pre-baked version used. Network-free environments always use pre-baked. |
+| 11 | Bootstrap | Create and start Flower SuperNode container via systemd | Launches the `flwr/supernode` container with the discovered SuperLink address, node config, `${DOCKER_GPU_FLAGS}`, and all CLI flags | Container creation failure: check `docker logs flower-supernode`. Common cause: UID permission errors on mounted directories. |
+| 12 | Bootstrap | Wait for SuperNode container to reach running state | Confirms the container process started successfully (not that it connected to SuperLink -- connection is Flower's responsibility) | Health check loop: `docker inspect --format='{{.State.Running}}' flower-supernode` with 60-second timeout |
+| 13 | Bootstrap | Publish status to OneGate: `FL_NODE_READY=YES`, `FL_NODE_ID`, `FL_VERSION`, `FL_GPU_AVAILABLE` | Signals to the OneFlow service that this SuperNode is operational. Enables monitoring and service-level readiness tracking. `FL_GPU_AVAILABLE` reports actual GPU status. | OneGate PUT failure: WARNING logged but does NOT block readiness. SuperNode can function without OneGate publication. |
+| 14 | Report | `REPORT_READY` contextualization reports VM as READY | OpenNebula marks the VM as READY. In OneFlow deployments, this signals role completion. | If any prior step failed, REPORT_READY is never reached; VM stays in boot state. |
 
 **Total boot time estimate:**
 - Steps 1-6: ~10-15 seconds (OS boot + configuration)
 - Step 7: 0 seconds (static mode) or 10-300 seconds (OneGate discovery, depending on SuperLink readiness)
-- Steps 8-13: ~10-20 seconds (Docker + container startup)
+- Steps 8-14: ~10-20 seconds (Docker + GPU check + container startup)
 - **Typical total:** 20-35 seconds (static mode) or 30-335 seconds (OneGate mode)
+
+#### 7a. Step 9: GPU Detection (Phase 6)
+
+**WHAT:** Check GPU availability when `FL_GPU_ENABLED=YES` and set Docker GPU flags for container launch.
+
+**WHY:** Determine container launch flags and enable graceful CPU fallback when GPU hardware is not available despite being requested.
+
+**ACTIONS:**
+
+```
+1. IF FL_GPU_ENABLED != YES:
+     Set DOCKER_GPU_FLAGS=""
+     Skip to Step 10
+
+2. Check NVIDIA driver: lsmod | grep -q nvidia
+3. Check nvidia-smi: nvidia-smi > /dev/null 2>&1
+
+4. IF both checks pass:
+     Set DOCKER_GPU_FLAGS="--gpus all"
+     IF FL_CUDA_VISIBLE_DEVICES is set and != "all":
+         Append: -e CUDA_VISIBLE_DEVICES=${FL_CUDA_VISIBLE_DEVICES}
+     ELSE:
+         Append: -e CUDA_VISIBLE_DEVICES=all
+     Set FL_GPU_AVAILABLE=YES
+     LOG "INFO: GPU detected, container will launch with GPU access"
+
+5. IF either check fails:
+     Set DOCKER_GPU_FLAGS=""
+     Set FL_GPU_AVAILABLE=NO
+     LOG "WARNING: FL_GPU_ENABLED=YES but GPU not available"
+     LOG "WARNING: nvidia-smi failed or nvidia module not loaded"
+     LOG "WARNING: Falling back to CPU-only training"
+
+6. Optionally run /opt/flower/scripts/validate-gpu.sh for detailed diagnostics
+   (only if script exists and operator wants verbose output)
+```
+
+**FAILURE:** GPU not available when `FL_GPU_ENABLED=YES`.
+
+| Aspect | Value |
+|--------|-------|
+| Severity | WARNING (not FATAL) |
+| Boot continues | YES |
+| Recovery | Training proceeds on CPU with degraded performance |
+| OneGate publication | `FL_GPU_AVAILABLE=NO` published in Step 13 (if OneGate reachable) |
+
+**Design rationale:** A degraded (slower) SuperNode is better than a missing one. The training round continues with CPU-only performance. The WARNING log and ClientApp device logging provide visibility. See `spec/10-gpu-passthrough.md`, Decision Record DR-05, for the full rationale.
+
+**Cross-reference:** See `spec/10-gpu-passthrough.md` for GPU stack configuration requirements across all four layers (host, VM template, container runtime, application).
 
 ---
 
@@ -297,6 +347,7 @@ The SuperNode container runs in subprocess isolation mode with no TLS (Phase 1 d
 docker run -d \
   --name flower-supernode \
   --restart unless-stopped \
+  ${DOCKER_GPU_FLAGS} \
   -v /opt/flower/data:/app/data:ro \
   -e FLWR_LOG_LEVEL=${FL_LOG_LEVEL:-INFO} \
   flwr/supernode:${FLOWER_VERSION:-1.25.0} \
@@ -314,6 +365,7 @@ docker run -d \
 |-----------|-------|---------|
 | `--name` | `flower-supernode` | Fixed container name for systemd management and log access. |
 | `--restart` | `unless-stopped` | Docker restarts the container on crash. Does not restart if explicitly stopped. |
+| `${DOCKER_GPU_FLAGS}` | `--gpus all -e CUDA_VISIBLE_DEVICES=...` or empty | GPU access flags set by Step 9 (GPU Detection). Empty string when `FL_GPU_ENABLED=NO` or GPU unavailable. See Section 7a. |
 | `-v /opt/flower/data:/app/data:ro` | Read-only data mount | Local training data accessible to the ClientApp inside the container. Read-only prevents accidental data modification. |
 | `-e FLWR_LOG_LEVEL` | From `FL_LOG_LEVEL` context var | Controls Flower's internal log verbosity (DEBUG, INFO, WARNING, ERROR). |
 | `--insecure` | Flag | Disables TLS verification. Phase 1 only; Phase 2 replaces with `--root-certificates`. |
@@ -480,6 +532,14 @@ The following contextualization variables configure the SuperNode appliance at b
 | `FL_ISOLATION` | `O\|list` | `subprocess` | `--isolation` | App execution isolation mode. Options: `subprocess`, `process`. |
 | `FL_LOG_LEVEL` | `O\|list` | `INFO` | `FLWR_LOG_LEVEL` env var | Log verbosity. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 
+#### GPU Configuration Variables (Phase 6)
+
+| Context Variable | Type | Default | Flower Mapping | Description |
+|-----------------|------|---------|----------------|-------------|
+| `FL_GPU_ENABLED` | `O\|boolean` | `NO` | Docker run: `--gpus all` | Master switch for GPU passthrough. When `YES`, enables GPU detection (Step 9) and adds `--gpus all` to container. |
+| `FL_CUDA_VISIBLE_DEVICES` | `O\|text` | `all` | Docker env: `CUDA_VISIBLE_DEVICES` | GPU device IDs visible to container. Default `all` exposes every GPU assigned to the VM. Set to specific IDs (e.g., `0`, `0,1`) for multi-GPU selection. Only effective when `FL_GPU_ENABLED=YES`. |
+| `FL_GPU_MEMORY_FRACTION` | `O\|number-float` | `0.8` | PyTorch: `set_per_process_memory_fraction()` | GPU memory fraction for PyTorch (0.0-1.0). Soft limit. Only effective when `ML_FRAMEWORK=pytorch` and `FL_GPU_ENABLED=YES`. See `spec/10-gpu-passthrough.md` for complete GPU stack details. |
+
 #### Infrastructure Variables
 
 | Context Variable | Type | Default | Purpose |
@@ -496,8 +556,9 @@ The following contextualization variables configure the SuperNode appliance at b
 |-----------------|------|-------|-------------|
 | `FL_TLS_ENABLED` | `O\|boolean` | Phase 2 | Master switch for TLS. Default: `NO`. |
 | `FL_SSL_CA_CERTFILE` | `O\|text64` | Phase 2 | CA certificate (base64 PEM) for TLS verification. |
-| `FL_GPU_ENABLED` | `O\|boolean` | Phase 6 | Enable NVIDIA GPU passthrough to container. Default: `NO`. |
 | `ML_FRAMEWORK` | `O\|list` | Phase 3 | ML framework variant selection (pytorch, tensorflow, sklearn). |
+
+**Note:** `FL_GPU_ENABLED`, `FL_CUDA_VISIBLE_DEVICES`, and `FL_GPU_MEMORY_FRACTION` are now functional (Phase 6) and documented in the GPU Configuration Variables section above.
 
 **Zero-config behavior:** A SuperNode deployed within a OneFlow service with no contextualization variables set will:
 1. Discover the SuperLink automatically via OneGate.
@@ -568,6 +629,6 @@ The SuperNode appliance specification depends on and complements the SuperLink a
 ---
 
 *Document: spec/02-supernode-appliance.md*
-*Phase: 01-base-appliance-architecture*
-*Requirement: APPL-02*
+*Phase: 01-base-appliance-architecture (updated Phase 6)*
+*Requirement: APPL-02, ML-02*
 *Status: Complete*
