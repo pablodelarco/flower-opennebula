@@ -477,3 +477,476 @@ Use this decision matrix to choose the cross-zone networking option for your dep
 - **Acceptable alternative:** Direct public IP for small deployments or when VPN infrastructure is not available, provided TLS is enabled and certificates have correct SANs.
 
 ---
+
+## 7. gRPC Keepalive Configuration
+
+### Why Keepalive Is Needed
+
+Stateful firewalls and NAT devices track TCP connections and drop idle ones after a timeout. Common idle timeouts vary widely:
+
+| Environment | Typical Idle Timeout |
+|-------------|---------------------|
+| Enterprise firewalls | 60-600 seconds |
+| Azure TCP load balancer | 4 minutes (240 seconds) |
+| AWS Network Load Balancer | 350 seconds |
+| Linux conntrack (default) | 432000 seconds (5 days) |
+| Aggressive edge firewalls | 60 seconds |
+
+gRPC's default keepalive interval is 2 hours (7200 seconds) -- far too long for WAN paths through middleboxes. Flower's built-in default (210 seconds, introduced in PR #1069) is better but still risks timeout on aggressive firewalls with 60-second idle limits.
+
+When a firewall drops an idle TCP connection silently, the next gRPC call fails with "transport is closing" or similar errors. The connection appears to work initially but breaks after idle periods between training rounds, especially in later rounds with longer gaps.
+
+### Recommended Values
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| keepalive_time | 60 seconds | Below the most aggressive common firewall timeout (60s). Provides a safe margin. |
+| keepalive_timeout | 20 seconds | Time to wait for a keepalive ACK. If no response within 20s, the connection is considered dead. |
+| permit_without_calls | true | Send keepalive pings even when no RPCs are active. Essential for idle periods between FL rounds. |
+
+### Client-Side Options (SuperNode)
+
+The SuperNode is the gRPC client. These channel options must be set on the client-side gRPC channel.
+
+| gRPC Channel Option | Value | Description |
+|---------------------|-------|-------------|
+| `grpc.keepalive_time_ms` | `60000` | Send keepalive ping every 60 seconds. |
+| `grpc.keepalive_timeout_ms` | `20000` | Wait 20 seconds for keepalive ACK before declaring connection dead. |
+| `grpc.keepalive_permit_without_calls` | `1` | Send keepalive even when no RPCs are in flight. |
+| `grpc.http2.max_pings_without_data` | `0` | Allow unlimited pings without data frames (0 = unlimited). |
+
+### Server-Side Options (SuperLink)
+
+The SuperLink is the gRPC server. Server-side options control what the server accepts from clients and when the server itself sends keepalives.
+
+| gRPC Server Option | Value | Description |
+|--------------------|-------|-------------|
+| `grpc.keepalive_time_ms` | `60000` | Server also sends keepalive pings every 60 seconds. |
+| `grpc.keepalive_timeout_ms` | `20000` | Server waits 20 seconds for keepalive ACK. |
+| `grpc.keepalive_permit_without_calls` | `1` | Server sends keepalive even when idle. |
+| `grpc.http2.min_recv_ping_interval_without_data_ms` | `30000` | Accept client pings as frequently as every 30 seconds. |
+| `grpc.http2.max_ping_strikes` | `0` | Do not penalize clients for frequent pings (0 = unlimited). |
+
+### CRITICAL: Keepalive Coordination Rule
+
+**Client `keepalive_time` MUST be >= server `min_recv_ping_interval`.**
+
+If the client sends pings more frequently than the server permits, the server responds with `GOAWAY` frame containing `ENHANCE_YOUR_CALM` error code and closes the connection. This manifests as sudden connection drops with cryptic error messages.
+
+With the recommended values: client keepalive_time = 60s >= server min_recv_ping_interval = 30s. This provides a 2x safety margin.
+
+**Deployment rule:** When adjusting keepalive values, update the server-side configuration first (to accept the new ping frequency), then update clients. Rolling out client changes first may trigger GOAWAY errors on servers that have not yet been updated.
+
+### New CONTEXT Variables
+
+| Variable | USER_INPUT Definition | Default | Appliance | Description |
+|----------|----------------------|---------|-----------|-------------|
+| `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | `60` | Both (SuperLink + SuperNode) | Interval between keepalive pings, in seconds. Implementation multiplies by 1000 for gRPC millisecond options. |
+| `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | `20` | Both (SuperLink + SuperNode) | Time to wait for keepalive ACK before declaring connection dead, in seconds. Implementation multiplies by 1000 for gRPC millisecond options. |
+
+**Validation rules:**
+- `FL_GRPC_KEEPALIVE_TIME`: Positive integer (>0). Values below 10 generate a warning ("keepalive_time < 10s is aggressive and may cause excessive network traffic").
+- `FL_GRPC_KEEPALIVE_TIMEOUT`: Positive integer (>0). Must be less than `FL_GRPC_KEEPALIVE_TIME`.
+
+### Translation to gRPC Options
+
+The configure.sh script translates the CONTEXT variables into environment variables that the Flower process reads at startup.
+
+```bash
+# In configure.sh -- keepalive configuration
+KEEPALIVE_TIME="${FL_GRPC_KEEPALIVE_TIME:-60}"
+KEEPALIVE_TIMEOUT="${FL_GRPC_KEEPALIVE_TIMEOUT:-20}"
+
+# Convert seconds to milliseconds for gRPC
+KEEPALIVE_TIME_MS=$((KEEPALIVE_TIME * 1000))
+KEEPALIVE_TIMEOUT_MS=$((KEEPALIVE_TIMEOUT * 1000))
+
+# Write to environment file for Docker container
+echo "FLOWER_GRPC_KEEPALIVE_TIME_MS=${KEEPALIVE_TIME_MS}" >> /opt/flower/config/flower.env
+echo "FLOWER_GRPC_KEEPALIVE_TIMEOUT_MS=${KEEPALIVE_TIMEOUT_MS}" >> /opt/flower/config/flower.env
+
+log "INFO" "gRPC keepalive: time=${KEEPALIVE_TIME}s (${KEEPALIVE_TIME_MS}ms), timeout=${KEEPALIVE_TIMEOUT}s (${KEEPALIVE_TIMEOUT_MS}ms)"
+```
+
+**Note on Flower integration:** Flower internally manages gRPC channel creation and sets a default keepalive_time of 210 seconds (PR #1069). The implementation may need to pass channel options via environment variables or extend Flower's configuration surface. The spec defines the operator interface (CONTEXT variables) and the target gRPC values. The exact mechanism by which these values are injected into Flower's gRPC layer is an implementation detail that depends on Flower's configuration surface at deployment time.
+
+---
+
+## 8. TLS Certificate Trust Across Zones
+
+### The Problem
+
+OneGate is zone-local. The auto-discovery TLS path used in single-site deployments -- where SuperNode retrieves `FL_CA_CERT` from OneGate after the SuperLink publishes it -- does not work cross-zone. A SuperNode in Zone B cannot query Zone A's OneGate.
+
+The static `FL_SSL_CA_CERTFILE` path from Phase 2 (`spec/05-supernode-tls-trust.md`, Section 3) is the cross-zone mechanism. This path was designed for exactly this use case: out-of-band CA certificate distribution when OneGate is not available.
+
+### Operator Workflow: Self-Signed CA
+
+For deployments using the SuperLink's auto-generated self-signed CA (Phase 2 default):
+
+**Step 1: Deploy the coordinator zone (Zone A).**
+Instantiate the coordinator OneFlow service with `FL_TLS_ENABLED=YES`. Wait for the service to reach RUNNING state and the SuperLink to report `FL_READY=YES`.
+
+**Step 2: Extract the CA certificate from the SuperLink VM.**
+
+```bash
+# SSH into the SuperLink VM
+ssh root@<superlink-vm-ip>
+
+# Extract and base64-encode the CA certificate
+base64 -w0 /opt/flower/certs/ca.crt
+# Output: LS0tLS1CRUdJTi... (one long base64 string)
+# Copy this string.
+```
+
+**Step 3: Configure training site templates with the CA certificate.**
+In the training site OneFlow service template (Zone B/C), set:
+- `FL_SSL_CA_CERTFILE` = the base64 string copied from Step 2.
+- `FL_SUPERLINK_ADDRESS` = the SuperLink's reachable IP:port (WireGuard tunnel IP or public IP, depending on networking option).
+- `FL_TLS_ENABLED` = `YES`.
+
+**Step 4: Deploy the training sites (Zones B, C).**
+Instantiate the training site OneFlow services. SuperNodes decode `FL_SSL_CA_CERTFILE`, use it as the trust anchor for `--root-certificates`, and connect to the SuperLink with TLS verification.
+
+### Operator Workflow: Enterprise PKI
+
+For organizations with existing certificate authority infrastructure:
+
+**Step 1: Generate certificates from the enterprise CA.**
+Create a server certificate for the SuperLink with correct SAN entries:
+- Include the SuperLink's private IP.
+- Include the WireGuard tunnel IP (if using WireGuard): e.g., `IP:10.10.9.0`.
+- Include the public IP or DNS name (if using direct public IP): e.g., `DNS:flower.example.com`.
+
+**Step 2: Configure the coordinator zone SuperLink.**
+Set on the SuperLink:
+- `FL_SSL_CA_CERTFILE` = base64-encoded enterprise CA certificate.
+- `FL_SSL_CERTFILE` = base64-encoded server certificate.
+- `FL_SSL_KEYFILE` = base64-encoded server private key.
+
+These trigger the operator-provided path (Phase 2, Section 4) and skip auto-generation.
+
+**Step 3: Configure the training site SuperNodes.**
+Set on each training site template:
+- `FL_SSL_CA_CERTFILE` = the same base64-encoded enterprise CA certificate.
+- `FL_TLS_ENABLED` = `YES`.
+- `FL_SUPERLINK_ADDRESS` = SuperLink reachable address.
+
+**Step 4: Deploy all zones.**
+All zones can be deployed in parallel since the certificates are pre-provisioned. SuperNodes verify the SuperLink's server certificate against the enterprise CA.
+
+### FL_CERT_EXTRA_SAN Integration with WireGuard
+
+When using a self-signed CA with WireGuard, the auto-generated server certificate SAN contains the SuperLink VM's primary private IP (e.g., `10.10.10.5`). SuperNodes in Zone B connect to the SuperLink via the WireGuard tunnel IP (e.g., `10.10.9.0`). This causes a SAN mismatch.
+
+**Solution:** Set `FL_CERT_EXTRA_SAN=IP:10.10.9.0` on the SuperLink so the auto-generated certificate includes the WireGuard tunnel IP in the SAN. SuperNodes then connect to `10.10.9.0:9092`, which matches the SAN entry.
+
+**Example for SuperLink-as-gateway with WireGuard:**
+```
+FL_TLS_ENABLED=YES
+FL_CERT_EXTRA_SAN=IP:10.10.9.0
+```
+
+**Example for dedicated gateway with routing:**
+```
+FL_TLS_ENABLED=YES
+# No FL_CERT_EXTRA_SAN needed if SuperNodes connect to the SuperLink's
+# private IP (10.10.10.5) via routing through the WireGuard tunnel.
+# The private IP is already in the auto-generated SAN.
+```
+
+### Decision: Self-Signed CA vs Enterprise PKI
+
+| Criterion | Self-Signed CA | Enterprise PKI |
+|-----------|---------------|----------------|
+| Setup complexity | Low (auto-generated at boot) | Higher (cert generation, key management) |
+| CA cert distribution | Manual extraction from SuperLink VM | Distributed from enterprise CA infrastructure |
+| SAN management | May need FL_CERT_EXTRA_SAN for multi-homed SuperLink | SANs specified during cert generation |
+| Certificate lifetime | 365 days (fixed by auto-generation) | Operator-controlled (can be multi-year) |
+| Compliance | May not satisfy enterprise security requirements | Integrates with existing compliance framework |
+| Recommended for | Development, testing, small multi-site deployments | Production, regulated environments, long-lived deployments |
+
+---
+
+## 9. 3-Zone Deployment Walkthrough
+
+This section provides a complete end-to-end procedure for deploying a 3-zone Flower federation. A reader should be able to plan and execute a multi-site deployment using only this walkthrough and the referenced specs.
+
+### Prerequisites
+
+1. **Three OpenNebula zones** federated under a common OpenNebula master. Users and groups are shared across zones.
+2. **Cross-zone networking** established using either WireGuard (Section 4) or direct public IP (Section 5). The SuperLink's Fleet API (port 9092) must be reachable from all training site zones.
+3. **VM templates registered** in each zone:
+   - Zone A: SuperLink VM template (from the SuperLink QCOW2 appliance).
+   - Zone B: SuperNode VM template (from the appropriate framework variant QCOW2).
+   - Zone C: SuperNode VM template (same or different framework variant).
+4. **OneFlow service templates registered** in each zone:
+   - Zone A: Coordinator zone template (Section 3.1).
+   - Zone B: Training site template (Section 3.2).
+   - Zone C: Training site template (Section 3.2).
+5. **WireGuard tunnels active** (if using WireGuard) and verified with `wg show wg0`.
+
+### Phase 1: Deploy Coordinator Zone (Zone A)
+
+**Step 1: Instantiate the coordinator service.**
+
+```bash
+# In Zone A
+oneflow-template instantiate <coordinator-template-id> \
+  --extra_template '{"custom_attrs_values": {
+    "FL_TLS_ENABLED": "YES",
+    "FL_CERT_EXTRA_SAN": "IP:10.10.9.0",
+    "FL_GRPC_KEEPALIVE_TIME": "60",
+    "FL_NUM_ROUNDS": "10",
+    "FL_MIN_AVAILABLE_CLIENTS": "4"
+  }}'
+```
+
+**Step 2: Wait for RUNNING state.**
+
+```bash
+# Monitor service deployment
+oneflow show <service-id>
+
+# Expected progression:
+# PENDING -> DEPLOYING -> RUNNING (typically 60-90 seconds)
+```
+
+**Step 3: Verify SuperLink is healthy.**
+
+```bash
+# SSH into SuperLink VM
+ssh root@<superlink-vm-ip>
+
+# Check container status
+docker ps | grep flower-superlink
+
+# Check logs
+docker logs flower-superlink --tail 20
+
+# Verify TLS certificates were generated
+ls -la /opt/flower/certs/
+# Expected: ca.key (root:root 0600), ca.crt, server.pem, server.key (49999:49999)
+```
+
+**Step 4: Extract the CA certificate.**
+
+```bash
+# Still on the SuperLink VM
+CA_CERT_B64=$(base64 -w0 /opt/flower/certs/ca.crt)
+echo "$CA_CERT_B64"
+# Copy this base64 string for use in Zone B/C configuration
+```
+
+**Step 5: Note the SuperLink's reachable address.**
+
+For WireGuard: use the SuperLink's WireGuard tunnel IP (e.g., `10.10.9.0:9092`) or its private IP if reachable via routing through the gateway.
+
+For direct public IP: use the public IP and port (e.g., `203.0.113.50:9092`).
+
+### Phase 2: Configure Training Sites (Zones B, C)
+
+**Step 6: Update Zone B training site template.**
+
+Configure the template `user_inputs` or use `--extra_template` at instantiation:
+- `FL_SUPERLINK_ADDRESS` = `10.10.9.0:9092` (WireGuard) or `203.0.113.50:9092` (public IP).
+- `FL_SSL_CA_CERTFILE` = the base64 CA cert string from Step 4.
+- `FL_TLS_ENABLED` = `YES`.
+- `FL_GRPC_KEEPALIVE_TIME` = `60`.
+- `ML_FRAMEWORK` = `pytorch` (or your chosen framework).
+
+**Step 7: Update Zone C training site template.**
+
+Same configuration as Zone B. `FL_SUPERLINK_ADDRESS` and `FL_SSL_CA_CERTFILE` values are identical (same SuperLink, same CA).
+
+### Phase 3: Deploy Training Sites
+
+**Step 8: Instantiate training site services (can be parallel).**
+
+```bash
+# In Zone B
+oneflow-template instantiate <training-site-template-id-b> \
+  --extra_template '{"custom_attrs_values": {
+    "FL_SUPERLINK_ADDRESS": "10.10.9.0:9092",
+    "FL_SSL_CA_CERTFILE": "<base64-ca-cert-from-step-4>",
+    "FL_TLS_ENABLED": "YES",
+    "FL_GRPC_KEEPALIVE_TIME": "60",
+    "ML_FRAMEWORK": "pytorch"
+  }}'
+
+# In Zone C (can run simultaneously)
+oneflow-template instantiate <training-site-template-id-c> \
+  --extra_template '{"custom_attrs_values": {
+    "FL_SUPERLINK_ADDRESS": "10.10.9.0:9092",
+    "FL_SSL_CA_CERTFILE": "<base64-ca-cert-from-step-4>",
+    "FL_TLS_ENABLED": "YES",
+    "FL_GRPC_KEEPALIVE_TIME": "60",
+    "ML_FRAMEWORK": "pytorch"
+  }}'
+```
+
+**Step 9: Wait for training site services to reach RUNNING.**
+
+```bash
+# Monitor Zone B service
+oneflow show <service-id-b>
+
+# Monitor Zone C service
+oneflow show <service-id-c>
+
+# Expected: PENDING -> DEPLOYING -> RUNNING (30-60 seconds per zone)
+# Note: No parents dependency, so SuperNode VMs boot immediately.
+# With --max-retries 0, SuperNodes retry until they connect to the SuperLink.
+```
+
+### Phase 4: Verify Federation
+
+**Step 10: Verify SuperNode connections on the SuperLink.**
+
+```bash
+# SSH into SuperLink VM
+ssh root@<superlink-vm-ip>
+
+# Check container logs for connected clients
+docker logs flower-superlink 2>&1 | grep -i "client"
+# Expected: Messages indicating 4 clients connected (2 from Zone B + 2 from Zone C)
+```
+
+**Step 11: Verify from a SuperNode.**
+
+```bash
+# SSH into a SuperNode VM in Zone B
+ssh root@<supernode-vm-ip>
+
+# Check container status
+docker ps | grep flower-supernode
+
+# Check logs for successful connection
+docker logs flower-supernode --tail 20
+# Expected: Successful gRPC connection to SuperLink, no TLS errors
+```
+
+**Step 12: Submit a training run.**
+
+Once `FL_MIN_AVAILABLE_CLIENTS` (default: 4) is satisfied, submit a Flower run:
+
+```bash
+# From any machine with access to the SuperLink Control API (port 9093)
+# Or via the Flower CLI
+flwr run --app <path-to-fab> --insecure  # Use --insecure for Control API only (port 9093)
+```
+
+### Deployment Timeline
+
+```
+t=0s     Deploy Zone A coordinator service
+         |
+t=5s     OneFlow creates SuperLink VM in Zone A
+         |
+         +-- SuperLink boot: OS -> configure.sh -> TLS cert gen -> bootstrap.sh
+         |
+t=60s    SuperLink RUNNING, FL_READY=YES
+t=60s    Operator extracts CA cert (base64 -w0 /opt/flower/certs/ca.crt)
+         |
+t=120s   Deploy Zone B + Zone C training site services (parallel)
+         |
+t=125s   OneFlow creates SuperNode VMs in Zone B (2 VMs) and Zone C (2 VMs) in parallel
+         |
+         +-- SuperNode boot (parallel): OS -> configure.sh -> TLS validate -> bootstrap.sh
+         +-- No parents dependency: SuperNodes boot immediately
+         +-- --max-retries 0: SuperNodes retry until SuperLink is reachable
+         |
+t=155s   SuperNode containers start, gRPC connections to SuperLink (cross-zone)
+t=160s   TLS handshake succeeds (CA cert from FL_SSL_CA_CERTFILE)
+t=165s   All 4 SuperNodes connected. FL_MIN_AVAILABLE_CLIENTS=4 satisfied.
+         |
+t=165s   3-zone federation fully operational. Training can begin.
+```
+
+**Nominal total time:** ~3 minutes from start to fully operational 3-zone federation. The dominant factor is the manual step of extracting and distributing the CA certificate (t=60s to t=120s). With pre-provisioned PKI certificates, Zones B/C can be deployed in parallel with Zone A, reducing total time to ~90 seconds.
+
+### Verification Commands Summary
+
+| What to Check | Command | Expected Output |
+|---------------|---------|-----------------|
+| Zone A service status | `oneflow show <id-a>` | State: RUNNING |
+| Zone B service status | `oneflow show <id-b>` | State: RUNNING |
+| Zone C service status | `oneflow show <id-c>` | State: RUNNING |
+| SuperLink container | `docker logs flower-superlink` | Fleet API listening, clients connected |
+| SuperNode container | `docker logs flower-supernode` | Connected to SuperLink, no TLS errors |
+| WireGuard tunnel | `wg show wg0` | Transfer data visible, handshake recent |
+| TLS certificate SAN | `openssl x509 -in /opt/flower/certs/server.pem -noout -text \| grep -A3 "Subject Alternative"` | Includes tunnel/public IP |
+| OneGate readiness | `curl -s ${ONEGATE_ENDPOINT}/vm -H "X-ONEGATE-TOKEN: ..."` | FL_READY=YES |
+
+---
+
+## 10. Failure Modes and Recovery
+
+| # | Failure | Symptom | Cause | Recovery |
+|---|---------|---------|-------|----------|
+| 1 | **WireGuard tunnel down** | SuperNode gRPC connections fail with "transport is closing" or TCP timeout. | WireGuard interface down, peer unreachable, UDP 51820 blocked. | Check `wg show wg0` on both gateways. Verify UDP 51820 is open. Restart with `systemctl restart wg-quick@wg0`. SuperNodes reconnect automatically (`--max-retries 0`). |
+| 2 | **SuperLink VM crash** | All SuperNode connections drop simultaneously. SuperNodes enter reconnection loop. | SuperLink process crash, VM reboot, host failure. | Same as single-site recovery (Phase 4, Section 9): systemd restarts the container (`restart: unless-stopped`). SuperNodes reconnect when the SuperLink is back. If checkpointing is enabled, training resumes from the last checkpoint. |
+| 3 | **CA cert mismatch** | SuperNode TLS handshake fails: "certificate verify failed". SuperNode container runs but cannot train. | `FL_SSL_CA_CERTFILE` in Zone B/C does not match the CA that signed the SuperLink's server certificate. Operator copied wrong cert or SuperLink was redeployed (new CA generated). | Re-extract CA cert from SuperLink: `base64 -w0 /opt/flower/certs/ca.crt`. Update `FL_SSL_CA_CERTFILE` in training site templates. Redeploy training site services. |
+| 4 | **SAN mismatch** | SuperNode TLS handshake fails: "hostname mismatch". Similar to #3 but different root cause. | SuperNode connects to an IP not listed in the server certificate's SAN. Common when using WireGuard or public IP without `FL_CERT_EXTRA_SAN`. | Add the connection IP to the SuperLink's SAN: set `FL_CERT_EXTRA_SAN=IP:<tunnel-or-public-ip>`. Redeploy the coordinator service to regenerate certs. Re-extract and redistribute the new CA cert. |
+| 5 | **Firewall idle timeout** | gRPC connections silently dropped after idle period. Training succeeds for early rounds but fails in later rounds with longer gaps. | Stateful firewall drops idle TCP connections before the next gRPC message. | Configure keepalive: set `FL_GRPC_KEEPALIVE_TIME=60` on both SuperLink and SuperNodes. If the firewall timeout is known, set keepalive to 50% of the timeout value. |
+| 6 | **Zone B/C deployed before Zone A** | SuperNodes in retry loop attempting to connect. Service appears stuck in DEPLOYING. | Operator deployed training sites before the coordinator was ready. | Not a failure -- by design. SuperNodes with `--max-retries 0` retry indefinitely. Once the SuperLink becomes available, connections succeed automatically. The operator should monitor and wait. |
+| 7 | **GOAWAY ENHANCE_YOUR_CALM** | SuperNode connections drop with "ENHANCE_YOUR_CALM" error. Clients reconnect but immediately get dropped again. | Client keepalive_time < server min_recv_ping_interval. The server rejects the client's ping frequency. | Ensure `FL_GRPC_KEEPALIVE_TIME` is the same or higher on clients than the server's expected minimum interval. With defaults (60s client, 30s server min), this should not occur. |
+| 8 | **Partial zone failure** | Some SuperNodes in Zone B disconnect. Zone C SuperNodes continue training. Training rounds proceed with reduced client count. | Network partition or hardware failure affecting some VMs in one zone. | If remaining clients >= `FL_MIN_FIT_CLIENTS`, training continues automatically. If below threshold, SuperLink waits. Fix the affected VMs or scale up in unaffected zones. |
+
+---
+
+## 11. Anti-Patterns
+
+Common misconfigurations specific to multi-site federation deployments.
+
+| Anti-Pattern | What Goes Wrong | Correct Approach |
+|-------------|----------------|-----------------|
+| **Trying OneFlow across zones** | OneFlow is zone-local. Referencing a VM template from another zone in a service template fails. A single service cannot span zones. | Create separate OneFlow services in each zone: coordinator template in Zone A, training site template in Zones B/C. Coordinate deployments manually (deploy Zone A first). |
+| **Relying on OneGate for cross-zone discovery** | SuperNodes in Zone B query local OneGate, find no SuperLink in local zone, enter discovery retry loop for 5 minutes, and boot fails. | Set `FL_SUPERLINK_ADDRESS` as mandatory (`M\|text`) in the training site template. Use the SuperLink's reachable IP (tunnel or public). |
+| **Skipping TLS for cross-zone traffic** | gRPC model weights traverse WAN paths in plaintext. Model gradients are visible to network observers. Potential for model inversion attacks. | Always enable TLS for cross-zone: set `FL_TLS_ENABLED=YES` and provide `FL_SSL_CA_CERTFILE` on all SuperNodes. The coordinator template defaults to `FL_TLS_ENABLED=YES`. |
+| **Using auto-generated certs with NAT/public IP without FL_CERT_EXTRA_SAN** | Auto-generated cert SAN contains the VM's private IP. SuperNodes connect via public/tunnel IP. TLS handshake fails with SAN mismatch. | Set `FL_CERT_EXTRA_SAN` on the SuperLink with the public/tunnel IP. Or use operator-provided certificates with correct SANs. |
+| **Setting client keepalive_time below server min_recv_ping_interval** | Server sends GOAWAY with ENHANCE_YOUR_CALM error. Client connections are immediately dropped and the reconnection loop triggers the same error. | Ensure client `FL_GRPC_KEEPALIVE_TIME` >= 30s (the default server `min_recv_ping_interval` is 30s). Use the same `FL_GRPC_KEEPALIVE_TIME` value on both SuperLink and SuperNodes. |
+| **Deploying SuperNodes in the coordinator zone template** | The coordinator template is for the SuperLink only (singleton). Adding a SuperNode role creates a hybrid single-site/multi-site deployment that conflicts with training site SuperNodes. | Use the single-site template (Phase 4) for same-zone deployments. Use the coordinator template (Section 3.1) only for the SuperLink in multi-site federation. If some SuperNodes should be in Zone A alongside the SuperLink, deploy a separate training site service in Zone A. |
+
+---
+
+## 12. New Contextualization Variables Summary
+
+Phase 7 introduces three new contextualization variables. These are added to the existing variable reference (`spec/03-contextualization-reference.md`).
+
+### Variable Definitions
+
+| # | Context Variable | USER_INPUT Definition | Type | Default | Appliance | Validation Rule | Purpose |
+|---|------------------|----------------------|------|---------|-----------|-----------------|---------|
+| 1 | `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | number | `60` | Both (SuperLink + SuperNode) | Positive integer (>0). Warning if <10. | Interval between gRPC keepalive pings. Values in seconds; implementation multiplies by 1000 for gRPC millisecond options. |
+| 2 | `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | number | `20` | Both (SuperLink + SuperNode) | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | Time to wait for keepalive ACK before declaring connection dead. Values in seconds; implementation multiplies by 1000 for gRPC millisecond options. |
+| 3 | `FL_CERT_EXTRA_SAN` | `O\|text\|Additional SAN entries for auto-generated cert (comma-separated)\|\|` | text | (empty) | SuperLink only | If set: comma-separated `IP:<addr>` or `DNS:<name>` entries. | Additional Subject Alternative Name entries for the auto-generated server certificate. Used to add WireGuard tunnel IPs, public IPs, or DNS names to the SAN. |
+
+### USER_INPUT Definitions (Copy-Paste Ready)
+
+```
+# Phase 7: Multi-Site Federation
+FL_GRPC_KEEPALIVE_TIME = "O|number|gRPC keepalive interval in seconds||60"
+FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20"
+FL_CERT_EXTRA_SAN = "O|text|Additional SAN entries for auto-generated cert (comma-separated)||"
+```
+
+### Updated Variable Count
+
+With Phase 7 additions, the total contextualization variable count updates:
+
+| Category | Count | Change |
+|----------|-------|--------|
+| SuperLink parameters | 22 | +3 (FL_GRPC_KEEPALIVE_TIME, FL_GRPC_KEEPALIVE_TIMEOUT, FL_CERT_EXTRA_SAN) |
+| SuperNode parameters | 12 | +2 (FL_GRPC_KEEPALIVE_TIME, FL_GRPC_KEEPALIVE_TIMEOUT) |
+| Shared infrastructure | 5 | (unchanged) |
+| Phase 2+ placeholders | 5 | (unchanged) |
+| **Total unique variables** | **42** | **+3 new** |
+
+*Note:* FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT appear on both appliances but are counted once each in the total.
+
+---
+
+*Specification for ORCH-02: Multi-Site Federation Architecture*
+*Phase: 07 - Multi-Site Federation*
+*Version: 1.0*
