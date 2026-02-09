@@ -682,3 +682,180 @@ Common application-level mistakes that cause GPU training failures or poor perfo
 | Calling memory configuration after GPU operations | `RuntimeError: GPU memory configuration must be set before initialization` | TensorFlow requires `set_memory_growth()` to be called before any GPU operations. PyTorch is more lenient but best practice is early configuration. | Call memory configuration functions at the very beginning of ClientApp initialization, before any model or data operations. |
 
 ---
+
+## 12. Decision Records
+
+### DR-01: Full GPU Passthrough Over vGPU
+
+**Context:** Two approaches exist for GPU virtualization: full PCI passthrough (one GPU per VM) and vGPU (NVIDIA GRID, fractional GPU sharing).
+
+**Decision:** Full GPU passthrough.
+
+**Arguments:**
+
+| Factor | PCI Passthrough | vGPU (NVIDIA GRID) |
+|--------|----------------|-------------------|
+| License cost | Free (no license required) | ~$2-3K per GPU per year (NVIDIA GRID license) |
+| Performance | Near-bare-metal (~95-99% of native GPU performance) | 80-95% of native depending on vGPU profile |
+| Complexity | Standard IOMMU/VFIO configuration | Requires NVIDIA GRID Manager, vGPU profiles, license server |
+| GPU sharing | One GPU per VM (no sharing) | Multiple VMs share a single GPU |
+| OpenNebula support | Well-documented in OpenNebula 7.0 | Supported but more complex setup |
+
+**Rationale:** For federated learning workloads, each SuperNode typically trains on a dedicated GPU. The cost of NVIDIA GRID licensing and the added operational complexity of vGPU management are not justified when the primary use case is one GPU per training client. If GPU sharing becomes necessary, MIG (DR-04) provides a license-free alternative for supported GPU models.
+
+**Status:** Accepted.
+
+### DR-02: driverctl for Persistent Driver Binding Over Init Scripts
+
+**Context:** GPUs must be bound to the vfio-pci driver before they can be passed through to VMs. This binding must persist across reboots and kernel updates.
+
+**Decision:** Use `driverctl` for persistent driver binding.
+
+**Arguments:**
+
+| Factor | driverctl | Init scripts / modprobe rules |
+|--------|-----------|------------------------------|
+| Kernel update survival | Automatic -- overrides are driver-name-based, not module-path-based | May break if module loading order changes with new kernel |
+| Race conditions | systemd-integrated, runs at the correct point in boot | Init scripts may execute before GPU modules are available |
+| Configuration | Single command: `driverctl set-override <addr> vfio-pci` | Requires editing multiple files: modprobe.d, modules-load.d, initramfs |
+| Rollback | `driverctl unset-override <addr>` | Manual file editing and initramfs rebuild |
+| OpenNebula docs | Recommended in OpenNebula 7.0 GPU passthrough guide | Not recommended |
+
+**Status:** Accepted.
+
+### DR-03: Memory Growth Over Memory Fraction as Default
+
+**Context:** GPU memory must be managed to prevent OOM errors. The two primary approaches are: (A) TensorFlow memory growth / PyTorch no-config (dynamic allocation), and (B) explicit memory fraction limits per process.
+
+**Decision:** Dynamic memory growth as the default configuration. Memory fraction available as an opt-in override via `FL_GPU_MEMORY_FRACTION`.
+
+**Arguments:**
+
+| Factor | Memory Growth (Default) | Memory Fraction (Opt-in) |
+|--------|------------------------|-------------------------|
+| Simplicity | Zero configuration needed | Requires tuning fraction per workload |
+| Single-client scenario | Optimal -- allocates exactly what's needed | Wastes unused allocation headroom |
+| Multi-client scenario | Risk of OOM if both clients allocate aggressively | Provides approximate bounds (soft limit in PyTorch) |
+| Framework support | TensorFlow: `set_memory_growth(True)`. PyTorch: default behavior. | TensorFlow: `set_logical_device_configuration()`. PyTorch: `set_per_process_memory_fraction()`. |
+
+**Rationale:** The default SuperNode configuration is one ClientApp per GPU (subprocess isolation mode). In this scenario, memory growth provides optimal behavior with zero configuration. Multi-client GPU sharing is an advanced scenario that requires explicit operator tuning via `FL_GPU_MEMORY_FRACTION`.
+
+**Status:** Accepted.
+
+### DR-04: Defer MIG to Future Phase
+
+**Context:** Multi-Instance GPU (MIG) on NVIDIA A100/H100 GPUs provides hardware-isolated GPU partitions with dedicated memory. MIG could enable multiple SuperNode containers to share a single GPU with guaranteed resource isolation.
+
+**Decision:** Defer MIG support to a future phase.
+
+**Arguments:**
+
+| Factor | Assessment |
+|--------|-----------|
+| Hardware availability | MIG requires A100 or H100 GPUs. Consumer and lower-tier datacenter GPUs do not support MIG. |
+| Host configuration | MIG requires nvidia-smi commands to create GPU instances before VM provisioning. Adds host-level setup complexity. |
+| OpenNebula integration | OpenNebula 7.0 mentions MIG support in host probes, but the VM template syntax for requesting specific MIG profiles is sparsely documented. |
+| Current priority | The primary use case (one GPU per SuperNode) is fully served by PCI passthrough. MIG is an optimization for GPU-constrained environments. |
+| Incremental addition | MIG support can be added without changing the existing passthrough stack. The Layer 1-2 configuration remains valid; MIG adds an alternative to full-device passthrough. |
+
+**Status:** Deferred. Revisit when MIG-capable hardware is available for testing and OpenNebula MIG template syntax is clarified.
+
+### DR-05: CPU Fallback is WARNING Not FATAL
+
+**Context:** When `FL_GPU_ENABLED=YES` is set but no GPU is detected at boot (e.g., GPU not assigned to VM template, driver failure), the appliance must decide how to handle the mismatch.
+
+**Decision:** Log a WARNING and proceed with CPU-only training. Do not abort boot.
+
+**Arguments:**
+
+| Factor | WARNING (Chosen) | FATAL (Rejected) |
+|--------|-----------------|-----------------|
+| Availability | SuperNode boots and trains, albeit slower | SuperNode fails to start; operator intervention required |
+| Single QCOW2 flexibility | Same GPU-enabled image works in CPU-only deployments | Separate CPU-only and GPU-only images needed, or env var management |
+| Error visibility | WARNING in boot logs + ClientApp device logging | Immediate failure visible in VM status |
+| Risk | Operator may not notice CPU fallback and assume GPU training | No risk of unnoticed degradation |
+
+**Rationale:** In federated learning, a degraded (slower) SuperNode is better than a missing one. The training round continues with CPU-only performance. The WARNING log and ClientApp device logging (Section 9d) provide visibility. An operator monitoring training throughput will notice the performance difference and can investigate.
+
+**Status:** Accepted.
+
+---
+
+## 13. Contextualization Variables Preview
+
+This phase introduces three new contextualization variables for GPU configuration. Full `USER_INPUT` definitions are added to the contextualization reference (`spec/03-contextualization-reference.md`) in Plan 06-02.
+
+| Variable | Type | Default | Appliance | Description |
+|----------|------|---------|-----------|-------------|
+| `FL_GPU_ENABLED` | `O\|boolean` | `NO` | SuperNode | Master switch for GPU passthrough to container. When `YES`, adds `--gpus all` to Docker run command. |
+| `FL_CUDA_VISIBLE_DEVICES` | `O\|text` | `all` | SuperNode | GPU device IDs visible to container. Set to specific IDs (e.g., `0`, `0,1`) for multi-GPU selection. Default `all` exposes every GPU assigned to the VM. |
+| `FL_GPU_MEMORY_FRACTION` | `O\|text` | `0.8` | SuperNode | GPU memory fraction for PyTorch (`set_per_process_memory_fraction`). Only used when multiple ClientApps share a GPU. Ignored for TensorFlow (uses memory growth by default). |
+
+**Variable behavior:**
+- `FL_GPU_ENABLED=NO` (default): No GPU flags added to Docker run. Container runs CPU-only regardless of GPU availability.
+- `FL_GPU_ENABLED=YES`: GPU flags added. If no GPU is available, WARNING logged and CPU fallback activates.
+- `FL_CUDA_VISIBLE_DEVICES=all`: All GPUs visible. This is the default and correct setting for single-GPU VMs.
+- `FL_GPU_MEMORY_FRACTION=0.8`: Reserves 80% of GPU memory for the PyTorch caching allocator. Soft limit.
+
+**Note:** These variables are defined as Phase 6 placeholders in the SuperNode contextualization parameters (`spec/02-supernode-appliance.md`, Section 13). Plan 06-02 transitions them from placeholder to fully functional with complete USER_INPUT definitions and validation rules.
+
+---
+
+## 14. Cross-References
+
+### 14a. SuperNode Appliance (spec/02-supernode-appliance.md)
+
+**Section 5 (Recommended VM Resources):** GPU row states "None (CPU-only default)" with reference to Phase 6. This spec defines the GPU passthrough stack that enables the GPU resource allocation.
+
+**Section 8 (Docker Container Configuration):** The CPU-only Docker run command is extended in Section 8 of this document with `--gpus all` and `CUDA_VISIBLE_DEVICES` flags when `FL_GPU_ENABLED=YES`.
+
+**Section 13 (Contextualization Parameters):** The `FL_GPU_ENABLED` placeholder variable transitions to functional in Phase 6. Plan 06-02 adds complete USER_INPUT definitions.
+
+**Boot sequence impact:** The existing 13-step boot sequence (Section 7) is extended with GPU detection at Step 10 (bootstrap). The bootstrap script checks `FL_GPU_ENABLED` and conditionally adds GPU flags before creating the Docker container. No new boot steps are introduced.
+
+### 14b. ML Framework Variants (spec/06-ml-framework-variants.md)
+
+**GPU-enabled framework images:** The CPU-only framework variants defined in Phase 3 (Section 3: Dockerfile Specifications) use CPU-only package builds (`torch+cpu`, `tensorflow-cpu`). Phase 6 Plan 06-02 defines GPU-enabled Dockerfile variants that install CUDA-capable packages:
+- PyTorch: `torch` with CUDA wheels (replacing `torch+cpu`)
+- TensorFlow: `tensorflow` (replacing `tensorflow-cpu`)
+- scikit-learn: No GPU variant (scikit-learn does not use CUDA)
+
+**Image naming:** GPU variants follow the same naming convention: `flower-supernode-pytorch:{FLOWER_VERSION}`. The GPU-enabled QCOW2 image pre-installs CUDA-capable framework images alongside the NVIDIA driver and Container Toolkit.
+
+### 14c. Contextualization Reference (spec/03-contextualization-reference.md)
+
+**Plan 06-02 additions:** Three new `FL_GPU_*` variables will be added to the contextualization reference with full USER_INPUT definitions, validation rules, and Flower mapping documentation.
+
+### 14d. Training Configuration (spec/09-training-configuration.md)
+
+**Checkpoint storage:** GPU-accelerated training produces the same checkpoint format (`.npz` via Flower ArrayRecord) as CPU training. No changes to the checkpointing mechanism are needed for GPU support.
+
+**Strategy selection:** All six aggregation strategies (FedAvg, FedProx, FedAdam, Krum, Bulyan, FedTrimmedAvg) work identically on GPU and CPU. Strategy configuration is independent of the compute device.
+
+---
+
+## 15. Open Questions
+
+1. **MIG profile support in OpenNebula Sunstone UI**
+   - **What we know:** OpenNebula 7.0 host probes detect MIG instances. The vGPU documentation mentions MIG support.
+   - **What's unclear:** The exact VM template syntax for requesting a specific MIG profile. Whether profile selection is automatic or requires explicit profile ID.
+   - **Recommendation:** Deferred to future phase (see DR-04). For Phase 6, one GPU per VM via full passthrough.
+   - **Confidence:** LOW -- documentation is sparse on MIG template syntax.
+
+2. **NVIDIA driver version pinning strategy**
+   - **What we know:** Ubuntu 24.04 uses kernel 6.8+. NVIDIA drivers 535+ support this kernel. Drivers 545 and 550 are tested.
+   - **What's unclear:** Whether specific driver point releases have issues with specific kernel point releases.
+   - **Recommendation:** Pin to `nvidia-driver-545` or `nvidia-driver-550` in the GPU-enabled QCOW2 build. Document the tested combination in the appliance release notes.
+   - **Confidence:** MEDIUM -- common setup but version combinations vary.
+
+3. **Flower simulation engine GPU fraction vs. production SuperNode**
+   - **What we know:** Flower's simulation engine supports `client-resources.num-gpus = 0.25` for fractional GPU assignment.
+   - **What's unclear:** Whether this configuration applies to production SuperNode or only simulation backends.
+   - **Recommendation:** For production SuperNode, use framework-level memory configuration (PyTorch/TensorFlow APIs) rather than Flower-specific resource limits.
+   - **Confidence:** LOW -- docs focus on simulation, not production SuperNode.
+
+---
+
+*Specification for ML-02: GPU Passthrough Stack*
+*Phase: 06 - GPU Acceleration*
+*Version: 1.0*
