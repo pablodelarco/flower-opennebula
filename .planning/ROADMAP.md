@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Training Configuration** - Spec aggregation strategy selection, parameter exposure, and model checkpointing
 - [ ] **Phase 6: GPU Acceleration** - Spec NVIDIA GPU passthrough, CUDA memory management, and validation procedures
 - [ ] **Phase 7: Multi-Site Federation** - Spec cross-zone deployment architecture, networking, and certificate trust distribution
-- [ ] **Phase 8: Monitoring and Observability** - Spec structured logging, Prometheus/Grafana monitoring stack, dashboards, and alerting
+- [x] **Phase 8: Monitoring and Observability** - Spec structured logging, Prometheus/Grafana monitoring stack, dashboards, and alerting
 - [ ] **Phase 9: Edge and Auto-Scaling** - Spec edge-optimized SuperNode appliance and OneFlow elasticity rules
 
 ## Phase Details
@@ -142,8 +142,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- Monitoring and observability spec: structured logging (OBS-01), Prometheus metrics, DCGM GPU exporter, Grafana dashboards, alerting rules (OBS-02)
-- [ ] 08-02-PLAN.md -- Cross-cutting updates: contextualization reference, appliance specs, and overview integration
+- [x] 08-01-PLAN.md -- Monitoring and observability spec: structured logging (OBS-01), Prometheus metrics, DCGM GPU exporter, Grafana dashboards, alerting rules (OBS-02)
+- [x] 08-02-PLAN.md -- Cross-cutting updates: contextualization reference, appliance specs, and overview integration
 
 ### Phase 9: Edge and Auto-Scaling
 **Goal**: The spec defines an edge-optimized SuperNode appliance for constrained environments and OneFlow elasticity rules for dynamic client scaling during training
@@ -175,5 +175,5 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 | 5. Training Configuration | 2/2 | Complete | 2026-02-08 |
 | 6. GPU Acceleration | 2/2 | Complete | 2026-02-09 |
 | 7. Multi-Site Federation | 2/2 | Complete | 2026-02-09 |
-| 8. Monitoring and Observability | 0/2 | Not started | - |
+| 8. Monitoring and Observability | 2/2 | Complete | 2026-02-09 |
 | 9. Edge and Auto-Scaling | 0/2 | Not started | - |

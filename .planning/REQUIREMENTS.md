@@ -30,8 +30,8 @@ Requirements for initial release of the technical specification.
 
 ### Observability
 
-- [ ] **OBS-01**: Spec defines basic monitoring via structured logging — round progress, connected clients, convergence metrics (loss, accuracy per round)
-- [ ] **OBS-02**: Spec defines Grafana/Prometheus monitoring stack — metrics exporters, pre-built dashboards, GPU utilization, training convergence curves, alerting rules
+- [x] **OBS-01**: Spec defines basic monitoring via structured logging — round progress, connected clients, convergence metrics (loss, accuracy per round)
+- [x] **OBS-02**: Spec defines Grafana/Prometheus monitoring stack — metrics exporters, pre-built dashboards, GPU utilization, training convergence curves, alerting rules
 
 ### Edge
 
@@ -81,8 +81,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ML-02 | Phase 6: GPU Acceleration | Complete |
 | ML-03 | Phase 3: ML Framework Variants and Use Cases | Complete |
 | ML-04 | Phase 5: Training Configuration | Complete |
-| OBS-01 | Phase 8: Monitoring and Observability | Pending |
-| OBS-02 | Phase 8: Monitoring and Observability | Pending |
+| OBS-01 | Phase 8: Monitoring and Observability | Complete |
+| OBS-02 | Phase 8: Monitoring and Observability | Complete |
 | EDGE-01 | Phase 9: Edge and Auto-Scaling | Pending |
 
 **Coverage:**
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-09 after Phase 7 completion*
+*Last updated: 2026-02-09 after Phase 8 completion*
