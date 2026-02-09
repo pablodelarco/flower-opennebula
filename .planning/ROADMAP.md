@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 6: GPU Acceleration** - Spec NVIDIA GPU passthrough, CUDA memory management, and validation procedures
 - [ ] **Phase 7: Multi-Site Federation** - Spec cross-zone deployment architecture, networking, and certificate trust distribution
 - [x] **Phase 8: Monitoring and Observability** - Spec structured logging, Prometheus/Grafana monitoring stack, dashboards, and alerting
-- [ ] **Phase 9: Edge and Auto-Scaling** - Spec edge-optimized SuperNode appliance and OneFlow elasticity rules
+- [x] **Phase 9: Edge and Auto-Scaling** - Spec edge-optimized SuperNode appliance and OneFlow elasticity rules
 
 ## Phase Details
 
@@ -157,8 +157,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md -- Edge SuperNode appliance variant, intermittent connectivity handling, OneFlow auto-scaling specification (EDGE-01, ORCH-03)
-- [ ] 09-02-PLAN.md -- Cross-cutting updates: contextualization reference, SuperNode appliance, orchestration spec, and overview integration
+- [x] 09-01-PLAN.md -- Edge SuperNode appliance variant, intermittent connectivity handling, OneFlow auto-scaling specification (EDGE-01, ORCH-03)
+- [x] 09-02-PLAN.md -- Cross-cutting updates: contextualization reference, SuperNode appliance, orchestration spec, and overview integration
 
 ## Progress
 
@@ -176,4 +176,4 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 | 6. GPU Acceleration | 2/2 | Complete | 2026-02-09 |
 | 7. Multi-Site Federation | 2/2 | Complete | 2026-02-09 |
 | 8. Monitoring and Observability | 2/2 | Complete | 2026-02-09 |
-| 9. Edge and Auto-Scaling | 0/2 | Not started | - |
+| 9. Edge and Auto-Scaling | 2/2 | Complete | 2026-02-09 |

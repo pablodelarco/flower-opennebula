@@ -19,7 +19,7 @@ Requirements for initial release of the technical specification.
 
 - [x] **ORCH-01**: Spec defines OneFlow service template with SuperLink parent role and SuperNode child roles, "straight" deployment ordering, and cardinality configuration
 - [x] **ORCH-02**: Spec defines multi-site federation architecture — SuperLink in Zone A, SuperNodes across Zones B/C, cross-zone networking (VPN/overlay), certificate trust distribution
-- [ ] **ORCH-03**: Spec defines auto-scaling via OneFlow elasticity rules — scale triggers, client join/leave during training, min/max bounds
+- [x] **ORCH-03**: Spec defines auto-scaling via OneFlow elasticity rules — scale triggers, client join/leave during training, min/max bounds
 
 ### Machine Learning & Training
 
@@ -35,7 +35,7 @@ Requirements for initial release of the technical specification.
 
 ### Edge
 
-- [ ] **EDGE-01**: Spec defines edge-optimized SuperNode appliance — lightweight image (<2GB), reduced resource footprint, intermittent connectivity handling, retry logic
+- [x] **EDGE-01**: Spec defines edge-optimized SuperNode appliance — lightweight image (<2GB), reduced resource footprint, intermittent connectivity handling, retry logic
 
 ## v2 Requirements
 
@@ -76,14 +76,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | APPL-05 | Phase 3: ML Framework Variants and Use Cases | Complete |
 | ORCH-01 | Phase 4: Single-Site Orchestration | Complete |
 | ORCH-02 | Phase 7: Multi-Site Federation | Complete |
-| ORCH-03 | Phase 9: Edge and Auto-Scaling | Pending |
+| ORCH-03 | Phase 9: Edge and Auto-Scaling | Complete |
 | ML-01 | Phase 5: Training Configuration | Complete |
 | ML-02 | Phase 6: GPU Acceleration | Complete |
 | ML-03 | Phase 3: ML Framework Variants and Use Cases | Complete |
 | ML-04 | Phase 5: Training Configuration | Complete |
 | OBS-01 | Phase 8: Monitoring and Observability | Complete |
 | OBS-02 | Phase 8: Monitoring and Observability | Complete |
-| EDGE-01 | Phase 9: Edge and Auto-Scaling | Pending |
+| EDGE-01 | Phase 9: Edge and Auto-Scaling | Complete |
 
 **Coverage:**
 - v1 requirements: 15 total
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-02-05*
-*Last updated: 2026-02-09 after Phase 8 completion*
+*Last updated: 2026-02-09 after Phase 9 completion (ALL REQUIREMENTS COMPLETE)*
