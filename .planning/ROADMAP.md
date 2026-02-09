@@ -124,12 +124,11 @@ Plans:
   3. The spec defines gRPC keepalive configuration to survive load balancer and stateful firewall idle timeouts, with specific recommended values
   4. The spec defines how TLS certificate trust extends across zones (CA distribution, per-zone client certs, or shared trust bundle)
   5. A reader can plan a 3-zone federation deployment (1 SuperLink zone + 2 SuperNode zones) using only this spec section
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
-- [ ] 07-03: TBD
+- [ ] 07-01-PLAN.md -- Multi-site federation spec: topology, per-zone templates, networking options, keepalive, TLS trust, deployment walkthrough (ORCH-02)
+- [ ] 07-02-PLAN.md -- Cross-cutting updates: contextualization reference, orchestration spec, and overview integration
 
 ### Phase 8: Monitoring and Observability
 **Goal**: The spec defines both basic structured logging and a full Prometheus/Grafana monitoring stack for FL training visibility, GPU utilization, and alerting
@@ -175,6 +174,6 @@ Note: Phases 2, 3, and 6 all depend only on Phase 1 and could execute in paralle
 | 4. Single-Site Orchestration | 2/2 | Complete | 2026-02-07 |
 | 5. Training Configuration | 2/2 | Complete | 2026-02-08 |
 | 6. GPU Acceleration | 2/2 | Complete | 2026-02-09 |
-| 7. Multi-Site Federation | 0/3 | Not started | - |
+| 7. Multi-Site Federation | 0/2 | Not started | - |
 | 8. Monitoring and Observability | 0/2 | Not started | - |
 | 9. Edge and Auto-Scaling | 0/2 | Not started | - |
