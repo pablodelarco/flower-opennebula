@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 5 COMPLETE (Training Configuration). Ready for Phase 6 (GPU) or implementation.
+**Current focus:** Phase 6 IN PROGRESS (GPU Acceleration). Plan 06-01 complete, Plan 06-02 next.
 
 ## Current Position
 
-Phase: 5 of 9 (Training Configuration)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase complete
-Last activity: 2026-02-08 -- Completed 05-02-PLAN.md (spec integration for training configuration)
+Phase: 6 of 9 (GPU Acceleration)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-09 -- Completed 06-01-PLAN.md (GPU passthrough stack specification)
 
-Progress: [███████████░░░░░░░░░] 55% (11/20 plans)
+Progress: [████████████░░░░░░░░] 60% (12/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 5 min
-- Total execution time: 57 min
+- Total execution time: 64 min
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: [███████████░░░░░░░░░] 55% (11
 | 3. ML Framework Variants and Use Cases | 2/2 | 7 min | 4 min |
 | 4. Single-Site Orchestration | 2/2 | 6 min | 3 min |
 | 5. Training Configuration | 2/2 | 20 min | 10 min |
+| 6. GPU Acceleration | 1/2 | 7 min | 7 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (4 min), 04-02 (2 min), 05-01 (18 min), 05-02 (2 min)
-- Trend: 05-01 was comprehensive (949-line spec); 05-02 was quick integration update
+- Last 5 plans: 04-02 (2 min), 05-01 (18 min), 05-02 (2 min), 06-01 (7 min)
+- Trend: 06-01 produced 861-line GPU passthrough spec in 7 min
 
 *Updated after each plan completion*
 
@@ -111,6 +112,12 @@ Recent decisions affecting current work:
 - [05-02]: Phase 5 variables are functional (not placeholders) in contextualization reference
 - [05-02]: Strategy-specific parameters exposed at SuperLink role level only
 - [05-02]: Checkpointing configuration (FL_CHECKPOINT_*) grouped as SuperLink role-level user_inputs
+- [06-01]: Full GPU passthrough over vGPU (license-free, near-bare-metal performance)
+- [06-01]: driverctl for persistent driver binding (survives kernel updates, systemd-integrated)
+- [06-01]: Memory growth as default over memory fraction (simpler for single-client scenario)
+- [06-01]: MIG deferred to future phase (requires A100/H100, sparse OpenNebula docs)
+- [06-01]: CPU fallback is WARNING not FATAL (degraded SuperNode better than missing one)
+- [06-01]: FL_GPU_ENABLED as opt-in switch; FL_CUDA_VISIBLE_DEVICES and FL_GPU_MEMORY_FRACTION as advanced tuning
 
 ### Pending Todos
 
@@ -118,12 +125,12 @@ None.
 
 ### Blockers/Concerns
 
-- GPU passthrough validation needed on target hardware (affects Phase 6 scope -- may need CPU-only fallback)
+- GPU passthrough validation needed on target hardware (CPU-only fallback path now specified in 06-01)
 - OneGate cross-zone behavior unverified (affects Phase 7 -- may need explicit endpoint config instead of dynamic discovery)
 - PyTorch variant QCOW2 size (~4-5 GB) needs validation during implementation; revisit LLM dep placement if exceeds 5 GB
 
 ## Session Continuity
 
-Last session: 2026-02-08T07:58:02Z
-Stopped at: Completed 05-02-PLAN.md (spec integration for training configuration)
+Last session: 2026-02-09T09:02:34Z
+Stopped at: Completed 06-01-PLAN.md (GPU passthrough stack specification)
 Resume file: None
