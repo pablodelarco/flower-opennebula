@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 8 IN PROGRESS (Monitoring and Observability). Plan 08-01 complete, Plan 08-02 next.
+**Current focus:** Phase 8 COMPLETE (Monitoring and Observability). Phase 9 next.
 
 ## Current Position
 
 Phase: 8 of 9 (Monitoring and Observability)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-09 -- Completed 08-01-PLAN.md (monitoring and observability specification)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-09 -- Completed 08-02-PLAN.md (spec integration for monitoring)
 
-Progress: [████████████████░░░░] 80% (16/20 plans)
+Progress: [█████████████████░░░] 85% (17/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: 5 min
-- Total execution time: 86 min
+- Total execution time: 92 min
 
 **By Phase:**
 
@@ -34,10 +34,10 @@ Progress: [████████████████░░░░] 80% (16
 | 5. Training Configuration | 2/2 | 20 min | 10 min |
 | 6. GPU Acceleration | 2/2 | 13 min | 7 min |
 | 7. Multi-Site Federation | 2/2 | 11 min | 6 min |
-| 8. Monitoring and Observability | 1/2 | 5 min | 5 min |
+| 8. Monitoring and Observability | 2/2 | 11 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 06-02 (6 min), 07-01 (6 min), 07-02 (5 min), 08-01 (5 min)
+- Last 5 plans: 07-01 (6 min), 07-02 (5 min), 08-01 (5 min), 08-02 (6 min)
 - Trend: Consistent 5-6 min per plan
 
 *Updated after each plan completion*
@@ -142,6 +142,10 @@ Recent decisions affecting current work:
 - [08-01]: No "round" label on Prometheus metrics (prevents unbounded cardinality)
 - [08-01]: FL_LOG_FORMAT as service-level variable; FL_METRICS_* as SuperLink role-level; FL_DCGM_ENABLED as SuperNode role-level
 - [08-01]: DCGM not started is degraded monitoring, not fatal (training continues without GPU metrics)
+- [08-02]: Phase 8 variables are functional (not placeholders) in contextualization reference
+- [08-02]: FL_LOG_FORMAT as service-level variable in new Section 5a of contextualization reference
+- [08-02]: SuperNode boot sequence expanded from 14 to 15 steps (DCGM sidecar at Step 14a)
+- [08-02]: SuperLink port table extended with optional port 9101 for metrics
 
 ### Pending Todos
 
@@ -156,6 +160,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-09T16:47:00Z
-Stopped at: Completed 08-01-PLAN.md (monitoring and observability specification)
+Last session: 2026-02-09T16:55:00Z
+Stopped at: Completed 08-02-PLAN.md (spec integration for monitoring)
 Resume file: None
