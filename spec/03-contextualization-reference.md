@@ -22,13 +22,14 @@ This document is the single authoritative reference for every OpenNebula context
 | Category | Count | Appliance |
 |----------|-------|-----------|
 | SuperLink parameters | 19 | SuperLink only |
-| SuperNode parameters | 8 | SuperNode only |
+| SuperNode parameters | 10 | SuperNode only |
 | Shared infrastructure | 5 | Both |
 | Phase 5 strategy/checkpointing | 8 | SuperLink |
-| Phase 2+ placeholders | 6 | Both (not functional in Phase 1) |
-| **Total** | **38** | |
+| Phase 6 GPU configuration | 3 | SuperNode |
+| Phase 2+ placeholders | 5 | Both (not functional in Phase 1) |
+| **Total** | **39** | |
 
-*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (19 = 11 original + 8 Phase 5). The separate Phase 5 row is for traceability. SuperNode count includes FL_USE_CASE added in Phase 3.
+*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (19 = 11 original + 8 Phase 5). The Phase 6 count (3) is included in the SuperNode parameters count (10 = 7 original + 3 Phase 6). The separate Phase 5 and Phase 6 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3.
 
 ---
 
@@ -134,7 +135,7 @@ USER_INPUTS = [
 
 ## 4. SuperNode Parameters
 
-These 7 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9).
+These 10 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration).
 
 **Appliance:** SuperNode only
 **Spec reference:** `spec/02-supernode-appliance.md`, Section 13
@@ -148,18 +149,32 @@ These 7 variables configure the Flower SuperNode appliance. All are optional. Ze
 | 5 | `FL_MAX_WAIT_TIME` | `O\|number\|Max wait time for connection in seconds (0=unlimited)\|\|0` | number | `0` | Non-negative integer (>=0). `0` means unlimited. | CLI flag: `--max-wait-time` |
 | 6 | `FL_ISOLATION` | `O\|list\|App execution isolation mode\|subprocess,process\|subprocess` | list | `subprocess` | One of: `subprocess`, `process` | CLI flag: `--isolation` |
 | 7 | `FL_LOG_LEVEL` | `O\|list\|Log verbosity\|DEBUG,INFO,WARNING,ERROR\|INFO` | list | `INFO` | One of: `DEBUG`, `INFO`, `WARNING`, `ERROR` | Environment variable: `FLWR_LOG_LEVEL` |
+| 8 | `FL_GPU_ENABLED` | `O\|boolean\|Enable GPU passthrough (requires GPU-enabled VM template)\|\|NO` | boolean | `NO` | Must be `YES` or `NO` (case-insensitive) | Docker run flag: `--gpus all` when YES |
+| 9 | `FL_CUDA_VISIBLE_DEVICES` | `O\|text\|GPU device IDs visible to container (e.g., 0 or 0,1)\|\|all` | text | `all` | If not `all`, must be comma-separated integers (e.g., `0`, `0,1`, `0,1,2`). Only effective when `FL_GPU_ENABLED=YES`. | Docker env: `-e CUDA_VISIBLE_DEVICES` |
+| 10 | `FL_GPU_MEMORY_FRACTION` | `O\|number-float\|GPU memory fraction for PyTorch (0.0-1.0)\|\|0.8` | number-float | `0.8` | Float between 0.0 and 1.0 inclusive. Only effective when `ML_FRAMEWORK=pytorch` and `FL_GPU_ENABLED=YES`. | PyTorch: `torch.cuda.set_per_process_memory_fraction()` |
+
+**GPU configuration notes:**
+- `FL_GPU_ENABLED` is the master switch for GPU passthrough. When `NO` (default), variables #9-10 are ignored.
+- `FL_CUDA_VISIBLE_DEVICES` controls which GPUs the container sees. Default `all` exposes every GPU assigned to the VM.
+- `FL_GPU_MEMORY_FRACTION` is a soft limit for PyTorch only. TensorFlow uses memory growth by default (no fraction needed). See `spec/10-gpu-passthrough.md` for complete GPU stack configuration and validation procedures.
 
 ### SuperNode USER_INPUT Block (Copy-Paste Ready)
 
 ```
 USER_INPUTS = [
+  # Phase 1: Base architecture (variables 1-7)
   FLOWER_VERSION = "O|text|Flower Docker image version tag||1.25.0",
   FL_SUPERLINK_ADDRESS = "O|text|SuperLink Fleet API address (host:port)||",
   FL_NODE_CONFIG = "O|text|Space-separated key=value node config||",
   FL_MAX_RETRIES = "O|number|Max reconnection attempts (0=unlimited)||0",
   FL_MAX_WAIT_TIME = "O|number|Max wait time for connection in seconds (0=unlimited)||0",
   FL_ISOLATION = "O|list|App execution isolation mode|subprocess,process|subprocess",
-  FL_LOG_LEVEL = "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
+  FL_LOG_LEVEL = "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO",
+
+  # Phase 6: GPU configuration (variables 8-10)
+  FL_GPU_ENABLED = "O|boolean|Enable GPU passthrough (requires GPU-enabled VM template)||NO",
+  FL_CUDA_VISIBLE_DEVICES = "O|text|GPU device IDs visible to container (e.g., 0 or 0,1)||all",
+  FL_GPU_MEMORY_FRACTION = "O|number-float|GPU memory fraction for PyTorch (0.0-1.0)||0.8"
 ]
 ```
 
@@ -199,9 +214,11 @@ CONTEXT = [
 
 ## 6. Phase 2+ Placeholder Parameters
 
-These 6 variables are documented for forward compatibility. They appear in the USER_INPUTS definitions but have no effect in Phase 1. The contextualization scripts SHALL recognize these variables but skip their processing with a log message: "Variable X is a Phase N feature; ignoring in current appliance version."
+These 5 variables are documented for forward compatibility. They appear in the USER_INPUTS definitions but have no effect in Phase 1. The contextualization scripts SHALL recognize these variables but skip their processing with a log message: "Variable X is a Phase N feature; ignoring in current appliance version."
 
 **Status:** Placeholder -- not functional in Phase 1.
+
+**Note:** `FL_GPU_ENABLED`, `FL_CUDA_VISIBLE_DEVICES`, and `FL_GPU_MEMORY_FRACTION` were previously placeholders. As of Phase 6, they are now functional and documented in Section 4 (SuperNode Parameters).
 
 | # | Context Variable | USER_INPUT Definition | Phase | Default | Appliance | Purpose |
 |---|------------------|----------------------|-------|---------|-----------|---------|
@@ -209,8 +226,7 @@ These 6 variables are documented for forward compatibility. They appear in the U
 | 2 | `FL_SSL_CA_CERTFILE` | `O\|text64\|CA certificate (base64 PEM)` | Phase 2 | (empty) | Both | Base64-encoded CA certificate for TLS trust chain. SuperLink uses for server cert verification; SuperNode uses for `--root-certificates`. |
 | 3 | `FL_SSL_CERTFILE` | `O\|text64\|Server certificate (base64 PEM)` | Phase 2 | (empty) | SuperLink | Base64-encoded server certificate. Used with `--ssl-certfile`. |
 | 4 | `FL_SSL_KEYFILE` | `O\|text64\|Server private key (base64 PEM)` | Phase 2 | (empty) | SuperLink | Base64-encoded server private key. Used with `--ssl-keyfile`. |
-| 5 | `FL_GPU_ENABLED` | `O\|boolean\|Enable NVIDIA GPU support\|\|NO` | Phase 6 | `NO` | SuperNode | Adds `--gpus all` and NVIDIA Container Toolkit configuration to the Docker run command. |
-| 6 | `ML_FRAMEWORK` | `O\|list\|ML framework\|pytorch,tensorflow,sklearn\|pytorch` | Phase 3 | `pytorch` | SuperNode | Selects the ML framework variant image. Affects which `flwr/supernode` image tag is used. |
+| 5 | `ML_FRAMEWORK` | `O\|list\|ML framework\|pytorch,tensorflow,sklearn\|pytorch` | Phase 3 | `pytorch` | SuperNode | Selects the ML framework variant image. Affects which `flwr/supernode` image tag is used. |
 
 ### Placeholder USER_INPUT Block (For Reference)
 
@@ -220,9 +236,6 @@ FL_TLS_ENABLED = "O|boolean|Enable TLS encryption||NO"
 FL_SSL_CA_CERTFILE = "O|text64|CA certificate (base64 PEM)"
 FL_SSL_CERTFILE = "O|text64|Server certificate (base64 PEM)"
 FL_SSL_KEYFILE = "O|text64|Server private key (base64 PEM)"
-
-# Phase 6: GPU (not functional in Phase 1)
-FL_GPU_ENABLED = "O|boolean|Enable NVIDIA GPU support||NO"
 
 # Phase 3: ML Framework (not functional in Phase 1)
 ML_FRAMEWORK = "O|list|ML framework|pytorch,tensorflow,sklearn|pytorch"
@@ -290,6 +303,9 @@ The appliance boot scripts SHALL validate all contextualization variables during
 | `FL_CHECKPOINT_ENABLED` | Exact match: `YES` or `NO` | `"Invalid FL_CHECKPOINT_ENABLED: '${VALUE}'. Must be YES or NO."` |
 | `FL_CHECKPOINT_INTERVAL` | Positive integer (>0); ignored if `FL_CHECKPOINT_ENABLED != YES` | `"Invalid FL_CHECKPOINT_INTERVAL: '${VALUE}'. Must be a positive integer."` |
 | `FL_CHECKPOINT_PATH` | Non-empty string; ignored if `FL_CHECKPOINT_ENABLED != YES` | `"FL_CHECKPOINT_PATH cannot be empty."` |
+| `FL_GPU_ENABLED` | Exact match: `YES` or `NO` (case-insensitive) | `"Invalid FL_GPU_ENABLED: '${VALUE}'. Must be YES or NO."` |
+| `FL_CUDA_VISIBLE_DEVICES` | If not `all`: must be comma-separated integers (e.g., `0`, `0,1`, `0,1,2`). Ignored if `FL_GPU_ENABLED != YES`. | `"Invalid FL_CUDA_VISIBLE_DEVICES: '${VALUE}'. Must be 'all' or comma-separated GPU IDs (e.g., 0,1)."` |
+| `FL_GPU_MEMORY_FRACTION` | Float between 0.0 and 1.0 inclusive. Ignored if `FL_GPU_ENABLED != YES`. | `"Invalid FL_GPU_MEMORY_FRACTION: '${VALUE}'. Must be a float between 0.0 and 1.0."` |
 
 ### Validation Pseudocode
 
@@ -444,6 +460,45 @@ validate_config() {
     fi
     if [ -n "$FL_TRIM_BETA" ] && [ "${FL_STRATEGY:-FedAvg}" != "FedTrimmedAvg" ]; then
         log "INFO" "FL_TRIM_BETA ignored -- only applies to FedTrimmedAvg strategy"
+    fi
+
+    # --- Phase 6: GPU configuration ---
+
+    # FL_GPU_ENABLED: boolean
+    if [ -n "$FL_GPU_ENABLED" ]; then
+        case "$(echo "$FL_GPU_ENABLED" | tr '[:lower:]' '[:upper:]')" in
+            YES|NO) ;;
+            *) log "ERROR" "Invalid FL_GPU_ENABLED: '${FL_GPU_ENABLED}'. Must be YES or NO."
+               errors=$((errors + 1)) ;;
+        esac
+    fi
+
+    # FL_CUDA_VISIBLE_DEVICES: 'all' or comma-separated integers
+    if [ -n "$FL_CUDA_VISIBLE_DEVICES" ] && [ "$FL_CUDA_VISIBLE_DEVICES" != "all" ]; then
+        if ! [[ "$FL_CUDA_VISIBLE_DEVICES" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+            log "ERROR" "Invalid FL_CUDA_VISIBLE_DEVICES: '${FL_CUDA_VISIBLE_DEVICES}'. Must be 'all' or comma-separated GPU IDs (e.g., 0,1)."
+            errors=$((errors + 1))
+        fi
+    fi
+
+    # FL_GPU_MEMORY_FRACTION: float between 0.0 and 1.0
+    if [ -n "$FL_GPU_MEMORY_FRACTION" ]; then
+        if ! [[ "$FL_GPU_MEMORY_FRACTION" =~ ^[0-9]*\.?[0-9]+$ ]] || \
+           [ "$(echo "$FL_GPU_MEMORY_FRACTION < 0" | bc -l 2>/dev/null)" = "1" ] || \
+           [ "$(echo "$FL_GPU_MEMORY_FRACTION > 1" | bc -l 2>/dev/null)" = "1" ]; then
+            log "ERROR" "Invalid FL_GPU_MEMORY_FRACTION: '${FL_GPU_MEMORY_FRACTION}'. Must be a float between 0.0 and 1.0."
+            errors=$((errors + 1))
+        fi
+    fi
+
+    # Conditional ignore logging for GPU-specific params
+    if [ "${FL_GPU_ENABLED:-NO}" != "YES" ]; then
+        if [ -n "$FL_CUDA_VISIBLE_DEVICES" ] && [ "$FL_CUDA_VISIBLE_DEVICES" != "all" ]; then
+            log "INFO" "FL_CUDA_VISIBLE_DEVICES ignored -- FL_GPU_ENABLED is not YES"
+        fi
+        if [ -n "$FL_GPU_MEMORY_FRACTION" ]; then
+            log "INFO" "FL_GPU_MEMORY_FRACTION ignored -- FL_GPU_ENABLED is not YES"
+        fi
     fi
 
     # Abort on errors
@@ -636,6 +691,24 @@ Checkpointing is disabled by default. When disabled, the checkpoint-related vari
 
 - **When `FL_CHECKPOINT_ENABLED=YES`:** configure.sh creates `/opt/flower/checkpoints` with `chown 49999:49999`, adds `-v /opt/flower/checkpoints:/app/checkpoints:rw` to the Docker run command, and passes `checkpoint-enabled=true`, `checkpoint-interval`, and `checkpoint-path` to the FAB via run_config.
 
+### 10i. FL_GPU_ENABLED and GPU Configuration Variables
+
+**Variables involved:** `FL_GPU_ENABLED`, `FL_CUDA_VISIBLE_DEVICES`, `FL_GPU_MEMORY_FRACTION`
+
+GPU passthrough is disabled by default. When disabled, GPU-related variables are ignored and no `--gpus` flag is added to the Docker run command.
+
+**Interaction rules:**
+
+- **When `FL_GPU_ENABLED=NO` (default):** `FL_CUDA_VISIBLE_DEVICES` and `FL_GPU_MEMORY_FRACTION` are ignored. No GPU flags are added to Docker run. Container runs CPU-only regardless of GPU hardware availability.
+
+- **When `FL_GPU_ENABLED=YES`:** configure.sh adds `--gpus all` and `-e CUDA_VISIBLE_DEVICES=${FL_CUDA_VISIBLE_DEVICES:-all}` to the Docker run command. If `nvidia-smi` fails (no GPU available), a WARNING is logged but boot continues -- the container starts and ClientApp falls back to CPU training.
+
+- **FL_GPU_MEMORY_FRACTION interaction with ML_FRAMEWORK:** This variable only takes effect when `ML_FRAMEWORK=pytorch` and `FL_GPU_ENABLED=YES`. For TensorFlow, memory growth is enabled by default via `TF_FORCE_GPU_ALLOW_GROWTH=true` (no fraction needed). For scikit-learn, there is no GPU support, so the variable is always ignored.
+
+- **FL_CUDA_VISIBLE_DEVICES with single-GPU VM:** In the default configuration (one GPU per VM), `FL_CUDA_VISIBLE_DEVICES=all` is correct and means "use the one GPU assigned to this VM." Set to a specific device ID (e.g., `0`) only when multiple GPUs are assigned via multiple PCI entries in the VM template.
+
+**Cross-reference:** See `spec/10-gpu-passthrough.md` for complete GPU stack configuration, validation procedures, and decision records.
+
 ---
 
 ## Appendix: Complete Variable Cross-Reference Matrix
@@ -677,6 +750,8 @@ This matrix shows every variable and which appliance uses it.
 | `FL_SSL_CERTFILE` | Y | -- | -- | 2 |
 | `FL_SSL_KEYFILE` | Y | -- | -- | 2 |
 | `FL_GPU_ENABLED` | -- | Y | -- | 6 |
+| `FL_CUDA_VISIBLE_DEVICES` | -- | Y | -- | 6 |
+| `FL_GPU_MEMORY_FRACTION` | -- | Y | -- | 6 |
 | `ML_FRAMEWORK` | -- | Y | -- | 3 |
 
 **Legend:** Y = used by this appliance, -- = not applicable
@@ -684,5 +759,5 @@ This matrix shows every variable and which appliance uses it.
 ---
 
 *Specification for APPL-03: Contextualization Variable Reference*
-*Phase: 01 - Base Appliance Architecture (updated Phase 5)*
-*Version: 1.1*
+*Phase: 01 - Base Appliance Architecture (updated Phase 6)*
+*Version: 1.2*
