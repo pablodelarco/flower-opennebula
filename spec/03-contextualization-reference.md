@@ -10,7 +10,7 @@
 
 This document is the single authoritative reference for every OpenNebula contextualization variable used by the Flower SuperLink and SuperNode marketplace appliances. It serves as an implementation checklist: an engineer building either appliance can print this document and check off each variable as it is implemented in the contextualization scripts.
 
-**Scope:** All variables defined in Phase 1 (base appliance architecture), Phase 5 (training configuration), Phase 7 (gRPC keepalive and certificate SAN for multi-site federation), Phase 8 (monitoring and observability), plus placeholder variables for Phase 2 (TLS), Phase 3 (ML frameworks), and Phase 6 (GPU). Placeholder variables are documented here for completeness but are not functional in Phase 1. Phase 5 variables are functional and documented in Section 3. Phase 7 variables are functional and documented in Sections 3-4. Phase 8 variables (FL_LOG_FORMAT, FL_METRICS_ENABLED, FL_METRICS_PORT, FL_DCGM_ENABLED) are functional and documented in Sections 3-5.
+**Scope:** All variables defined in Phase 1 (base appliance architecture), Phase 5 (training configuration), Phase 7 (gRPC keepalive and certificate SAN for multi-site federation), Phase 8 (monitoring and observability), Phase 9 (edge backoff configuration), plus placeholder variables for Phase 2 (TLS), Phase 3 (ML frameworks), and Phase 6 (GPU). Placeholder variables are documented here for completeness but are not functional in Phase 1. Phase 5 variables are functional and documented in Section 3. Phase 7 variables are functional and documented in Sections 3-4. Phase 8 variables (FL_LOG_FORMAT, FL_METRICS_ENABLED, FL_METRICS_PORT, FL_DCGM_ENABLED) are functional and documented in Sections 3-5. Phase 9 variables (FL_EDGE_BACKOFF, FL_EDGE_MAX_BACKOFF) are functional on the edge SuperNode variant and documented in Section 4.
 
 **Source of truth hierarchy:**
 1. This document is the authoritative reference for variable names, types, defaults, and validation rules.
@@ -22,17 +22,18 @@ This document is the single authoritative reference for every OpenNebula context
 | Category | Count | Appliance |
 |----------|-------|-----------|
 | SuperLink parameters | 24 | SuperLink only |
-| SuperNode parameters | 13 | SuperNode only |
+| SuperNode parameters | 15 | SuperNode only |
 | Shared infrastructure | 5 | Both |
 | Service-level (OneFlow) | 1 | Both (via OneFlow) |
 | Phase 5 strategy/checkpointing | 8 | SuperLink |
 | Phase 6 GPU configuration | 3 | SuperNode |
 | Phase 7 gRPC keepalive/cert | 3 | Both/SuperLink |
 | Phase 8 monitoring/logging | 4 | SuperLink/SuperNode/Service |
+| Phase 9 edge backoff | 2 | SuperNode (edge variant) |
 | Phase 2+ placeholders | 5 | Both (not functional in Phase 1) |
-| **Total** | **46** | |
+| **Total** | **48** | |
 
-*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (24 = 11 original + 8 Phase 5 + 3 Phase 7 + 2 Phase 8). The Phase 6 count (3) is included in the SuperNode parameters count (13 = 7 original + 3 Phase 6 + 2 Phase 7 + 1 Phase 8). The separate Phase 5, Phase 6, Phase 7, and Phase 8 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3. The Phase 7 count (3) reflects 3 unique variables: FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT apply to both appliances, FL_CERT_EXTRA_SAN applies to SuperLink only. The Phase 8 count (4) reflects 4 unique variables: FL_LOG_FORMAT is service-level (counted once, applied to both appliances via OneFlow), FL_METRICS_ENABLED and FL_METRICS_PORT are SuperLink role-level, FL_DCGM_ENABLED is SuperNode role-level.
+*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (24 = 11 original + 8 Phase 5 + 3 Phase 7 + 2 Phase 8). The Phase 6 count (3) is included in the SuperNode parameters count (15 = 7 original + 3 Phase 6 + 2 Phase 7 + 1 Phase 8 + 2 Phase 9). The separate Phase 5, Phase 6, Phase 7, Phase 8, and Phase 9 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3. The Phase 7 count (3) reflects 3 unique variables: FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT apply to both appliances, FL_CERT_EXTRA_SAN applies to SuperLink only. The Phase 8 count (4) reflects 4 unique variables: FL_LOG_FORMAT is service-level (counted once, applied to both appliances via OneFlow), FL_METRICS_ENABLED and FL_METRICS_PORT are SuperLink role-level, FL_DCGM_ENABLED is SuperNode role-level. The Phase 9 count (2) reflects 2 SuperNode-only variables for edge backoff configuration: FL_EDGE_BACKOFF and FL_EDGE_MAX_BACKOFF.
 
 ---
 
@@ -152,7 +153,7 @@ USER_INPUTS = [
 
 ## 4. SuperNode Parameters
 
-These 13 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration). Variables #11-12 are Phase 7 (multi-site federation: gRPC keepalive). Variable #13 is Phase 8 (monitoring: DCGM GPU metrics exporter).
+These 15 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration). Variables #11-12 are Phase 7 (multi-site federation: gRPC keepalive). Variable #13 is Phase 8 (monitoring: DCGM GPU metrics exporter). Variables #14-15 are Phase 9 (edge optimization: discovery backoff configuration for edge SuperNode variant).
 
 **Appliance:** SuperNode only
 **Spec reference:** `spec/02-supernode-appliance.md`, Section 13
@@ -172,6 +173,8 @@ These 13 variables configure the Flower SuperNode appliance. All are optional. Z
 | 11 | `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | number | `60` | Positive integer (>0). Warning if <10. | gRPC channel option: `grpc.keepalive_time_ms` (value * 1000) |
 | 12 | `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | number | `20` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | gRPC channel option: `grpc.keepalive_timeout_ms` (value * 1000) |
 | 13 | `FL_DCGM_ENABLED` | `O\|boolean\|Enable DCGM GPU metrics exporter\|\|NO` | boolean | `NO` | `YES` or `NO`. Requires `FL_GPU_ENABLED=YES` (Phase 6). If GPU not available, sidecar not started (warning logged). | When YES: starts DCGM Exporter sidecar container (docker pull + docker run on port 9400). See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 6. |
+| 14 | `FL_EDGE_BACKOFF` | `O\|list\|Edge discovery retry backoff strategy\|exponential,fixed\|exponential` | list | `exponential` | One of: `exponential`, `fixed`. Only effective on edge SuperNode variant. | Discovery retry loop backoff algorithm in discover.sh. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md) Section 3. |
+| 15 | `FL_EDGE_MAX_BACKOFF` | `O\|number\|Maximum backoff interval in seconds for edge discovery\|\|300` | number | `300` | Positive integer (>0). Only effective when `FL_EDGE_BACKOFF=exponential`. | Cap for exponential backoff in discovery retry loop. See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md) Section 3. |
 
 **GPU configuration notes:**
 - `FL_GPU_ENABLED` is the master switch for GPU passthrough. When `NO` (default), variables #9-10 are ignored.
@@ -201,7 +204,11 @@ USER_INPUTS = [
   FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20",
 
   # Phase 8: Monitoring (variable 13)
-  FL_DCGM_ENABLED = "O|boolean|Enable DCGM GPU metrics exporter||NO"
+  FL_DCGM_ENABLED = "O|boolean|Enable DCGM GPU metrics exporter||NO",
+
+  # Phase 9: Edge backoff configuration (variables 14-15)
+  FL_EDGE_BACKOFF = "O|list|Edge discovery retry backoff strategy|exponential,fixed|exponential",
+  FL_EDGE_MAX_BACKOFF = "O|number|Maximum backoff interval in seconds for edge discovery||300"
 ]
 ```
 
@@ -360,6 +367,8 @@ The appliance boot scripts SHALL validate all contextualization variables during
 | `FL_METRICS_ENABLED` | Must be `YES` or `NO` | `"Invalid FL_METRICS_ENABLED: '${VALUE}'. Must be YES or NO."` |
 | `FL_METRICS_PORT` | Integer 1024-65535; must not be 9091, 9092, or 9093 | `"Invalid FL_METRICS_PORT: '${VALUE}'. Must be integer 1024-65535, not 9091-9093."` |
 | `FL_DCGM_ENABLED` | Must be `YES` or `NO`. Cross-check: if YES and `FL_GPU_ENABLED` != YES, log warning (not fatal). | `"Invalid FL_DCGM_ENABLED: '${VALUE}'. Must be YES or NO."` |
+| `FL_EDGE_BACKOFF` | Must be `exponential` or `fixed` | `"Invalid FL_EDGE_BACKOFF: '${VALUE}'. Must be 'exponential' or 'fixed'."` |
+| `FL_EDGE_MAX_BACKOFF` | Positive integer (>0). Only effective when `FL_EDGE_BACKOFF=exponential`. | `"Invalid FL_EDGE_MAX_BACKOFF: '${VALUE}'. Must be a positive integer."` |
 
 ### Validation Pseudocode
 
@@ -628,6 +637,28 @@ validate_config() {
     if [ "${FL_METRICS_ENABLED:-NO}" != "YES" ]; then
         if [ -n "$FL_METRICS_PORT" ] && [ "${FL_METRICS_PORT}" != "9101" ]; then
             log "INFO" "FL_METRICS_PORT ignored -- FL_METRICS_ENABLED is not YES"
+        fi
+    fi
+
+    # --- Phase 9: Edge backoff configuration ---
+
+    # FL_EDGE_BACKOFF: must be 'exponential' or 'fixed'
+    case "${FL_EDGE_BACKOFF:-exponential}" in
+        exponential|fixed) ;;
+        *) log "ERROR" "Invalid FL_EDGE_BACKOFF: '${FL_EDGE_BACKOFF}'. Must be 'exponential' or 'fixed'."
+           errors=$((errors + 1)) ;;
+    esac
+
+    # FL_EDGE_MAX_BACKOFF: positive integer
+    if [ -n "$FL_EDGE_MAX_BACKOFF" ] && ! [[ "$FL_EDGE_MAX_BACKOFF" =~ ^[1-9][0-9]*$ ]]; then
+        log "ERROR" "Invalid FL_EDGE_MAX_BACKOFF: '${FL_EDGE_MAX_BACKOFF}'. Must be a positive integer."
+        errors=$((errors + 1))
+    fi
+
+    # Conditional ignore logging for edge-specific params
+    if [ "${FL_EDGE_BACKOFF:-exponential}" = "fixed" ]; then
+        if [ -n "$FL_EDGE_MAX_BACKOFF" ] && [ "${FL_EDGE_MAX_BACKOFF}" != "300" ]; then
+            log "INFO" "FL_EDGE_MAX_BACKOFF ignored -- only effective when FL_EDGE_BACKOFF=exponential"
         fi
     fi
 
@@ -943,6 +974,22 @@ Both variables apply simultaneously. The JSON format respects the same log level
 
 **Cross-reference:** See `spec/13-monitoring-observability.md` Section 3 for the FlowerJSONFormatter specification and FL event taxonomy.
 
+### 10o. FL_EDGE_BACKOFF and FL_EDGE_MAX_BACKOFF
+
+**Variables involved:** `FL_EDGE_BACKOFF`, `FL_EDGE_MAX_BACKOFF` (SuperNode)
+
+These variables control the discovery retry loop behavior (Step 7 of the SuperNode boot sequence). They do NOT affect Flower's native gRPC reconnection, which uses its own internal backoff. Once the SuperNode connects to the SuperLink, all subsequent disconnects and reconnections are handled by Flower's runtime (Layer 1 of the three-layer resilience model).
+
+**Interaction rules:**
+
+- **When `FL_EDGE_BACKOFF=exponential` (default):** The discovery retry loop starts at 10 seconds, doubles each attempt, and caps at `FL_EDGE_MAX_BACKOFF` (default: 300 seconds). There is no maximum retry count -- the SuperNode retries indefinitely until it discovers the SuperLink or the VM is shut down.
+
+- **When `FL_EDGE_BACKOFF=fixed`:** The discovery retry loop uses the standard Phase 1 behavior: 30 retries at 10-second fixed intervals, 5-minute total timeout. `FL_EDGE_MAX_BACKOFF` is ignored. configure.sh logs: "INFO: FL_EDGE_MAX_BACKOFF ignored -- only effective when FL_EDGE_BACKOFF=exponential."
+
+- **On standard SuperNode (non-edge QCOW2):** These variables are accepted but have no visible effect. The standard SuperNode always uses fixed 10-second interval discovery (equivalent to `FL_EDGE_BACKOFF=fixed`), regardless of the variable values. The variables are designed for the edge SuperNode variant where the enhanced discover.sh script reads them.
+
+**Cross-reference:** See [`spec/14-edge-and-auto-scaling.md`](14-edge-and-auto-scaling.md), Section 3 for the complete edge backoff specification including the three-layer resilience model and retry pseudocode.
+
 ---
 
 ## Appendix: Complete Variable Cross-Reference Matrix
@@ -994,11 +1041,13 @@ This matrix shows every variable and which appliance uses it.
 | `FL_METRICS_ENABLED` | Y | -- | -- | 8 |
 | `FL_METRICS_PORT` | Y | -- | -- | 8 |
 | `FL_DCGM_ENABLED` | -- | Y | -- | 8 |
+| `FL_EDGE_BACKOFF` | -- | Y | -- | 9 |
+| `FL_EDGE_MAX_BACKOFF` | -- | Y | -- | 9 |
 
 **Legend:** Y = used by this appliance, -- = not applicable
 
 ---
 
 *Specification for APPL-03: Contextualization Variable Reference*
-*Phase: 01 - Base Appliance Architecture (updated Phase 8)*
-*Version: 1.4*
+*Phase: 01 - Base Appliance Architecture (updated Phase 9)*
+*Version: 1.5*
