@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 7 COMPLETE (Multi-Site Federation). Ready for Phase 8.
+**Current focus:** Phase 7 COMPLETE (Multi-Site Federation). Phase 8 (Monitoring and Observability) next.
 
 ## Current Position
 
