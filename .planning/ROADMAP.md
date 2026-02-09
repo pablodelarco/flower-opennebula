@@ -154,11 +154,11 @@ Plans:
   2. The spec defines intermittent connectivity handling -- retry logic, backoff strategy, and how partial participation affects training rounds
   3. The spec defines OneFlow auto-scaling triggers (CPU/memory thresholds, custom metrics), scale-up/down behavior during active training, and min/max bounds
   4. The spec addresses client join/leave semantics -- what happens to an active training round when a SuperNode scales in or an edge node disconnects
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 09-01: TBD
-- [ ] 09-02: TBD
+- [ ] 09-01-PLAN.md -- Edge SuperNode appliance variant, intermittent connectivity handling, OneFlow auto-scaling specification (EDGE-01, ORCH-03)
+- [ ] 09-02-PLAN.md -- Cross-cutting updates: contextualization reference, SuperNode appliance, orchestration spec, and overview integration
 
 ## Progress
 
