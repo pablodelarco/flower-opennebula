@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-05)
 
 **Core value:** Enable privacy-preserving federated learning on distributed OpenNebula infrastructure through marketplace appliances that any tenant can deploy with minimal configuration.
-**Current focus:** Phase 7 COMPLETE (Multi-Site Federation). Phase 8 (Monitoring and Observability) next.
+**Current focus:** Phase 8 IN PROGRESS (Monitoring and Observability). Plan 08-01 complete, Plan 08-02 next.
 
 ## Current Position
 
-Phase: 7 of 9 (Multi-Site Federation)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-09 -- Completed 07-02-PLAN.md (spec integration for multi-site federation)
+Phase: 8 of 9 (Monitoring and Observability)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-09 -- Completed 08-01-PLAN.md (monitoring and observability specification)
 
-Progress: [███████████████░░░░░] 75% (15/20 plans)
+Progress: [████████████████░░░░] 80% (16/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: 5 min
-- Total execution time: 81 min
+- Total execution time: 86 min
 
 **By Phase:**
 
@@ -34,9 +34,10 @@ Progress: [███████████████░░░░░] 75% (15
 | 5. Training Configuration | 2/2 | 20 min | 10 min |
 | 6. GPU Acceleration | 2/2 | 13 min | 7 min |
 | 7. Multi-Site Federation | 2/2 | 11 min | 6 min |
+| 8. Monitoring and Observability | 1/2 | 5 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 06-01 (7 min), 06-02 (6 min), 07-01 (6 min), 07-02 (5 min)
+- Last 5 plans: 06-02 (6 min), 07-01 (6 min), 07-02 (5 min), 08-01 (5 min)
 - Trend: Consistent 5-6 min per plan
 
 *Updated after each plan completion*
@@ -133,6 +134,14 @@ Recent decisions affecting current work:
 - [07-02]: Phase 7 variables are functional (not placeholders) in contextualization reference
 - [07-02]: FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT apply to both SuperLink and SuperNode
 - [07-02]: FL_CERT_EXTRA_SAN applies to SuperLink only (cert generation is SuperLink-side)
+- [08-01]: Two-tier monitoring: OBS-01 (JSON logging, zero infrastructure) standalone; OBS-02 (Prometheus/Grafana) builds on it
+- [08-01]: Appliances run EXPORTERS only; monitoring infrastructure is operator-managed
+- [08-01]: prometheus_client embedded in ServerApp FAB, not base Flower Docker image
+- [08-01]: DCGM Exporter pulled at boot time (not pre-baked in QCOW2) to keep base image size stable
+- [08-01]: Port 9101 for FL metrics exporter; 9400 for DCGM (avoids Flower port range 9091-9093)
+- [08-01]: No "round" label on Prometheus metrics (prevents unbounded cardinality)
+- [08-01]: FL_LOG_FORMAT as service-level variable; FL_METRICS_* as SuperLink role-level; FL_DCGM_ENABLED as SuperNode role-level
+- [08-01]: DCGM not started is degraded monitoring, not fatal (training continues without GPU metrics)
 
 ### Pending Todos
 
@@ -141,12 +150,12 @@ None.
 ### Blockers/Concerns
 
 - GPU passthrough validation needed on target hardware (CPU-only fallback path fully specified in Phase 6)
-- OneGate cross-zone behavior: RESOLVED in Phase 7 spec -- OneGate is zone-local, static FL_SUPERLINK_ADDRESS and FL_SSL_CA_CERTFILE are mandatory for cross-zone
 - PyTorch variant QCOW2 size (~4-5 GB) needs validation during implementation; revisit LLM dep placement if exceeds 5 GB
 - gRPC keepalive implementation depends on Flower's configuration surface for channel options (LOW confidence from research)
+- DCGM Exporter boot-time pull requires network access; air-gapped environments must pre-pull manually
 
 ## Session Continuity
 
-Last session: 2026-02-09T10:24:43Z
-Stopped at: Completed 07-02-PLAN.md (spec integration for multi-site federation)
+Last session: 2026-02-09T16:47:00Z
+Stopped at: Completed 08-01-PLAN.md (monitoring and observability specification)
 Resume file: None
