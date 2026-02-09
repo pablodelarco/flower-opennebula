@@ -139,11 +139,11 @@ Plans:
   2. The spec defines Prometheus metrics exporters for Flower training metrics and NVIDIA GPU utilization with specific metric names and labels
   3. The spec includes pre-built Grafana dashboard definitions (or specifications) showing training convergence curves, client health, and GPU utilization
   4. The spec defines alerting rules for critical conditions (training stalled, excessive client dropout, GPU memory exhaustion)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
+- [ ] 08-01-PLAN.md -- Monitoring and observability spec: structured logging (OBS-01), Prometheus metrics, DCGM GPU exporter, Grafana dashboards, alerting rules (OBS-02)
+- [ ] 08-02-PLAN.md -- Cross-cutting updates: contextualization reference, appliance specs, and overview integration
 
 ### Phase 9: Edge and Auto-Scaling
 **Goal**: The spec defines an edge-optimized SuperNode appliance for constrained environments and OneFlow elasticity rules for dynamic client scaling during training
