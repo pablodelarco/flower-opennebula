@@ -336,3 +336,349 @@ Common configuration mistakes that cause GPU passthrough to fail silently or pro
 | Missing audio device binding | QEMU fails to start VM with "device is already in use" error | GPU and HDMI audio controller share an IOMMU group. Both must be bound to vfio-pci. | Bind both the GPU (e.g., `e1:00.0`) and audio device (e.g., `e1:00.1`) to vfio-pci. |
 
 ---
+
+## 7. Layer 3: Container Runtime (NVIDIA Container Toolkit)
+
+Once the GPU is passed through to the VM (Layers 1-2), the NVIDIA driver and Container Toolkit must be installed inside the VM to expose the GPU to Docker containers.
+
+### 7a. Prerequisites
+
+Before proceeding, verify that the GPU is visible inside the VM:
+
+```bash
+lspci | grep -i nvidia
+# Expected: NVIDIA GPU listed (e.g., "3D controller: NVIDIA Corporation ...")
+```
+
+If the GPU is not visible, review Layers 1-2 configuration. Common causes: missing UEFI firmware, GPU not bound to vfio-pci on host, PCI address not specified in VM template.
+
+### 7b. NVIDIA Driver Installation
+
+Install the NVIDIA proprietary driver inside the VM. The GPU-enabled QCOW2 image pre-installs this driver during the build process.
+
+```bash
+# Install NVIDIA driver (inside VM with passthrough GPU)
+apt update && apt install -y nvidia-driver-545
+
+# Reboot to load the kernel module
+reboot
+
+# Verify GPU detection
+nvidia-smi
+```
+
+**Driver version recommendation:** Pin to `nvidia-driver-545` or `nvidia-driver-550` for Ubuntu 24.04 (kernel 6.8+). These versions are tested with the 6.8 kernel series. Newer driver versions may be used but should be validated against the target kernel.
+
+**Verification:**
+
+```bash
+# Check kernel module is loaded
+lsmod | grep nvidia
+# Expected: nvidia module listed
+
+# Check GPU is detected
+nvidia-smi
+# Expected: GPU name, driver version, CUDA version, memory info
+```
+
+### 7c. NVIDIA Container Toolkit Installation
+
+The NVIDIA Container Toolkit enables Docker containers to access the host GPU via the `--gpus` flag. This replaces the deprecated `nvidia-docker2` package.
+
+```bash
+# 1. Add NVIDIA Container Toolkit repository
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+  gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+# 2. Install Container Toolkit
+apt update
+apt install -y nvidia-container-toolkit
+
+# 3. Configure Docker to use NVIDIA runtime
+nvidia-ctk runtime configure --runtime=docker
+
+# 4. Restart Docker to apply configuration
+systemctl restart docker
+```
+
+**What `nvidia-ctk runtime configure` does:** Modifies `/etc/docker/daemon.json` to register the NVIDIA container runtime. Without this step, `docker run --gpus all` fails with "could not select device driver 'nvidia'" error.
+
+### 7d. Container Toolkit Verification
+
+```bash
+# Verify Docker can access the GPU
+docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
+```
+
+This command pulls a minimal CUDA base image (if not already present) and runs `nvidia-smi` inside the container. A successful output shows the GPU name, driver version, and CUDA version -- confirming that all three layers (host, VM, container runtime) are correctly configured.
+
+**Verification checklist:**
+
+| Check | Command | Expected Output |
+|-------|---------|-----------------|
+| NVIDIA module loaded | `lsmod \| grep nvidia` | nvidia module listed |
+| nvidia-smi works | `nvidia-smi` | GPU info displayed |
+| Docker configured | `grep nvidia /etc/docker/daemon.json` | NVIDIA runtime reference |
+| Container GPU access | `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi` | GPU info from inside container |
+
+### 7e. Pre-baked vs. Boot-time Installation
+
+The GPU-enabled QCOW2 image SHALL pre-install the NVIDIA driver and Container Toolkit during image build. This follows the same pre-baking strategy as the base SuperNode appliance (see `spec/02-supernode-appliance.md`, Section 4).
+
+**Rationale:**
+- NVIDIA driver installation requires a reboot (kernel module loading). This is incompatible with the single-boot appliance lifecycle.
+- Container Toolkit installation requires network access to NVIDIA's APT repository. Air-gapped environments cannot install at boot.
+- Pre-baking ensures the GPU stack is ready immediately when the VM boots with a passthrough GPU.
+
+**When no GPU is assigned:** If a GPU-enabled QCOW2 boots without a passthrough GPU, the NVIDIA driver loads but finds no device. This is a benign condition -- `nvidia-smi` reports "No devices were found" and the appliance falls back to CPU-only operation (Section 9).
+
+---
+
+## 8. SuperNode Docker Run Modification
+
+When `FL_GPU_ENABLED=YES` is set in the VM's CONTEXT variables, the SuperNode bootstrap script adds GPU access flags to the Docker run command.
+
+### 8a. GPU-Enabled Docker Run Command
+
+```bash
+# GPU-enabled SuperNode container
+docker run -d \
+  --name flower-supernode \
+  --restart unless-stopped \
+  --gpus all \
+  -v /opt/flower/data:/app/data:ro \
+  -e FLWR_LOG_LEVEL=${FL_LOG_LEVEL:-INFO} \
+  -e CUDA_VISIBLE_DEVICES=${FL_CUDA_VISIBLE_DEVICES:-all} \
+  ${IMAGE_TAG} \
+  --insecure \
+  --superlink ${SUPERLINK_ADDRESS}:9092 \
+  --isolation subprocess \
+  --node-config "${FL_NODE_CONFIG}" \
+  --max-retries ${FL_MAX_RETRIES:-0} \
+  --max-wait-time ${FL_MAX_WAIT_TIME:-0}
+```
+
+### 8b. Differences from CPU-Only Docker Run
+
+| Parameter | CPU-Only (Phase 1) | GPU-Enabled (Phase 6) | Purpose |
+|-----------|--------------------|-----------------------|---------|
+| `--gpus all` | absent | present | Requests all available GPUs from the NVIDIA Container Toolkit. The toolkit handles device node creation, driver library injection, and cgroup configuration. |
+| `CUDA_VISIBLE_DEVICES` | absent | `${FL_CUDA_VISIBLE_DEVICES:-all}` | Controls which GPUs are visible inside the container. Default `all` exposes every GPU assigned to the VM. Set to specific device IDs (e.g., `0`, `0,1`) for multi-GPU selection. |
+
+All other parameters (volume mounts, Flower CLI flags, restart policy) remain unchanged from the CPU-only configuration in `spec/02-supernode-appliance.md`, Section 8.
+
+### 8c. Bootstrap Script Logic
+
+The bootstrap script conditionally adds GPU flags based on `FL_GPU_ENABLED`:
+
+```bash
+# GPU flag construction (Phase 6)
+GPU_FLAGS=""
+if [ "${FL_GPU_ENABLED:-NO}" = "YES" ]; then
+    GPU_FLAGS="--gpus all -e CUDA_VISIBLE_DEVICES=${FL_CUDA_VISIBLE_DEVICES:-all}"
+    log "INFO" "GPU passthrough enabled"
+
+    # Validate GPU is actually available
+    if ! nvidia-smi > /dev/null 2>&1; then
+        log "WARNING" "FL_GPU_ENABLED=YES but nvidia-smi failed"
+        log "WARNING" "Container will start with --gpus flag but GPU may not be available"
+        log "WARNING" "Training will fall back to CPU if ClientApp handles GPU absence correctly"
+    fi
+fi
+
+# Docker run command (GPU_FLAGS inserted conditionally)
+docker run -d \
+  --name flower-supernode \
+  --restart unless-stopped \
+  ${GPU_FLAGS} \
+  -v /opt/flower/data:/app/data:ro \
+  ...
+```
+
+**FL_GPU_ENABLED=YES with no GPU:** This is a WARNING, not a FATAL error. The container starts with `--gpus all`, but if no GPU is available, the NVIDIA Container Toolkit gracefully handles the absence. The ClientApp must implement CPU-only fallback (Section 9). This design allows a single QCOW2 image to work in both GPU and CPU-only environments.
+
+---
+
+## 9. CPU-Only Fallback Path
+
+Every ClientApp MUST handle the case where no GPU is available. This is a design principle, not an optional optimization. The fallback path ensures that:
+- The same ClientApp code works on both GPU-enabled and CPU-only SuperNodes.
+- A GPU failure (driver crash, CUDA error) degrades to CPU training rather than crashing.
+- Testing and development can proceed without GPU hardware.
+
+### 9a. Design Principle
+
+**Rule:** `FL_GPU_ENABLED=YES` with no GPU detected is a WARNING, not a FATAL error.
+
+The boot sequence behavior:
+1. `FL_GPU_ENABLED=YES` is set in CONTEXT variables.
+2. The bootstrap script adds `--gpus all` to the Docker run command.
+3. `nvidia-smi` fails (no GPU present) -- bootstrap logs a WARNING.
+4. The container starts. Docker's `--gpus` flag with no GPU available does not prevent container startup.
+5. The ClientApp detects no CUDA device and falls back to CPU training.
+6. Training proceeds at reduced speed but remains functional.
+
+### 9b. PyTorch Fallback Pattern
+
+```python
+import torch
+
+def get_device():
+    """Get the best available device with graceful fallback."""
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"Using GPU: {gpu_name}")
+    else:
+        device = torch.device("cpu")
+        print("CUDA not available, using CPU")
+    return device
+
+# Usage in ClientApp
+device = get_device()
+model = model.to(device)
+# All tensors and operations use the selected device
+```
+
+### 9c. TensorFlow Fallback Pattern
+
+```python
+import tensorflow as tf
+
+def configure_device():
+    """Configure TensorFlow device with GPU memory growth or CPU fallback."""
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            print(f"Using {len(gpus)} GPU(s)")
+        except RuntimeError as e:
+            print(f"GPU configuration error: {e}")
+    else:
+        print("No GPU available, using CPU")
+
+# Call early in ClientApp initialization
+configure_device()
+```
+
+### 9d. Logging Requirement
+
+**ClientApp MUST log the device being used.** This is not optional. Without device logging, operators cannot determine whether training is running on GPU or CPU from the container logs.
+
+Required log output at ClientApp startup:
+- GPU available: `"Using GPU: NVIDIA A100-SXM4-40GB"` (include GPU model name)
+- CPU fallback: `"CUDA not available, using CPU"` or `"No GPU available, using CPU"`
+
+This logging enables operators to verify GPU utilization across a fleet of SuperNodes by inspecting `docker logs flower-supernode` on each VM.
+
+---
+
+## 10. Layer 4: Application CUDA Memory Management
+
+When a GPU is available, the ClientApp should configure CUDA memory allocation to prevent out-of-memory errors, especially in multi-client scenarios where multiple SuperNode containers share a single GPU.
+
+### 10a. PyTorch Memory Configuration
+
+**Memory fraction (soft limit):**
+
+```python
+import torch
+
+def configure_gpu_memory(fraction: float = 0.5):
+    """Configure GPU memory fraction for PyTorch.
+
+    Args:
+        fraction: Fraction of GPU memory to use (0.0 to 1.0)
+
+    Note: This is a SOFT limit. Actual usage may exceed the fraction
+    due to CUDA context, cuDNN workspace, and framework overhead.
+    The function only restricts the caching allocator, not total
+    GPU memory consumption.
+    """
+    if torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(fraction)
+        print(f"PyTorch GPU memory fraction set to {fraction}")
+```
+
+**Caveat:** `torch.cuda.set_per_process_memory_fraction()` is a soft limit that only restricts the PyTorch caching allocator. CUDA context memory (~300-500 MB), cuDNN workspace, and other overhead are not counted against the fraction. Actual GPU memory usage may exceed the configured fraction. For true memory isolation, use MIG (hardware partitioning) or separate VMs with dedicated GPUs.
+
+**CUDA_VISIBLE_DEVICES (device selection):**
+
+```bash
+# Limit container to specific GPU(s)
+CUDA_VISIBLE_DEVICES=0        # First GPU only
+CUDA_VISIBLE_DEVICES=0,1      # First two GPUs
+CUDA_VISIBLE_DEVICES=""        # No GPUs (force CPU)
+```
+
+### 10b. TensorFlow Memory Configuration
+
+TensorFlow provides two memory management approaches:
+
+**Dynamic memory growth (recommended default):**
+
+```python
+import tensorflow as tf
+
+gpus = tf.config.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+```
+
+This allocates GPU memory on demand rather than pre-allocating the entire GPU. Each TensorFlow operation allocates only the memory it needs, and the allocation grows as needed. This is the recommended default for single-client scenarios because it is simple and avoids wasted memory.
+
+**Hard memory limit:**
+
+```python
+import tensorflow as tf
+
+gpus = tf.config.list_physical_devices('GPU')
+tf.config.set_logical_device_configuration(
+    gpus[0],
+    [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]  # 4 GB
+)
+```
+
+This creates a virtual GPU device with a hard memory cap. TensorFlow operations that exceed this limit receive an OOM error. Use this approach when multiple TensorFlow processes share a single GPU and each needs a guaranteed memory allocation.
+
+**Environment variable alternative:**
+
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true
+```
+
+This environment variable achieves the same effect as `set_memory_growth(gpu, True)` without code changes. It can be set in the Docker run command via the `supernode.env` file.
+
+### 10c. When to Use Each Approach
+
+| Scenario | PyTorch Recommendation | TensorFlow Recommendation |
+|----------|----------------------|--------------------------|
+| Single ClientApp per GPU (default) | No memory configuration needed (uses all available memory) | `set_memory_growth(gpu, True)` -- prevents pre-allocation of unused memory |
+| Multiple ClientApps sharing a GPU | `set_per_process_memory_fraction(0.5)` -- soft limit per process | `set_logical_device_configuration(memory_limit=N)` -- hard limit per process |
+| Testing without GPU | CPU fallback (Section 9) | CPU fallback (Section 9) |
+| Maximum training performance | No limits; let framework manage memory | `set_memory_growth(gpu, True)` -- dynamic allocation with no ceiling |
+
+**Default recommendation:** For the Flower-OpenNebula appliance, the default configuration is one ClientApp per GPU (subprocess isolation mode with `--gpus all`). In this scenario:
+- **PyTorch:** No memory configuration needed. PyTorch manages the caching allocator automatically.
+- **TensorFlow:** Enable memory growth to prevent pre-allocating all GPU memory. Set via `TF_FORCE_GPU_ALLOW_GROWTH=true` environment variable in the Docker run command.
+
+---
+
+## 11. Anti-Patterns: Layers 3-4
+
+Common application-level mistakes that cause GPU training failures or poor performance.
+
+| Anti-Pattern | Symptom | Root Cause | Fix |
+|-------------|---------|-----------|-----|
+| Assuming GPU is always present | `RuntimeError: CUDA error: no kernel image` or `AttributeError: 'NoneType' object has no attribute 'to'` | ClientApp calls `.cuda()` or `.to("cuda")` without checking `torch.cuda.is_available()` | Use the fallback pattern from Section 9: check GPU availability, select device, move model and tensors to device. |
+| TensorFlow pre-allocates all GPU memory | Second ClientApp process gets `CUDA_ERROR_OUT_OF_MEMORY`; `nvidia-smi` shows first process using 100% VRAM | TensorFlow's default behavior pre-allocates entire GPU memory for performance. Designed for single-process workloads. | Call `tf.config.experimental.set_memory_growth(gpu, True)` before any TensorFlow operations. |
+| Missing `nvidia-ctk runtime configure` | `docker run --gpus all` fails with "could not select device driver 'nvidia' with capabilities: [[gpu]]" | Container Toolkit is installed but Docker daemon.json was not updated to reference the NVIDIA runtime. | Run `nvidia-ctk runtime configure --runtime=docker && systemctl restart docker`. |
+| Treating PyTorch memory fraction as hard limit | Total GPU usage across processes exceeds configured fractions; unexpected OOM errors | `set_per_process_memory_fraction()` is a soft limit. CUDA context and framework overhead are not counted. | Set fractions lower than target (0.20 for expected 25% usage). For true isolation, use MIG or separate VMs. |
+| Calling memory configuration after GPU operations | `RuntimeError: GPU memory configuration must be set before initialization` | TensorFlow requires `set_memory_growth()` to be called before any GPU operations. PyTorch is more lenient but best practice is early configuration. | Call memory configuration functions at the very beginning of ClientApp initialization, before any model or data operations. |
+
+---
