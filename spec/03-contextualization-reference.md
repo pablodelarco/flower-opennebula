@@ -10,7 +10,7 @@
 
 This document is the single authoritative reference for every OpenNebula contextualization variable used by the Flower SuperLink and SuperNode marketplace appliances. It serves as an implementation checklist: an engineer building either appliance can print this document and check off each variable as it is implemented in the contextualization scripts.
 
-**Scope:** All variables defined in Phase 1 (base appliance architecture), Phase 5 (training configuration), Phase 7 (gRPC keepalive and certificate SAN for multi-site federation), plus placeholder variables for Phase 2 (TLS), Phase 3 (ML frameworks), and Phase 6 (GPU). Placeholder variables are documented here for completeness but are not functional in Phase 1. Phase 5 variables are functional and documented in Section 3. Phase 7 variables are functional and documented in Sections 3-4.
+**Scope:** All variables defined in Phase 1 (base appliance architecture), Phase 5 (training configuration), Phase 7 (gRPC keepalive and certificate SAN for multi-site federation), Phase 8 (monitoring and observability), plus placeholder variables for Phase 2 (TLS), Phase 3 (ML frameworks), and Phase 6 (GPU). Placeholder variables are documented here for completeness but are not functional in Phase 1. Phase 5 variables are functional and documented in Section 3. Phase 7 variables are functional and documented in Sections 3-4. Phase 8 variables (FL_LOG_FORMAT, FL_METRICS_ENABLED, FL_METRICS_PORT, FL_DCGM_ENABLED) are functional and documented in Sections 3-5.
 
 **Source of truth hierarchy:**
 1. This document is the authoritative reference for variable names, types, defaults, and validation rules.
@@ -21,16 +21,18 @@ This document is the single authoritative reference for every OpenNebula context
 
 | Category | Count | Appliance |
 |----------|-------|-----------|
-| SuperLink parameters | 22 | SuperLink only |
-| SuperNode parameters | 12 | SuperNode only |
+| SuperLink parameters | 24 | SuperLink only |
+| SuperNode parameters | 13 | SuperNode only |
 | Shared infrastructure | 5 | Both |
+| Service-level (OneFlow) | 1 | Both (via OneFlow) |
 | Phase 5 strategy/checkpointing | 8 | SuperLink |
 | Phase 6 GPU configuration | 3 | SuperNode |
 | Phase 7 gRPC keepalive/cert | 3 | Both/SuperLink |
+| Phase 8 monitoring/logging | 4 | SuperLink/SuperNode/Service |
 | Phase 2+ placeholders | 5 | Both (not functional in Phase 1) |
-| **Total** | **42** | |
+| **Total** | **46** | |
 
-*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (22 = 11 original + 8 Phase 5 + 3 Phase 7). The Phase 6 count (3) is included in the SuperNode parameters count (12 = 7 original + 3 Phase 6 + 2 Phase 7). The separate Phase 5, Phase 6, and Phase 7 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3. The Phase 7 count (3) reflects 3 unique variables: FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT apply to both appliances, FL_CERT_EXTRA_SAN applies to SuperLink only.
+*Note:* The Phase 5 count (8) is included in the SuperLink parameters count (24 = 11 original + 8 Phase 5 + 3 Phase 7 + 2 Phase 8). The Phase 6 count (3) is included in the SuperNode parameters count (13 = 7 original + 3 Phase 6 + 2 Phase 7 + 1 Phase 8). The separate Phase 5, Phase 6, Phase 7, and Phase 8 rows are for traceability. SuperNode count includes FL_USE_CASE added in Phase 3. The Phase 7 count (3) reflects 3 unique variables: FL_GRPC_KEEPALIVE_TIME and FL_GRPC_KEEPALIVE_TIMEOUT apply to both appliances, FL_CERT_EXTRA_SAN applies to SuperLink only. The Phase 8 count (4) reflects 4 unique variables: FL_LOG_FORMAT is service-level (counted once, applied to both appliances via OneFlow), FL_METRICS_ENABLED and FL_METRICS_PORT are SuperLink role-level, FL_DCGM_ENABLED is SuperNode role-level.
 
 ---
 
@@ -74,7 +76,7 @@ VARIABLE_NAME = "M|type|Description|options|default"
 
 ## 3. SuperLink Parameters
 
-These 22 variables configure the Flower SuperLink appliance. All are optional. Zero-config deployment works with all defaults (see Section 9). Variables #1-11 are Phase 1 (base architecture). Variables #12-19 are Phase 5 (training configuration: strategy parameters and checkpointing). Variables #20-22 are Phase 7 (multi-site federation: gRPC keepalive and certificate SAN).
+These 24 variables configure the Flower SuperLink appliance. All are optional. Zero-config deployment works with all defaults (see Section 9). Variables #1-11 are Phase 1 (base architecture). Variables #12-19 are Phase 5 (training configuration: strategy parameters and checkpointing). Variables #20-22 are Phase 7 (multi-site federation: gRPC keepalive and certificate SAN). Variables #23-24 are Phase 8 (monitoring: Prometheus metrics exporter).
 
 **Appliance:** SuperLink only
 **Spec reference:** `spec/01-superlink-appliance.md`, Section 12
@@ -103,6 +105,8 @@ These 22 variables configure the Flower SuperLink appliance. All are optional. Z
 | 20 | `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | number | `60` | Positive integer (>0). Warning if <10. | gRPC channel option: `grpc.keepalive_time_ms` (value * 1000) |
 | 21 | `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | number | `20` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | gRPC channel option: `grpc.keepalive_timeout_ms` (value * 1000) |
 | 22 | `FL_CERT_EXTRA_SAN` | `O\|text\|Additional SAN entries for auto-generated cert (comma-separated)\|\|` | text | (empty) | If set: comma-separated entries matching `IP:<addr>` or `DNS:<name>` pattern. Only effective when `FL_TLS_ENABLED=YES` and auto-generating certs. | Added to SAN in cert generation (`[alt_names]` section of CSR config) |
+| 23 | `FL_METRICS_ENABLED` | `O\|boolean\|Enable Prometheus metrics exporter\|\|NO` | boolean | `NO` | `YES` or `NO` | When YES: starts `prometheus_client` HTTP server on `FL_METRICS_PORT`. ServerApp FAB must include `prometheus_client` dependency. See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 5. |
+| 24 | `FL_METRICS_PORT` | `O\|number\|Prometheus metrics exporter port\|\|9101` | number | `9101` | Integer 1024-65535; must not be 9091, 9092, or 9093 (Flower ports). Only effective when `FL_METRICS_ENABLED=YES`. | Prometheus metrics HTTP endpoint port for FL training metrics exporter. |
 
 ### SuperLink USER_INPUT Block (Copy-Paste Ready)
 
@@ -136,7 +140,11 @@ USER_INPUTS = [
   # Phase 7: Multi-site federation (variables 20-22)
   FL_GRPC_KEEPALIVE_TIME = "O|number|gRPC keepalive interval in seconds||60",
   FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20",
-  FL_CERT_EXTRA_SAN = "O|text|Additional SAN entries for auto-generated cert (comma-separated)||"
+  FL_CERT_EXTRA_SAN = "O|text|Additional SAN entries for auto-generated cert (comma-separated)||",
+
+  # Phase 8: Monitoring (variables 23-24)
+  FL_METRICS_ENABLED = "O|boolean|Enable Prometheus metrics exporter||NO",
+  FL_METRICS_PORT = "O|number|Prometheus metrics exporter port||9101"
 ]
 ```
 
@@ -144,7 +152,7 @@ USER_INPUTS = [
 
 ## 4. SuperNode Parameters
 
-These 12 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration). Variables #11-12 are Phase 7 (multi-site federation: gRPC keepalive).
+These 13 variables configure the Flower SuperNode appliance. All are optional. Zero-config deployment discovers the SuperLink via OneGate and connects with default settings (see Section 9). Variables #1-7 are Phase 1 (base architecture). Variables #8-10 are Phase 6 (GPU configuration). Variables #11-12 are Phase 7 (multi-site federation: gRPC keepalive). Variable #13 is Phase 8 (monitoring: DCGM GPU metrics exporter).
 
 **Appliance:** SuperNode only
 **Spec reference:** `spec/02-supernode-appliance.md`, Section 13
@@ -163,6 +171,7 @@ These 12 variables configure the Flower SuperNode appliance. All are optional. Z
 | 10 | `FL_GPU_MEMORY_FRACTION` | `O\|number-float\|GPU memory fraction for PyTorch (0.0-1.0)\|\|0.8` | number-float | `0.8` | Float between 0.0 and 1.0 inclusive. Only effective when `ML_FRAMEWORK=pytorch` and `FL_GPU_ENABLED=YES`. | PyTorch: `torch.cuda.set_per_process_memory_fraction()` |
 | 11 | `FL_GRPC_KEEPALIVE_TIME` | `O\|number\|gRPC keepalive interval in seconds\|\|60` | number | `60` | Positive integer (>0). Warning if <10. | gRPC channel option: `grpc.keepalive_time_ms` (value * 1000) |
 | 12 | `FL_GRPC_KEEPALIVE_TIMEOUT` | `O\|number\|gRPC keepalive ACK timeout in seconds\|\|20` | number | `20` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | gRPC channel option: `grpc.keepalive_timeout_ms` (value * 1000) |
+| 13 | `FL_DCGM_ENABLED` | `O\|boolean\|Enable DCGM GPU metrics exporter\|\|NO` | boolean | `NO` | `YES` or `NO`. Requires `FL_GPU_ENABLED=YES` (Phase 6). If GPU not available, sidecar not started (warning logged). | When YES: starts DCGM Exporter sidecar container (docker pull + docker run on port 9400). See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 6. |
 
 **GPU configuration notes:**
 - `FL_GPU_ENABLED` is the master switch for GPU passthrough. When `NO` (default), variables #9-10 are ignored.
@@ -189,7 +198,10 @@ USER_INPUTS = [
 
   # Phase 7: Multi-site federation (variables 11-12)
   FL_GRPC_KEEPALIVE_TIME = "O|number|gRPC keepalive interval in seconds||60",
-  FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20"
+  FL_GRPC_KEEPALIVE_TIMEOUT = "O|number|gRPC keepalive ACK timeout in seconds||20",
+
+  # Phase 8: Monitoring (variable 13)
+  FL_DCGM_ENABLED = "O|boolean|Enable DCGM GPU metrics exporter||NO"
 ]
 ```
 
@@ -224,6 +236,26 @@ CONTEXT = [
 ```
 
 **`START_SCRIPT_BASE64`:** Contains the base64-encoded launcher script that triggers `/opt/flower/scripts/configure.sh` and `/opt/flower/scripts/bootstrap.sh`. The exact content is implementation-specific and not defined in this reference. It is the entry point for all Flower-specific initialization.
+
+---
+
+## 5a. Service-Level Parameters (OneFlow)
+
+This variable is set at the OneFlow service level, applying to all roles (both SuperLink and SuperNode). It is exposed as a USER_INPUT at the service level rather than per-role. This follows the same pattern as `FLOWER_VERSION` and `FL_LOG_LEVEL` in OneFlow templates (see `spec/08-single-site-orchestration.md`).
+
+**Appliance:** Both SuperLink and SuperNode (via OneFlow service-level)
+**Spec reference:** `spec/13-monitoring-observability.md`, Section 3
+
+| # | Context Variable | USER_INPUT Definition | Type | Default | Validation Rule | Flower Mapping |
+|---|------------------|----------------------|------|---------|-----------------|----------------|
+| 1 | `FL_LOG_FORMAT` | `O\|list\|Log output format\|text,json\|text` | list | `text` | One of: `text`, `json` | When `json`: FlowerJSONFormatter replaces default text formatter on `flwr` logger. When `text`: Flower's default format (no change). See [`spec/13-monitoring-observability.md`](13-monitoring-observability.md) Section 3. |
+
+### Service-Level USER_INPUT (Copy-Paste Ready)
+
+```
+# Phase 8: Monitoring -- service-level (applies to all roles)
+FL_LOG_FORMAT = "O|list|Log output format|text,json|text"
+```
 
 ---
 
@@ -324,6 +356,10 @@ The appliance boot scripts SHALL validate all contextualization variables during
 | `FL_GRPC_KEEPALIVE_TIME` | Positive integer (>0). Warning if <10. | `"Invalid FL_GRPC_KEEPALIVE_TIME: '${VALUE}'. Must be a positive integer."` |
 | `FL_GRPC_KEEPALIVE_TIMEOUT` | Positive integer (>0). Must be < `FL_GRPC_KEEPALIVE_TIME`. | `"Invalid FL_GRPC_KEEPALIVE_TIMEOUT: '${VALUE}'. Must be a positive integer less than FL_GRPC_KEEPALIVE_TIME."` |
 | `FL_CERT_EXTRA_SAN` | If set: comma-separated entries matching pattern `IP:[0-9.]+` or `DNS:[a-zA-Z0-9.-]+`. | `"Invalid FL_CERT_EXTRA_SAN: '${VALUE}'. Must be comma-separated entries in format IP:<addr> or DNS:<name>."` |
+| `FL_LOG_FORMAT` | Must be `text` or `json` | `"Invalid FL_LOG_FORMAT: '${VALUE}'. Must be 'text' or 'json'."` |
+| `FL_METRICS_ENABLED` | Must be `YES` or `NO` | `"Invalid FL_METRICS_ENABLED: '${VALUE}'. Must be YES or NO."` |
+| `FL_METRICS_PORT` | Integer 1024-65535; must not be 9091, 9092, or 9093 | `"Invalid FL_METRICS_PORT: '${VALUE}'. Must be integer 1024-65535, not 9091-9093."` |
+| `FL_DCGM_ENABLED` | Must be `YES` or `NO`. Cross-check: if YES and `FL_GPU_ENABLED` != YES, log warning (not fatal). | `"Invalid FL_DCGM_ENABLED: '${VALUE}'. Must be YES or NO."` |
 
 ### Validation Pseudocode
 
@@ -542,6 +578,57 @@ validate_config() {
                 errors=$((errors + 1))
             fi
         done
+    fi
+
+    # --- Phase 8: Monitoring and observability ---
+
+    # FL_LOG_FORMAT: must be 'text' or 'json'
+    case "${FL_LOG_FORMAT:-text}" in
+        text|json) ;;
+        *) log "ERROR" "Invalid FL_LOG_FORMAT: '${FL_LOG_FORMAT}'. Must be 'text' or 'json'."
+           errors=$((errors + 1)) ;;
+    esac
+
+    # FL_METRICS_ENABLED: boolean
+    if [ -n "$FL_METRICS_ENABLED" ]; then
+        case "${FL_METRICS_ENABLED}" in
+            YES|NO) ;;
+            *) log "ERROR" "Invalid FL_METRICS_ENABLED: '${FL_METRICS_ENABLED}'. Must be YES or NO."
+               errors=$((errors + 1)) ;;
+        esac
+    fi
+
+    # FL_METRICS_PORT: integer 1024-65535, not 9091-9093
+    if [ -n "$FL_METRICS_PORT" ]; then
+        if ! [[ "$FL_METRICS_PORT" =~ ^[0-9]+$ ]] || \
+           [ "$FL_METRICS_PORT" -lt 1024 ] || [ "$FL_METRICS_PORT" -gt 65535 ]; then
+            log "ERROR" "Invalid FL_METRICS_PORT: '${FL_METRICS_PORT}'. Must be integer 1024-65535, not 9091-9093."
+            errors=$((errors + 1))
+        elif [ "$FL_METRICS_PORT" -eq 9091 ] || [ "$FL_METRICS_PORT" -eq 9092 ] || [ "$FL_METRICS_PORT" -eq 9093 ]; then
+            log "ERROR" "Invalid FL_METRICS_PORT: '${FL_METRICS_PORT}'. Must be integer 1024-65535, not 9091-9093."
+            errors=$((errors + 1))
+        fi
+    fi
+
+    # FL_DCGM_ENABLED: boolean
+    if [ -n "$FL_DCGM_ENABLED" ]; then
+        case "${FL_DCGM_ENABLED}" in
+            YES|NO) ;;
+            *) log "ERROR" "Invalid FL_DCGM_ENABLED: '${FL_DCGM_ENABLED}'. Must be YES or NO."
+               errors=$((errors + 1)) ;;
+        esac
+    fi
+
+    # FL_DCGM_ENABLED conditional warning
+    if [ "${FL_DCGM_ENABLED:-NO}" = "YES" ] && [ "${FL_GPU_ENABLED:-NO}" != "YES" ]; then
+        log "WARN" "FL_DCGM_ENABLED=YES but FL_GPU_ENABLED is not YES. DCGM will not start."
+    fi
+
+    # Conditional ignore logging for monitoring-specific params
+    if [ "${FL_METRICS_ENABLED:-NO}" != "YES" ]; then
+        if [ -n "$FL_METRICS_PORT" ] && [ "${FL_METRICS_PORT}" != "9101" ]; then
+            log "INFO" "FL_METRICS_PORT ignored -- FL_METRICS_ENABLED is not YES"
+        fi
     fi
 
     # Conditional ignore logging for GPU-specific params
@@ -804,6 +891,58 @@ Both keepalive variables must be set consistently on the SuperLink and SuperNode
 
 **Cross-reference:** See `spec/12-multi-site-federation.md`, Sections 5 and 8 for complete multi-site TLS certificate trust distribution workflows.
 
+### 10l. FL_METRICS_ENABLED and FL_METRICS_PORT
+
+**Variables involved:** `FL_METRICS_ENABLED`, `FL_METRICS_PORT` (SuperLink)
+
+`FL_METRICS_PORT` is only effective when `FL_METRICS_ENABLED=YES`. If `FL_METRICS_ENABLED=NO` (default), the port is unused and no metrics HTTP server is started.
+
+**Interaction rules:**
+
+- **When `FL_METRICS_ENABLED=NO` (default):** `FL_METRICS_PORT` is ignored. No Prometheus metrics endpoint is started. The ServerApp FAB does not need `prometheus_client` in its dependencies.
+
+- **When `FL_METRICS_ENABLED=YES`:** The `prometheus_client` HTTP server starts on `FL_METRICS_PORT` (default 9101) during ServerApp initialization. The ServerApp FAB MUST include `prometheus_client` in its `pyproject.toml` dependencies. If the FAB does not include `prometheus_client`, the import fails and the ServerApp crashes.
+
+- **Port conflict prevention:** `FL_METRICS_PORT` must not be 9091, 9092, or 9093 (Flower's SuperLink ports). The default 9101 is safe. Validation rejects Flower port values.
+
+**Cross-reference:** See `spec/13-monitoring-observability.md` Section 5 for the complete metrics exporter specification.
+
+### 10m. FL_DCGM_ENABLED and FL_GPU_ENABLED
+
+**Variables involved:** `FL_DCGM_ENABLED` (SuperNode), `FL_GPU_ENABLED` (SuperNode)
+
+`FL_DCGM_ENABLED=YES` requires `FL_GPU_ENABLED=YES` for the DCGM Exporter sidecar to start. If GPU is not detected at boot (Phase 6 Step 9), the DCGM sidecar is not started regardless of `FL_DCGM_ENABLED`.
+
+**Interaction rules:**
+
+- **When `FL_DCGM_ENABLED=NO` (default):** No DCGM Exporter sidecar is started. No dcgm-exporter.service systemd unit is created.
+
+- **When `FL_DCGM_ENABLED=YES` and `FL_GPU_ENABLED=YES` and GPU detected:** DCGM Exporter image is pulled at boot time (`nvcr.io/nvidia/k8s/dcgm-exporter:4.5.1-4.8.0-distroless`), systemd unit created, sidecar started on port 9400.
+
+- **When `FL_DCGM_ENABLED=YES` and `FL_GPU_ENABLED=NO`:** Warning logged: "FL_DCGM_ENABLED=YES but FL_GPU_ENABLED is not YES. DCGM will not start." Boot continues normally.
+
+- **When `FL_DCGM_ENABLED=YES` and `FL_GPU_ENABLED=YES` but GPU not available:** Warning logged during GPU detection (Step 9). DCGM sidecar not started. Training falls back to CPU.
+
+- **DCGM image pull failure:** If the DCGM Exporter image pull fails (no network, registry unavailable), a WARNING is logged and boot continues without DCGM. This is degraded monitoring, not fatal. Training proceeds normally.
+
+**Cross-reference:** See `spec/13-monitoring-observability.md` Section 6 for the complete DCGM Exporter specification.
+
+### 10n. FL_LOG_FORMAT and FL_LOG_LEVEL
+
+**Variables involved:** `FL_LOG_FORMAT` (service-level), `FL_LOG_LEVEL` (both appliances)
+
+Both variables apply simultaneously. The JSON format respects the same log level filtering. When `FL_LOG_FORMAT=json`, log entries below the `FL_LOG_LEVEL` threshold are still suppressed -- the formatter only changes output format, not filtering behavior.
+
+**Interaction rules:**
+
+- **When `FL_LOG_FORMAT=text` (default):** Flower's default log format is used. `FL_LOG_LEVEL` controls verbosity as normal.
+
+- **When `FL_LOG_FORMAT=json`:** The FlowerJSONFormatter replaces the default text handler formatter on the `flwr` logger. All log entries are emitted as single-line JSON objects. `FL_LOG_LEVEL` still controls which entries are emitted.
+
+- **Service-level scope:** `FL_LOG_FORMAT` is set at the OneFlow service level, ensuring consistent logging format across both SuperLink and SuperNode in a deployment.
+
+**Cross-reference:** See `spec/13-monitoring-observability.md` Section 3 for the FlowerJSONFormatter specification and FL event taxonomy.
+
 ---
 
 ## Appendix: Complete Variable Cross-Reference Matrix
@@ -851,11 +990,15 @@ This matrix shows every variable and which appliance uses it.
 | `FL_GRPC_KEEPALIVE_TIME` | Y | Y | -- | 7 |
 | `FL_GRPC_KEEPALIVE_TIMEOUT` | Y | Y | -- | 7 |
 | `FL_CERT_EXTRA_SAN` | Y | -- | -- | 7 |
+| `FL_LOG_FORMAT` | Y | Y | Y (OneFlow) | 8 |
+| `FL_METRICS_ENABLED` | Y | -- | -- | 8 |
+| `FL_METRICS_PORT` | Y | -- | -- | 8 |
+| `FL_DCGM_ENABLED` | -- | Y | -- | 8 |
 
 **Legend:** Y = used by this appliance, -- = not applicable
 
 ---
 
 *Specification for APPL-03: Contextualization Variable Reference*
-*Phase: 01 - Base Appliance Architecture (updated Phase 7)*
-*Version: 1.3*
+*Phase: 01 - Base Appliance Architecture (updated Phase 8)*
+*Version: 1.4*
