@@ -19,7 +19,7 @@ This section defines the OneFlow service template that deploys a complete Flower
 **What this section does NOT cover:**
 - Deployment sequence walkthrough and OneGate coordination protocol (Phase 4, Plan 2).
 - Scaling operations and service lifecycle management (Phase 4, Plan 2).
-- Multi-site federation across OpenNebula zones (Phase 7).
+- Multi-site federation across OpenNebula zones -- see [`spec/12-multi-site-federation.md`](12-multi-site-federation.md) (Phase 7).
 - Auto-scaling triggers and elasticity policies (Phase 9).
 - Training configuration internals and checkpointing (see [`spec/09-training-configuration.md`](09-training-configuration.md)).
 
@@ -32,6 +32,7 @@ This section defines the OneFlow service template that deploys a complete Flower
 - SuperNode TLS trust: [`spec/05-supernode-tls-trust.md`](05-supernode-tls-trust.md) -- CA cert retrieval and TLS mode detection.
 - ML framework variants: [`spec/06-ml-framework-variants.md`](06-ml-framework-variants.md) -- `ML_FRAMEWORK` variable and framework-specific Docker images.
 - Use case templates: [`spec/07-use-case-templates.md`](07-use-case-templates.md) -- `FL_USE_CASE` variable and pre-built Flower App Bundles.
+- Multi-site federation: [`spec/12-multi-site-federation.md`](12-multi-site-federation.md) -- cross-zone deployment topology, per-zone OneFlow templates, WireGuard/direct IP networking, gRPC keepalive, TLS trust distribution.
 
 ---
 
@@ -981,12 +982,12 @@ Common misconfigurations that cause deployment failures or degraded operation. E
 | Duplicating `user_inputs` at both service and role level | Role-level `user_inputs` silently override service-level values for the same key. If `FLOWER_VERSION` is defined at both levels with different defaults, the role-level value wins. This creates version mismatch between SuperLink and SuperNode (e.g., SuperLink runs 1.25.0 while SuperNode runs 1.26.0), causing gRPC protocol errors. | Define each variable at exactly one level. Service-level for variables that must be identical across roles (FLOWER_VERSION, FL_TLS_ENABLED, FL_LOG_LEVEL). Role-level for variables specific to one role. See Section 2, Variable Placement Rule. |
 | Missing `TOKEN=YES` in VM template CONTEXT | All OneGate API calls fail with HTTP 401 (Unauthorized). The SuperLink cannot publish `FL_ENDPOINT` or `FL_CA_CERT`. SuperNodes cannot discover the SuperLink. `REPORT_READY` cannot set `READY=YES`, so the `ready_status_gate` is never satisfied and the service hangs in DEPLOYING state indefinitely. | Always include `TOKEN=YES` in each role's `template_contents` CONTEXT section. This is an infrastructure variable, not a user_input. See Section 2, Infrastructure CONTEXT Variables. |
 | Putting infrastructure vars (`TOKEN`, `REPORT_READY`) in `user_inputs` instead of `template_contents` | The variables appear in the Sunstone instantiation form, confusing deployers who may change or remove them. If a deployer sets `TOKEN=NO` or deletes the field, OneGate authentication breaks silently. | Place infrastructure variables in `template_contents` at the role level. They are injected unconditionally and do not appear in the user-facing instantiation form. See Section 3, template_contents. |
-| Setting `FL_SUPERLINK_ADDRESS` in OneFlow deployment | Bypasses OneGate discovery entirely. The static address must match the SuperLink VM's actual IP, which is not known until the VM is created. If the operator guesses wrong or the IP changes on redeployment, all SuperNodes fail to connect. Defeats the purpose of OneFlow orchestration. | Leave `FL_SUPERLINK_ADDRESS` unset in OneFlow deployments. Let SuperNodes discover the SuperLink via OneGate automatically. Static addresses are intended for standalone VM deployments or cross-site federation (Phase 7), not single-site OneFlow services. |
+| Setting `FL_SUPERLINK_ADDRESS` in OneFlow deployment | Bypasses OneGate discovery entirely. The static address must match the SuperLink VM's actual IP, which is not known until the VM is created. If the operator guesses wrong or the IP changes on redeployment, all SuperNodes fail to connect. Defeats the purpose of OneFlow orchestration. | Leave `FL_SUPERLINK_ADDRESS` unset in OneFlow deployments. Let SuperNodes discover the SuperLink via OneGate automatically. Static addresses are intended for standalone VM deployments or cross-site federation (Phase 7, see [`spec/12-multi-site-federation.md`](12-multi-site-federation.md)), not single-site OneFlow services. |
 | Elasticity policies on the `superlink` role | Auto-scaling the singleton coordinator triggers split-brain (same as cardinality > 1). Even if `max_vms: 1` prevents the scale-up, the policy evaluation adds unnecessary overhead and signals a misunderstanding of the architecture. | Never define `elasticity_policies` or `scheduled_policies` on the SuperLink role. Elasticity policies apply only to the `supernode` role. See Section 8, Elasticity Policies. |
 | Using `deployment: "none"` instead of `"straight"` | All roles deploy simultaneously. SuperNode VMs boot before the SuperLink VM, enter the discovery retry loop, and spend up to 5 minutes in retries. With `ready_status_gate: true`, SuperNode creation is still gated, but with `ready_status_gate: false` (or if accidentally set), the race condition is fully exposed. Even with the gate, `"none"` loses the clear sequential semantics that make the deployment predictable. | Always use `deployment: "straight"`. Roles deploy in array order (SuperLink first, SuperNode second), and the `parents` dependency combined with `ready_status_gate` ensures correct ordering. |
 
 ---
 
 *Specification for ORCH-01: Single-Site Orchestration*
-*Phase: 04 - Single-Site Orchestration*
-*Version: 1.0*
+*Phase: 04 - Single-Site Orchestration (updated Phase 7)*
+*Version: 1.1*

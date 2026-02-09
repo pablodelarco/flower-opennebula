@@ -1,16 +1,16 @@
 # Flower-OpenNebula Integration: Appliance Specification
 
-**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration
-**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01, ML-01, ML-04
+**Phases:** 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration, 07 - Multi-Site Federation
+**Requirements:** APPL-01, APPL-02, APPL-03, APPL-04, ORCH-01, ORCH-02, ML-01, ML-04
 **Status:** Specification
 
 ---
 
 ## 1. Scope
 
-This specification defines the Flower federated learning appliances for the OpenNebula cloud platform. It covers two marketplace appliances (SuperLink and SuperNode), their Docker-in-VM packaging, boot sequences, contextualization parameters, TLS certificate automation, ML framework variants, and single-site OneFlow orchestration.
+This specification defines the Flower federated learning appliances for the OpenNebula cloud platform. It covers two marketplace appliances (SuperLink and SuperNode), their Docker-in-VM packaging, boot sequences, contextualization parameters, TLS certificate automation, ML framework variants, single-site OneFlow orchestration, and multi-site federation across OpenNebula zones.
 
-**What this specification covers (Phases 1-4):**
+**What this specification covers (Phases 1-5, 7):**
 - SuperLink appliance: FL coordinator that orchestrates training rounds and aggregates model updates (Phase 1).
 - SuperNode appliance: FL client that trains locally on private data and reports model updates (Phase 1).
 - Contextualization variable reference: the complete mapping from OpenNebula USER_INPUTs to Flower configuration (Phase 1).
@@ -18,10 +18,10 @@ This specification defines the Flower federated learning appliances for the Open
 - ML framework variants: PyTorch, TensorFlow, scikit-learn appliance variants and pre-built use case templates (Phase 3).
 - Single-site orchestration: OneFlow service template, deployment sequencing, OneGate coordination, scaling operations (Phase 4).
 - Training configuration: aggregation strategy selection, strategy-specific parameters, model checkpointing, and failure recovery (Phase 5).
+- Multi-site federation: cross-zone deployment topology, per-zone OneFlow templates, WireGuard/direct IP networking, gRPC keepalive, TLS trust distribution (Phase 7).
 
 **What this specification does NOT cover (deferred to later phases):**
 - GPU passthrough (Phase 6)
-- Multi-site federation (Phase 7)
 - Monitoring and observability (Phase 8)
 - Edge optimization and auto-scaling (Phase 9)
 
@@ -128,7 +128,13 @@ This specification defines the Flower federated learning appliances for the Open
 |---------|------|-------------|---------|
 | Training Configuration | [`spec/09-training-configuration.md`](09-training-configuration.md) | ML-01, ML-04 | Aggregation strategy selection (6 strategies), strategy-specific parameters, model checkpointing, resume workflow, failure recovery. |
 
-**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08). For training configuration, read Phase 5 (09) which builds on the orchestration foundation.
+### Phase 7: Multi-Site Federation
+
+| Section | File | Requirement | Summary |
+|---------|------|-------------|---------|
+| Multi-Site Federation | [`spec/12-multi-site-federation.md`](12-multi-site-federation.md) | ORCH-02 | Cross-zone deployment topology, per-zone OneFlow templates (coordinator and training site variants), WireGuard/direct IP networking options, gRPC keepalive configuration, TLS trust distribution across zones, 3-zone deployment walkthrough. |
+
+**Reading order:** Start with this overview, then read the Phase 1 specs in order (01, 02, 03). For TLS, continue with Phase 2 (04, 05). For ML variants, read Phase 3 (06, 07). For orchestration, read Phase 4 (08). For training configuration, read Phase 5 (09) which builds on the orchestration foundation. For multi-site federation, read Phase 7 (12) which extends the single-site orchestration to cross-zone deployments.
 
 ---
 
@@ -181,7 +187,7 @@ This specification defines the Flower federated learning appliances for the Open
                          in Zone B)            in Zone C)
 ```
 
-Cross-site deployment requires VPN/overlay networking and TLS certificates (Phases 2 and 7).
+**Multi-site deployment (Phase 7):** In a multi-zone federation, the SuperLink resides in a coordinator zone while SuperNodes are distributed across remote training site zones. Each zone runs its own independent OneFlow service (OneFlow and OneGate are zone-local). Cross-zone connectivity uses WireGuard site-to-site VPN or direct public IP, with gRPC keepalive for WAN resilience. See [`spec/12-multi-site-federation.md`](12-multi-site-federation.md) for the complete multi-site architecture.
 
 ---
 
@@ -247,5 +253,5 @@ This spec is Phase 1 of a 9-phase specification project. Each subsequent phase b
 ---
 
 *Specification Overview: Flower-OpenNebula Appliance Architecture*
-*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration*
-*Version: 1.3*
+*Phases: 01 - Base Appliance Architecture, 02 - Security and Certificate Automation, 03 - ML Framework Variants, 04 - Single-Site Orchestration, 05 - Training Configuration, 07 - Multi-Site Federation*
+*Version: 1.4*
