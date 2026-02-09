@@ -856,6 +856,264 @@ This phase introduces three new contextualization variables for GPU configuratio
 
 ---
 
+## 16. Validation Scripts
+
+Both host-level and VM-level validation scripts are provided to verify the GPU stack is correctly configured at each layer. These scripts produce structured PASS/FAIL output with specific fix instructions for each failed check.
+
+### 16a. Host-Level Validation Script (validate-host-gpu.sh)
+
+**Purpose:** Run on the OpenNebula KVM host to verify all GPU passthrough prerequisites (Layers 1-2) are correctly configured before deploying GPU-enabled VMs.
+
+**Location:** `/opt/flower/scripts/validate-host-gpu.sh` (provided to infrastructure operators as part of deployment documentation; not included in the QCOW2 image).
+
+**Checks performed:**
+
+| # | Check | Layer | Command | Pass Criteria |
+|---|-------|-------|---------|---------------|
+| 1 | IOMMU enabled in kernel | Layer 1 | `grep "iommu=on\|intel_iommu=on\|amd_iommu=on" /proc/cmdline` | Kernel command line contains IOMMU enable parameter |
+| 2 | IOMMU groups exist | Layer 1 | `ls /sys/kernel/iommu_groups/` | Non-empty directory listing |
+| 3 | vfio-pci module loaded | Layer 1 | `lsmod \| grep vfio_pci` | Module listed in loaded modules |
+| 4 | NVIDIA GPUs bound to vfio-pci | Layer 1 | `lspci -Dnns <addr> -k` | Kernel driver in use: vfio-pci |
+| 5 | VFIO udev rules configured | Layer 1 | `grep -rq 'SUBSYSTEM=="vfio"' /etc/udev/rules.d/` | Rule file exists with VFIO subsystem match |
+| 6 | OpenNebula PCI filter for NVIDIA | Layer 2 | `grep "10de" /var/lib/one/remotes/etc/im/kvm-probes.d/pci.conf` | NVIDIA vendor ID `10de` in filter list |
+
+**Output format:** Each check logs `OK`, `WARNING`, or `ERROR` with a specific `FIX:` instruction for failed checks. Summary reports total errors and warnings.
+
+**Full script specification:**
+
+```bash
+#!/bin/bash
+# /opt/flower/scripts/validate-host-gpu.sh
+# Run on OpenNebula KVM host to validate GPU passthrough prerequisites
+#
+# Usage: bash validate-host-gpu.sh
+# Exit codes: 0 = all checks passed (warnings allowed), 1 = errors detected
+
+set -e
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+ERRORS=0
+WARNINGS=0
+
+# Check 1: IOMMU enabled in kernel
+log "Checking IOMMU kernel configuration..."
+if grep -q "iommu=on\|intel_iommu=on\|amd_iommu=on" /proc/cmdline; then
+    log "  OK: IOMMU enabled in kernel parameters"
+else
+    log "  ERROR: IOMMU not enabled in kernel parameters"
+    log "  FIX: Add 'intel_iommu=on iommu=pt' or 'amd_iommu=on iommu=pt' to GRUB_CMDLINE_LINUX_DEFAULT"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check 2: IOMMU groups exist
+log "Checking IOMMU groups..."
+if [ -d /sys/kernel/iommu_groups ] && [ "$(ls -A /sys/kernel/iommu_groups)" ]; then
+    GROUPS=$(ls /sys/kernel/iommu_groups | wc -l)
+    log "  OK: $GROUPS IOMMU groups found"
+else
+    log "  ERROR: No IOMMU groups found"
+    log "  FIX: Ensure IOMMU is enabled in BIOS (Intel VT-d or AMD IOMMU)"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check 3: vfio-pci module loaded
+log "Checking vfio-pci module..."
+if lsmod | grep -q vfio_pci; then
+    log "  OK: vfio-pci module loaded"
+else
+    log "  WARNING: vfio-pci module not loaded"
+    log "  FIX: echo 'vfio-pci' > /etc/modules-load.d/vfio-pci.conf && modprobe vfio-pci"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+# Check 4: Find NVIDIA GPUs and check driver binding
+log "Checking NVIDIA GPU driver binding..."
+NVIDIA_GPUS=$(lspci -D | grep -i nvidia | grep -v Audio || true)
+if [ -z "$NVIDIA_GPUS" ]; then
+    log "  WARNING: No NVIDIA GPUs found"
+    WARNINGS=$((WARNINGS + 1))
+else
+    while IFS= read -r line; do
+        PCI_ADDR=$(echo "$line" | awk '{print $1}')
+        GPU_NAME=$(echo "$line" | cut -d: -f4-)
+        DRIVER=$(lspci -Dnns "$PCI_ADDR" -k 2>/dev/null | grep "Kernel driver" | awk '{print $NF}')
+
+        if [ "$DRIVER" = "vfio-pci" ]; then
+            log "  OK: $PCI_ADDR ($GPU_NAME) bound to vfio-pci"
+        elif [ -z "$DRIVER" ]; then
+            log "  WARNING: $PCI_ADDR ($GPU_NAME) no driver bound"
+            log "  FIX: driverctl set-override $PCI_ADDR vfio-pci"
+            WARNINGS=$((WARNINGS + 1))
+        else
+            log "  ERROR: $PCI_ADDR ($GPU_NAME) bound to $DRIVER (should be vfio-pci)"
+            log "  FIX: driverctl set-override $PCI_ADDR vfio-pci"
+            ERRORS=$((ERRORS + 1))
+        fi
+    done <<< "$NVIDIA_GPUS"
+fi
+
+# Check 5: udev rules for VFIO
+log "Checking VFIO udev rules..."
+if grep -rq 'SUBSYSTEM=="vfio"' /etc/udev/rules.d/ 2>/dev/null; then
+    log "  OK: VFIO udev rules configured"
+else
+    log "  WARNING: VFIO udev rules not found"
+    log "  FIX: echo 'SUBSYSTEM==\"vfio\", GROUP=\"kvm\", MODE=\"0666\"' > /etc/udev/rules.d/99-vfio.rules"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+# Check 6: OpenNebula PCI filter
+log "Checking OpenNebula PCI probe filter..."
+PCI_CONF="/var/lib/one/remotes/etc/im/kvm-probes.d/pci.conf"
+if [ -f "$PCI_CONF" ] && grep -q "10de" "$PCI_CONF"; then
+    log "  OK: NVIDIA filter configured in pci.conf"
+else
+    log "  WARNING: NVIDIA vendor filter not in pci.conf"
+    log "  FIX: Add ':filter: \"10de:*\"' to $PCI_CONF"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+# Summary
+echo ""
+if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
+    log "Host GPU passthrough validation PASSED: All checks successful"
+    exit 0
+elif [ $ERRORS -eq 0 ]; then
+    log "Host GPU passthrough validation PASSED with WARNINGS: $WARNINGS warning(s)"
+    exit 0
+else
+    log "Host GPU passthrough validation FAILED: $ERRORS error(s), $WARNINGS warning(s)"
+    exit 1
+fi
+```
+
+### 16b. VM-Level Validation Script (validate-gpu.sh)
+
+**Purpose:** Run inside a GPU-enabled SuperNode VM to verify the complete GPU stack from NVIDIA driver through Container Toolkit to Docker GPU access (Layers 3-4).
+
+**Location:** `/opt/flower/scripts/validate-gpu.sh` (pre-installed in the GPU-enabled QCOW2 image).
+
+**Checks performed:**
+
+| # | Check | Layer | Command | Pass Criteria |
+|---|-------|-------|---------|---------------|
+| 1 | NVIDIA kernel module loaded | Layer 3 | `lsmod \| grep nvidia` | Module listed in loaded modules |
+| 2 | nvidia-smi responds with GPU info | Layer 3 | `nvidia-smi` | Exit code 0; GPU name and memory reported |
+| 3 | NVIDIA Container Toolkit configured | Layer 3 | `grep '"nvidia"' /etc/docker/daemon.json` | Docker daemon.json references NVIDIA runtime |
+| 4 | Docker containers can access GPU | Layer 3 | `docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi` | Container starts and reports GPU info |
+| 5 | CUDA driver version | Layer 3 | `nvidia-smi --query-gpu=driver_version` | Informational (no pass/fail) |
+
+**Output format:** Each check logs `OK` or `ERROR` with count. Summary reports PASS/FAIL with total error count.
+
+**Full script specification:**
+
+```bash
+#!/bin/bash
+# /opt/flower/scripts/validate-gpu.sh
+# Validates the complete GPU stack inside a SuperNode VM
+#
+# Usage: bash validate-gpu.sh
+# Exit codes: 0 = all checks passed, 1 = errors detected
+
+set -e
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+ERRORS=0
+
+# Check 1: NVIDIA kernel module loaded
+log "Checking NVIDIA kernel module..."
+if lsmod | grep -q nvidia; then
+    log "  OK: nvidia module loaded"
+else
+    log "  ERROR: nvidia module not loaded"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check 2: nvidia-smi responds
+log "Checking nvidia-smi..."
+if nvidia-smi > /dev/null 2>&1; then
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+    GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader | head -1)
+    log "  OK: GPU detected - $GPU_NAME ($GPU_MEMORY)"
+else
+    log "  ERROR: nvidia-smi failed"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check 3: NVIDIA Container Toolkit configured
+log "Checking NVIDIA Container Toolkit..."
+if grep -q '"nvidia"' /etc/docker/daemon.json 2>/dev/null; then
+    log "  OK: Docker configured for NVIDIA runtime"
+else
+    log "  ERROR: Docker not configured for NVIDIA runtime"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check 4: Docker can access GPU
+log "Checking Docker GPU access..."
+if docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi > /dev/null 2>&1; then
+    log "  OK: Docker containers can access GPU"
+else
+    log "  ERROR: Docker GPU access failed"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Check 5: CUDA version
+log "Checking CUDA version..."
+CUDA_VERSION=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)
+if [ -n "$CUDA_VERSION" ]; then
+    log "  INFO: Driver version: $CUDA_VERSION"
+else
+    log "  INFO: Driver version: unknown (nvidia-smi not available)"
+fi
+
+# Summary
+echo ""
+if [ $ERRORS -eq 0 ]; then
+    log "GPU validation PASSED: All checks successful"
+    exit 0
+else
+    log "GPU validation FAILED: $ERRORS error(s) detected"
+    exit 1
+fi
+```
+
+### 16c. Validation Integration Points
+
+The validation scripts serve different audiences and are run at different points in the deployment lifecycle:
+
+| Script | Audience | When to Run | How to Run |
+|--------|----------|-------------|------------|
+| `validate-host-gpu.sh` | Infrastructure operator | Before deploying GPU-enabled VMs; after host IOMMU/VFIO configuration | `bash /opt/flower/scripts/validate-host-gpu.sh` on the KVM host |
+| `validate-gpu.sh` | VM operator / boot sequence | After GPU-enabled VM boots; optionally as part of boot health check | `bash /opt/flower/scripts/validate-gpu.sh` inside the VM (SSH or boot script) |
+
+**Boot sequence integration:** When `FL_GPU_ENABLED=YES`, the SuperNode bootstrap script (Step 9: GPU Detection, see `spec/02-supernode-appliance.md`) performs a lightweight GPU availability check (`nvidia-smi`). The full `validate-gpu.sh` script can optionally be run for detailed diagnostics, but is not required during normal boot. If `validate-gpu.sh` fails during a boot-time execution, the appliance logs a WARNING and continues with CPU fallback -- consistent with the design principle that GPU unavailability is WARNING, not FATAL (see DR-05).
+
+### 16d. Validation Troubleshooting Table
+
+When validation scripts report failures, use this table to map symptoms to root causes and fixes:
+
+| Symptom | Likely Cause | Layer | Fix |
+|---------|--------------|-------|-----|
+| "No IOMMU groups found" | IOMMU disabled in BIOS | Layer 1 | Enable Intel VT-d or AMD IOMMU in BIOS settings. Reboot host. |
+| "IOMMU not enabled in kernel parameters" | Missing kernel boot parameter | Layer 1 | Add `intel_iommu=on iommu=pt` (Intel) or `amd_iommu=on iommu=pt` (AMD) to `GRUB_CMDLINE_LINUX_DEFAULT`. Run `update-grub && reboot`. |
+| "GPU bound to nvidia (should be vfio-pci)" | Host GPU driver claiming device | Layer 1 | Run `driverctl set-override <pci_addr> vfio-pci` and reboot. |
+| "NVIDIA vendor filter not in pci.conf" | OpenNebula not probing for NVIDIA GPUs | Layer 2 | Add `:filter: '10de:*'` to `/var/lib/one/remotes/etc/im/kvm-probes.d/pci.conf`. Run `onehost sync -f`. |
+| "nvidia module not loaded" | NVIDIA driver not installed in VM | Layer 3 | Install driver: `apt install nvidia-driver-545`. Reboot VM. |
+| "nvidia-smi failed" | GPU not passed through to VM or driver mismatch | Layer 2-3 | Verify VM template has PCI device assignment. Check `lspci \| grep -i nvidia` inside VM. |
+| "Docker not configured for NVIDIA runtime" | Container Toolkit configure step missed | Layer 3 | Run `nvidia-ctk runtime configure --runtime=docker && systemctl restart docker`. |
+| "Docker GPU access failed" / "could not select device driver" | Docker daemon not restarted after toolkit configure | Layer 3 | Run `systemctl restart docker`. If still failing, re-run `nvidia-ctk runtime configure --runtime=docker`. |
+| GPU shows in host but not in VM | VM template missing UEFI or PCI assignment | Layer 2 | Add `OS = [ FIRMWARE = "UEFI" ]`, `FEATURES = [ MACHINE = "q35" ]`, and `PCI = [ SHORT_ADDRESS = "<addr>" ]` to VM template. |
+| Training slower than expected despite GPU | Cross-NUMA CPU scheduling | Layer 2 | Pin vCPUs to cores on the same NUMA node as the GPU. Add `TOPOLOGY = [ PIN_POLICY = "CORE" ]` to VM template. |
+
+---
+
 *Specification for ML-02: GPU Passthrough Stack*
 *Phase: 06 - GPU Acceleration*
-*Version: 1.0*
+*Version: 1.1*
