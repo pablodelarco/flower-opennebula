@@ -1,0 +1,15 @@
+# PyTorch-enabled SuperNode image for Flower FL demo.
+# Follows spec/06-ml-framework-variants.md Section 3a pattern.
+FROM flwr/supernode:1.25.0
+
+# Install build dependencies as root
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Switch to app user (UID 49999) for pip installs
+USER app
+RUN pip install --no-cache-dir \
+    torch==2.5.0+cpu torchvision==0.20.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir "flwr-datasets[vision]>=0.4.0"

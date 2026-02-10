@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flower-demo-cifar10"
+version = "1.0.0"
+description = "Privacy-preserving CIFAR-10 classification with Flower FL on OpenNebula"
+requires-python = ">=3.11"
+dependencies = [
+    "flwr[simulation]>=1.25.0",
+    "torch==2.5.0",
+    "torchvision==0.20.0",
+    "flwr-datasets[vision]>=0.4.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["flower_demo"]
+
+[tool.flwr.app]
+publisher = "flower-opennebula"
+
+[tool.flwr.app.components]
+serverapp = "flower_demo.server_app:app"
+clientapp = "flower_demo.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 3
+local-epochs = 1
+batch-size = 32
+
+[tool.flwr.federations]
+default = "opennebula"
+
+[tool.flwr.federations.opennebula]
+address = "127.0.0.1:9093"
+insecure = true
+
+[tool.flwr.federations.local-sim]
+options.num-supernodes = 2
