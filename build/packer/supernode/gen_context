@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Generate OpenNebula contextualization ISO content for Packer build
+
+SCRIPT=$(cat <<'CONTEXTEOF'
+#!/bin/bash
+# Enable SSH access for Packer provisioning (insecure, reverted by 81-configure-ssh.sh)
+sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+systemctl reload sshd
+# Set DNS
+echo "nameserver 1.1.1.1" > /etc/resolv.conf
+CONTEXTEOF
+)
+
+cat <<EOF
+ETH0_METHOD='dhcp'
+NETWORK='YES'
+SET_HOSTNAME='flower-supernode'
+PASSWORD='opennebula'
+ETH0_MAC='00:11:22:33:44:55'
+NETCFG_TYPE='nm'
+START_SCRIPT_BASE64='$(echo "${SCRIPT}" | base64 -w0)'
+EOF
