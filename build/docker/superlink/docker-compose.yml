@@ -1,0 +1,69 @@
+services:
+  superlink:
+    image: flwr/superlink:${FLOWER_VERSION:-1.25.0}
+    container_name: flower-superlink
+    ports:
+      - "9091:9091"  # SuperLink gRPC
+      - "9092:9092"  # Fleet API
+      - "9093:9093"  # REST API
+    volumes:
+      - /opt/flower/state:/app/state
+      - /opt/flower/certs:/app/certificates:ro
+    env_file:
+      - /opt/flower/config/superlink.env
+    command: >
+      --fleet-api-address=${FL_FLEET_API_ADDRESS:-0.0.0.0:9092}
+      --isolation=${FL_ISOLATION:-subprocess}
+      --database=${FL_DATABASE:-state/state.db}
+      ${FL_TLS_ENABLED:+--ssl-ca-certfile=/app/certificates/ca.crt}
+      ${FL_TLS_ENABLED:+--ssl-certfile=/app/certificates/server.crt}
+      ${FL_TLS_ENABLED:+--ssl-keyfile=/app/certificates/server.key}
+      ${FL_AUTH_ENABLED:+--auth-list-public-keys=/app/certificates/public_keys.txt}
+      ${FL_AUTH_ENABLED:+--auth-superlink-private-key=/app/certificates/superlink_private.pem}
+      ${FL_AUTH_ENABLED:+--auth-superlink-public-key=/app/certificates/superlink_public.pem}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9093/api/v0/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: flower-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - /opt/flower/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+    profiles:
+      - flower-metrics
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: flower-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - /opt/flower/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    profiles:
+      - flower-metrics
+
+volumes:
+  prometheus-data:
+  grafana-data:

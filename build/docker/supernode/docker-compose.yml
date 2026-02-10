@@ -1,0 +1,51 @@
+services:
+  supernode:
+    image: flwr/supernode:${FLOWER_VERSION:-1.25.0}
+    container_name: flower-supernode
+    volumes:
+      - /opt/flower/data:/app/data:ro
+      - /opt/flower/certs/ca.crt:/app/ca.crt:ro
+    env_file:
+      - /opt/flower/config/supernode.env
+    command: >
+      --superlink=${FL_SUPERLINK_ADDRESS:-superlink:9092}
+      --isolation=${FL_ISOLATION:-subprocess}
+      ${FL_NODE_CONFIG:+--node-config=/app/data/${FL_NODE_CONFIG}}
+      --max-retries=${FL_MAX_RETRIES:-3}
+      --max-wait-time=${FL_MAX_WAIT_TIME:-30}
+      ${FL_TLS_ENABLED:+--root-certificates=/app/ca.crt}
+      ${FL_AUTH_ENABLED:+--auth-supernode-private-key=/app/certificates/supernode_private.pem}
+      ${FL_AUTH_ENABLED:+--auth-supernode-public-key=/app/certificates/supernode_public.pem}
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${NVIDIA_GPU_COUNT:-all}
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "flwr-supernode"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:latest
+    container_name: flower-dcgm-exporter
+    ports:
+      - "9400:9400"
+    environment:
+      - DCGM_EXPORTER_LISTEN=:9400
+      - DCGM_EXPORTER_KUBERNETES=false
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+    restart: unless-stopped
+    profiles:
+      - flower-gpu
