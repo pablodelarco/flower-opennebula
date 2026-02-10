@@ -14,7 +14,7 @@ class SimpleCNN(nn.Module):
     Architecture:
         Conv2d(3→32, 5×5, pad=1) → ReLU → MaxPool(2)
         Conv2d(32→64, 5×5, pad=1) → ReLU → MaxPool(2)
-        Flatten → Linear(1600→512) → ReLU → Linear(512→10)
+        Flatten → Linear(2304→512) → ReLU → Linear(512→10)
     """
 
     def __init__(self) -> None:
@@ -22,7 +22,7 @@ class SimpleCNN(nn.Module):
         self.conv1 = nn.Conv2d(3, 32, kernel_size=5, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=5, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(64 * 5 * 5, 512)
+        self.fc1 = nn.Linear(64 * 6 * 6, 512)
         self.fc2 = nn.Linear(512, 10)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

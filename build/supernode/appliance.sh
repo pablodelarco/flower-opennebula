@@ -209,6 +209,16 @@ service_configure()
     # Step 6: generate systemd unit
     generate_systemd_unit
 
+    # Persist variables needed by service_bootstrap (separate process invocation)
+    cat > "${FLOWER_CONFIG_DIR}/configure.state" <<EOF
+SUPERLINK_ADDRESS='${SUPERLINK_ADDRESS}'
+VERSION='${VERSION}'
+TLS_FLAGS='${TLS_FLAGS}'
+TLS_VOLUME_FLAGS='${TLS_VOLUME_FLAGS}'
+TLS_MODE='${TLS_MODE}'
+EOF
+    chmod 600 "${FLOWER_CONFIG_DIR}/configure.state"
+
     # Write service report
     cat > "${ONE_SERVICE_REPORT:-/etc/one-appliance/config}" <<EOF
 [Flower SuperNode]
@@ -231,6 +241,15 @@ EOF
 service_bootstrap()
 {
     msg info "--- SuperNode bootstrap stage ---"
+
+    # Restore variables persisted by service_configure()
+    if [ -f "${FLOWER_CONFIG_DIR}/configure.state" ]; then
+        # shellcheck disable=SC1091
+        . "${FLOWER_CONFIG_DIR}/configure.state"
+    else
+        msg error "Missing ${FLOWER_CONFIG_DIR}/configure.state -- service_configure did not run"
+        exit 1
+    fi
 
     # Step 8: wait for Docker daemon
     wait_for_docker || { msg error "Docker daemon not available"; exit 1; }
@@ -332,7 +351,7 @@ install_docker()
 
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
@@ -359,7 +378,7 @@ install_nvidia_ctk()
     fi
 
     curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-        | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        | gpg --batch --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
     curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
         | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
         > /etc/apt/sources.list.d/nvidia-container-toolkit.list

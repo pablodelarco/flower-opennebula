@@ -7,10 +7,11 @@ name = "flower-demo-cifar10"
 version = "1.0.0"
 description = "Privacy-preserving CIFAR-10 classification with Flower FL on OpenNebula"
 requires-python = ">=3.11"
+license = "Apache-2.0"
 dependencies = [
     "flwr[simulation]>=1.25.0",
-    "torch==2.5.0",
-    "torchvision==0.20.0",
+    "torch==2.6.0",
+    "torchvision==0.21.0",
     "flwr-datasets[vision]>=0.4.0",
 ]
 
