@@ -309,7 +309,7 @@ install_docker() {
     # Add Docker GPG key
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     # Add Docker APT repository
@@ -674,6 +674,26 @@ generate_systemd_unit() {
         _ckpt_docker_flags="-v ${_host_ckpt_dir}:${ONEAPP_FL_CHECKPOINT_PATH}"
     fi
 
+    # Build ExecStart command as an array to avoid empty-line continuation bugs
+    local _exec_parts=()
+    _exec_parts+=("/usr/bin/docker run --name flower-superlink --rm")
+    _exec_parts+=("  --env-file ${FLOWER_ENV_FILE}")
+    _exec_parts+=("  -p 9091:9091 -p 9092:9092 -p 9093:9093")
+    [ -n "${_metrics_port_flag}" ]  && _exec_parts+=("  ${_metrics_port_flag}")
+    _exec_parts+=("  -v ${FLOWER_STATE_DIR}:/app/state")
+    [ -n "${_tls_docker_flags}" ]   && _exec_parts+=("  ${_tls_docker_flags}")
+    [ -n "${_ckpt_docker_flags}" ]  && _exec_parts+=("  ${_ckpt_docker_flags}")
+    _exec_parts+=("  flwr/superlink:${ONEAPP_FLOWER_VERSION}")
+    _exec_parts+=("  ${_tls_flower_flags}")
+    _exec_parts+=("  --isolation ${ONEAPP_FL_ISOLATION}")
+    _exec_parts+=("  --fleet-api-address ${ONEAPP_FL_FLEET_API_ADDRESS}")
+    _exec_parts+=("  --database ${ONEAPP_FL_DATABASE}")
+
+    # Join with backslash-newline continuations
+    local _exec_start
+    _exec_start=$(printf ' \\\n%s' "${_exec_parts[@]}")
+    _exec_start="ExecStart=${_exec_start:4}"  # strip leading ' \\\n'
+
     cat > "${FLOWER_SYSTEMD_UNIT}" <<EOF
 [Unit]
 Description=Flower SuperLink (Federated Learning Coordinator)
@@ -687,18 +707,7 @@ RestartSec=10
 TimeoutStartSec=120
 
 ExecStartPre=-/usr/bin/docker rm -f flower-superlink
-ExecStart=/usr/bin/docker run --name flower-superlink --rm \\
-  --env-file ${FLOWER_ENV_FILE} \\
-  -p 9091:9091 -p 9092:9092 -p 9093:9093 \\
-  ${_metrics_port_flag:+${_metrics_port_flag} \\}
-  -v ${FLOWER_STATE_DIR}:/app/state \\
-  ${_tls_docker_flags:+${_tls_docker_flags} \\}
-  ${_ckpt_docker_flags:+${_ckpt_docker_flags} \\}
-  flwr/superlink:${ONEAPP_FLOWER_VERSION} \\
-  ${_tls_flower_flags} \\
-  --isolation ${ONEAPP_FL_ISOLATION} \\
-  --fleet-api-address ${ONEAPP_FL_FLEET_API_ADDRESS} \\
-  --database ${ONEAPP_FL_DATABASE}
+${_exec_start}
 ExecStop=/usr/bin/docker stop flower-superlink
 
 [Install]

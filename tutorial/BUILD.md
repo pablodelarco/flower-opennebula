@@ -20,10 +20,13 @@ referenced throughout for deeper detail.
 6. [Creating the OneFlow Service Template](#6-creating-the-oneflow-service-template)
 7. [Deploying a Flower Cluster](#7-deploying-a-flower-cluster)
 8. [Verifying the Deployment](#8-verifying-the-deployment)
-9. [Submitting a Training Run](#9-submitting-a-training-run)
-10. [Customization Options](#10-customization-options)
-11. [Troubleshooting](#11-troubleshooting)
-12. [File Reference](#12-file-reference)
+9. [Verifying FL Communication](#9-verifying-fl-communication)
+10. [Submitting a Training Run](#10-submitting-a-training-run)
+11. [Customization Options](#11-customization-options)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Known Issues and Workarounds](#13-known-issues-and-workarounds)
+14. [File Reference](#14-file-reference)
+A. [Manual Deployment (Without Packer)](#appendix-a-manual-deployment-without-packer)
 
 ---
 
@@ -658,7 +661,76 @@ oneflow show <service_id>
 
 ---
 
-## 9. Submitting a Training Run
+## 9. Verifying FL Communication
+
+After confirming the containers are running (Section 8), verify that SuperNodes
+have established active gRPC connections to the SuperLink.
+
+### SuperLink: Check for Node Activations
+
+```bash
+ssh root@${SUPERLINK_IP} 'docker logs flower-superlink 2>&1 | grep -i activate'
+```
+
+Expected output (one line per connected SuperNode):
+
+```
+INFO :      ActivateNode: node_id=<id>
+INFO :      ActivateNode: node_id=<id>
+```
+
+Each `ActivateNode` entry confirms a SuperNode has registered with the Fleet API.
+
+### SuperNode: Check for Assigned Node ID
+
+```bash
+ssh root@${SUPERNODE_IP} 'docker logs flower-supernode 2>&1 | head -20'
+```
+
+Expected output:
+
+```
+INFO :      Starting Flower SuperNode
+INFO :      Opened insecure gRPC connection (no certificates were passed)
+INFO :      Waiting for message from SuperLink...
+```
+
+The "Opened ... gRPC connection" line confirms the transport layer is working.
+If TLS is enabled, this reads "Opened secure gRPC connection" instead.
+
+### Port Connectivity Check
+
+From any VM in the same network, verify the Fleet API port is reachable:
+
+```bash
+nc -z ${SUPERLINK_IP} 9092 && echo "Fleet API: OK" || echo "Fleet API: UNREACHABLE"
+nc -z ${SUPERLINK_IP} 9093 && echo "Control API: OK" || echo "Control API: UNREACHABLE"
+```
+
+### gRPC Polling Proof
+
+SuperNodes continuously poll the SuperLink for tasks. Verify this with a
+live log tail:
+
+```bash
+# On the SuperLink -- watch for periodic GetRun requests
+ssh root@${SUPERLINK_IP} 'docker logs -f flower-superlink 2>&1' &
+
+# On a SuperNode -- confirm it is polling
+ssh root@${SUPERNODE_IP} 'docker logs -f flower-supernode 2>&1' &
+```
+
+In `DEBUG` log level (`ONEAPP_FL_LOG_LEVEL=DEBUG`), you will see periodic
+`PullTaskIns` / `GetRun` messages. In `INFO` level, the SuperNode shows
+"Waiting for message from SuperLink..." and stays connected.
+
+If the SuperNode disconnects and reconnects (visible as repeated "Opened gRPC
+connection" lines), check network stability and gRPC keepalive settings
+(`ONEAPP_FL_GRPC_KEEPALIVE_TIME`).
+
+---
+
+## 10. Submitting a Training Run
 
 Once the cluster is running, submit a Flower App Bundle (FAB) containing
 your ServerApp and ClientApp code.
@@ -724,9 +796,9 @@ supernode role.
 
 ---
 
-## 10. Customization Options
+## 11. Customization Options
 
-### 10a. Enabling TLS
+### 11a. Enabling TLS
 
 TLS encrypts the gRPC communication between SuperLink and SuperNodes,
 protecting model weights and gradients in transit.
@@ -780,7 +852,7 @@ ssh root@${SUPERLINK_IP} 'openssl s_client -connect localhost:9092 </dev/null 2>
 **Spec:** [`../spec/04-tls-certificate-lifecycle.md`](../spec/04-tls-certificate-lifecycle.md),
 [`../spec/05-supernode-tls-trust.md`](../spec/05-supernode-tls-trust.md)
 
-### 10b. Enabling GPU Passthrough
+### 11b. Enabling GPU Passthrough
 
 GPU passthrough allows SuperNode containers to use NVIDIA GPUs for accelerated
 training. This requires a four-layer configuration.
@@ -865,7 +937,7 @@ SuperNode remains functional.
 
 **Spec:** [`../spec/10-gpu-passthrough.md`](../spec/10-gpu-passthrough.md)
 
-### 10c. Enabling Monitoring
+### 11c. Enabling Monitoring
 
 The monitoring stack provides two tiers of observability.
 
@@ -920,7 +992,7 @@ This starts:
 
 **Spec:** [`../spec/13-monitoring-observability.md`](../spec/13-monitoring-observability.md)
 
-### 10d. Scaling the SuperNode Role
+### 11d. Scaling the SuperNode Role
 
 OneFlow supports runtime scaling of the supernode role.
 
@@ -956,7 +1028,7 @@ Edit these in `flower-cluster.yaml` before registering the template.
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 ### Boot Hangs or VM Never Reports READY
 
@@ -1095,7 +1167,129 @@ ssh root@<vm_ip> 'docker logs flower-superlink --tail 50'
 
 ---
 
-## 12. File Reference
+## 13. Known Issues and Workarounds
+
+This section documents issues discovered during real-world deployment that are
+not yet fixed upstream or require operator awareness.
+
+### 13a. Ubuntu 24.04 Marketplace Image Disk Size
+
+The Ubuntu 24.04 image from the OpenNebula marketplace has a 3.5 GB root disk.
+This is insufficient for Docker images and layers. Resize the disk to at least
+10 GB before provisioning:
+
+```bash
+# Resize the image in the datastore
+oneimage resize <image_id> 10240
+
+# Or resize the disk in a running VM
+onevm disk-resize <vm_id> 0 10240
+```
+
+After boot, extend the filesystem:
+
+```bash
+growpart /dev/vda 1
+resize2fs /dev/vda1
+```
+
+### 13b. `unattended-upgrades` Blocks apt on First Boot
+
+Ubuntu 24.04 marketplace images run `unattended-upgrades` on first boot. This
+holds the apt lock and causes `apt-get install` to fail with:
+
+```
+E: Could not get lock /var/lib/dpkg/lock-frontend
+```
+
+**Workaround:** Wait for the upgrade to finish, or disable it before installing:
+
+```bash
+systemctl stop unattended-upgrades
+systemctl disable unattended-upgrades
+apt-get remove -y unattended-upgrades
+# Wait for any existing dpkg lock to release
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done
+```
+
+### 13c. GPG `--batch` Flag for Non-Interactive Environments
+
+The `gpg --dearmor` command used when adding Docker and NVIDIA APT repositories
+requires a TTY by default. In non-interactive SSH sessions (e.g., Packer
+provisioners, cloud-init scripts), it fails with:
+
+```
+gpg: cannot open '/dev/tty': No such device or address
+```
+
+**Fix:** The appliance scripts now include `--batch --yes` flags on all `gpg`
+invocations. If you encounter this in custom scripts, add these flags:
+
+```bash
+curl -fsSL https://example.com/key.gpg | gpg --batch --yes --dearmor -o /path/to/keyring.gpg
+```
+
+### 13d. Status File Must Be `install_success`
+
+The one-apps framework checks for the status string `install_success` (not
+`install_done`) to determine whether installation completed. The framework's
+`_set_service_status success` call writes the correct value, but if you set the
+status manually during testing, use the exact string:
+
+```bash
+echo "install_success" > /etc/one-appliance/status
+```
+
+### 13e. Systemd Unit Empty-Line Bug
+
+When optional Docker flags (metrics port, TLS volumes, checkpoint volumes) are
+empty, the `${var:+...}` conditionals in the generated systemd unit produce
+empty lines that break backslash line continuations. This causes `systemctl
+start` to fail with:
+
+```
+Failed to start flower-superlink.service: Unit flower-superlink.service has a bad unit file setting.
+```
+
+**Fix:** The SuperLink appliance script now builds the `ExecStart` command as
+an array and only includes non-empty flags. This fix is in
+`build/superlink/appliance.sh`, function `generate_systemd_unit()`.
+
+### 13f. SuperNode Cross-Function Variable Scoping
+
+The one-apps service manager invokes `service_configure()` and
+`service_bootstrap()` as separate process invocations. Variables set in
+`service_configure()` (such as `SUPERLINK_ADDRESS`, `VERSION`, `TLS_FLAGS`)
+are not available in `service_bootstrap()`.
+
+**Fix:** The SuperNode appliance script now persists these variables to
+`/opt/flower/config/configure.state` at the end of `service_configure()` and
+sources them at the start of `service_bootstrap()`.
+
+### 13g. OneFlow `vm_template_contents` CONTEXT Block Parsing
+
+When passing nested CONTEXT blocks via OneFlow's `vm_template_contents` JSON
+field, the parser may fail to correctly escape nested quote characters. This
+can result in malformed VM templates.
+
+**Workaround:** Set context variables at the VM template level (via
+`onetemplate update`) rather than overriding them through
+`vm_template_contents`. For simple key-value overrides (no nested blocks),
+`vm_template_contents` works correctly.
+
+### 13h. Powered-Off VMs Still Count Toward Host Allocation
+
+VMs in the `POWEROFF` state still consume host memory and CPU allocation in
+OpenNebula's scheduler. This can prevent new VMs from being deployed even
+though the host has idle resources.
+
+**Workaround:** Use `onevm undeploy <vm_id>` instead of `onevm poweroff` to
+fully release host resources. The VM disk state is preserved and can be resumed
+with `onevm resume`.
+
+---
+
+## 14. File Reference
 
 ### Build Directory
 
@@ -1125,6 +1319,7 @@ ssh root@<vm_ip> 'docker logs flower-superlink --tail 50'
 | `/opt/flower/scripts/health-check.sh`           | Both        | Readiness probe for REPORT_READY gating      |
 | `/opt/flower/config/superlink.env`              | SuperLink   | Generated Docker environment file            |
 | `/opt/flower/config/supernode.env`              | SuperNode   | Generated Docker environment file            |
+| `/opt/flower/config/configure.state`            | SuperNode   | Persisted variables from configure for bootstrap |
 | `/opt/flower/state/`                            | SuperLink   | SQLite state database (persists across restarts) |
 | `/opt/flower/certs/`                            | Both        | TLS certificates (when TLS enabled)          |
 | `/opt/flower/data/`                             | SuperNode   | Local training data mount point              |
@@ -1154,3 +1349,231 @@ ssh root@<vm_ip> 'docker logs flower-superlink --tail 50'
 | `spec/12-multi-site-federation.md`          | Cross-zone deployment, WireGuard, gRPC keepalive     |
 | `spec/13-monitoring-observability.md`       | JSON logging, Prometheus metrics, Grafana dashboards |
 | `spec/14-edge-and-auto-scaling.md`          | Edge SuperNode variant, OneFlow elasticity policies  |
+
+---
+
+## Appendix A: Manual Deployment (Without Packer)
+
+When Packer is not practical (resource-constrained hosts, marketplace image
+base, or environments without KVM nesting), you can build Flower appliance
+images manually using a "builder VM" approach. This was the method used for
+the initial deployment on a single-host OpenNebula environment.
+
+### A.1. Overview
+
+Instead of Packer launching a temporary QEMU VM, you:
+
+1. Import a base Ubuntu 24.04 image from the OpenNebula marketplace.
+2. Resize the disk to accommodate Docker.
+3. Boot a "builder" VM from that image.
+4. SSH in and run the appliance provisioning commands manually.
+5. Save the VM's disk as a new image.
+6. Create VM templates from the saved images.
+
+### A.2. Import and Resize the Base Image
+
+```bash
+# Export Ubuntu 24.04 from the marketplace to your default datastore
+onemarketapp export <ubuntu2404_app_id> "Ubuntu 24.04 Base" -d <datastore_id>
+
+# Wait for the image to be READY
+oneimage list | grep "Ubuntu 24.04"
+
+# Resize to 10 GB (the marketplace image is only 3.5 GB)
+oneimage resize <image_id> 10240
+```
+
+### A.3. Boot the Builder VM
+
+Create a minimal VM template and boot it:
+
+```bash
+onetemplate create <<'EOF'
+NAME = "Flower Builder"
+CPU = 2
+VCPU = 2
+MEMORY = 4096
+DISK = [ IMAGE_ID = <image_id> ]
+NIC = [ NETWORK_ID = <your_network_id> ]
+CONTEXT = [
+    TOKEN = "YES",
+    NETWORK = "YES",
+    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+]
+EOF
+
+onetemplate instantiate <template_id>
+```
+
+Wait for the VM to reach `RUNNING` state, then SSH in.
+
+### A.4. Prepare the System
+
+```bash
+ssh root@<builder_ip>
+
+# Extend the filesystem to use the full 10 GB disk
+growpart /dev/vda 1
+resize2fs /dev/vda1
+
+# Disable unattended-upgrades (blocks apt lock on first boot)
+systemctl stop unattended-upgrades
+systemctl disable unattended-upgrades
+apt-get remove -y unattended-upgrades
+
+# Wait for any running dpkg process to finish
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done
+```
+
+### A.5. Install the one-apps Framework
+
+The one-apps framework provides the service lifecycle manager that the
+appliance scripts depend on. Install it manually:
+
+```bash
+# Clone the framework (or SCP it from your workstation)
+apt-get update && apt-get install -y git
+git clone https://github.com/OpenNebula/one-apps.git /tmp/one-apps
+
+# Install the service manager and libraries
+mkdir -p /etc/one-appliance/service.d
+cp /tmp/one-apps/appliances/service.sh /etc/one-appliance/service
+chmod +x /etc/one-appliance/service
+mkdir -p /etc/one-appliance/lib
+cp /tmp/one-apps/appliances/lib/common.sh /etc/one-appliance/lib/
+cp /tmp/one-apps/appliances/lib/functions.sh /etc/one-appliance/lib/
+
+# Install contextualization hooks
+cp /tmp/one-apps/appliances/scripts/net-90-service-appliance \
+   /etc/one-context.d/net-90-service-appliance
+cp /tmp/one-apps/appliances/scripts/net-99-report-ready \
+   /etc/one-context.d/net-99-report-ready
+chmod +x /etc/one-context.d/net-90-service-appliance
+chmod +x /etc/one-context.d/net-99-report-ready
+
+rm -rf /tmp/one-apps
+```
+
+### A.6. Provision the SuperLink
+
+```bash
+# Copy the appliance script into the framework's service directory
+# (SCP from your workstation, or paste the content)
+scp build/superlink/appliance.sh root@<builder_ip>:/etc/one-appliance/service.d/appliance.sh
+
+# SSH in and run the install lifecycle
+ssh root@<builder_ip>
+
+# Source the framework
+source /etc/one-appliance/service
+source /etc/one-appliance/service.d/appliance.sh
+
+# Run the install phase (installs Docker, pulls image, creates dirs)
+service_install
+
+# Mark installation as successful for the framework
+# IMPORTANT: the value must be exactly 'install_success'
+echo "install_success" > /etc/one-appliance/status
+
+# Stop Docker before saving (layers persist in /var/lib/docker/)
+systemctl stop docker
+
+# Clean up for image reuse
+cloud-init clean 2>/dev/null || true
+truncate -s 0 /etc/machine-id
+rm -rf /tmp/* /var/tmp/*
+```
+
+### A.7. Save the SuperLink Image
+
+```bash
+# From your OpenNebula frontend (not inside the VM):
+
+# Power off the builder VM
+onevm poweroff <builder_vm_id>
+
+# Save disk 0 as a new image
+onevm disk-saveas <builder_vm_id> 0 "Flower SuperLink v1.25.0"
+
+# Wait for the image to be READY
+oneimage list | grep "Flower SuperLink"
+```
+
+### A.8. Provision the SuperNode
+
+Repeat steps A.3-A.7 with the SuperNode appliance script instead:
+
+```bash
+# Boot a fresh builder VM from the original base image (not the SuperLink image)
+# Follow A.3, A.4, A.5 again
+
+# Copy the SuperNode appliance script
+scp build/supernode/appliance.sh root@<builder_ip>:/etc/one-appliance/service.d/appliance.sh
+
+# SSH in and run install
+ssh root@<builder_ip>
+source /etc/one-appliance/service
+source /etc/one-appliance/service.d/appliance.sh
+service_install
+
+echo "install_success" > /etc/one-appliance/status
+systemctl stop docker
+cloud-init clean 2>/dev/null || true
+truncate -s 0 /etc/machine-id
+rm -rf /tmp/* /var/tmp/*
+```
+
+Save as "Flower SuperNode v1.25.0" using the same `disk-saveas` procedure.
+
+### A.9. Create Templates and Deploy
+
+From here, follow the standard workflow starting at
+[Section 5: Uploading to OpenNebula](#5-uploading-to-opennebula) -- you
+already have the images, so skip the upload step and go directly to creating
+VM templates.
+
+```bash
+# Create SuperLink template (use your saved image name)
+onetemplate create <<'EOF'
+NAME = "Flower SuperLink"
+CPU = 2
+VCPU = 2
+MEMORY = 4096
+DISK = [ IMAGE = "Flower SuperLink v1.25.0" ]
+NIC = [ NETWORK_ID = <your_network_id> ]
+CONTEXT = [
+    TOKEN = "YES",
+    NETWORK = "YES",
+    REPORT_READY = "YES",
+    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+    ONEAPP_FL_FLEET_API_ADDRESS = "0.0.0.0:9092"
+]
+EOF
+
+# Create SuperNode template
+onetemplate create <<'EOF'
+NAME = "Flower SuperNode"
+CPU = 2
+VCPU = 2
+MEMORY = 4096
+DISK = [ IMAGE = "Flower SuperNode v1.25.0" ]
+NIC = [ NETWORK_ID = <your_network_id> ]
+CONTEXT = [
+    TOKEN = "YES",
+    NETWORK = "YES",
+    REPORT_READY = "YES",
+    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+    ONEAPP_FL_SUPERLINK_ADDRESS = "<superlink_ip>:9092"
+]
+EOF
+```
+
+**Note:** For manual deployment without OneFlow, you can set
+`ONEAPP_FL_SUPERLINK_ADDRESS` directly on the SuperNode template instead of
+relying on OneGate discovery.
+
+### A.10. Verification
+
+After deploying VMs from the saved images, verify the cluster using the
+procedures in [Section 8](#8-verifying-the-deployment) and
+[Section 9](#9-verifying-fl-communication).
