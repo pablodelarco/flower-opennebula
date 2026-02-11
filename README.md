@@ -120,23 +120,28 @@ INFO :              round 3: 0.94
 
 Loss dropped from **1.27 to 0.94** across 3 rounds. Only model weights (~3.5 MB per round) crossed the network -- raw CIFAR-10 images never left their respective VMs.
 
-## Dashboard
+## Monitoring
 
-The real-time monitoring dashboard runs at **port 8080** on the OpenNebula frontend. Built with FastAPI and Tailwind CSS, it provides:
+Three monitoring services run on the OpenNebula frontend as Docker containers:
 
-- **Animated SVG topology** -- Visual cluster map showing SuperLink and SuperNode connectivity status
-- **Live training progress** -- Round-by-round loss/accuracy curves updated in real time
-- **Node health** -- Per-VM container status, uptime, resource utilization
-- **Dark/light mode** -- Toggleable theme with responsive layout
+| Service | Port | What it does |
+|---------|------|-------------|
+| **FL Dashboard** | `8080` | Real-time cluster topology, training progress, node health (FastAPI + Tailwind CSS) |
+| **Prometheus** | `9090` | Metrics collection with 30-day retention, pre-configured to scrape the SuperLink |
+| **Grafana** | `3000` | Pre-built "FL Training Overview" dashboard with 10 panels (login: `admin` / `changeme123`) |
+
+The FL Dashboard provides an animated SVG topology showing SuperLink/SuperNode connectivity, round-by-round loss curves, and dark/light mode. It collects state from OpenNebula CLI and Docker logs via SSH -- no agents needed on the VMs.
+
+Prometheus is configured to scrape SuperLink metrics at `:9101`. Grafana ships with a provisioned datasource and dashboard covering training rounds, connected clients, fit/evaluate duration, and raw metrics.
 
 ```bash
-# Start the dashboard
-cd dashboard
-pip install fastapi uvicorn
+# Start the FL Dashboard
+cd dashboard && pip install fastapi uvicorn
 uvicorn app:app --host 0.0.0.0 --port 8080
-```
 
-The dashboard collects state from OpenNebula CLI and Docker container logs via SSH. No agents needed on the VMs.
+# Start Prometheus + Grafana (on the frontend)
+cd /path/to/monitoring && docker compose up -d
+```
 
 ## Documentation
 
@@ -252,7 +257,7 @@ Structured JSON logging, Prometheus metrics, GPU telemetry via DCGM, Grafana das
 | Structured Logging | JSON logs with 12 FL event types | `FL_LOG_FORMAT=json` |
 | Prometheus/Grafana | Metrics + 3 dashboards + 8 alert rules | `FL_METRICS_ENABLED=YES` |
 
-**Note:** Flower 1.25.0 does not expose native Prometheus metrics on port 9101. The spec describes the target-state exporter design. Current monitoring uses container-level metrics and the real-time dashboard at port 8080.
+**Note:** The deployment includes Prometheus + Grafana with a pre-built "FL Training Overview" dashboard (10 panels). Prometheus is configured to scrape SuperLink metrics at `:9101`. The real-time FL Dashboard at port 8080 provides cluster topology and training progress independently.
 
 **Spec file:** `spec/13-monitoring-observability.md`
 
