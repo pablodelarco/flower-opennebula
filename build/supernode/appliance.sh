@@ -333,10 +333,10 @@ service_help()
 
 service_cleanup()
 {
-    msg info "Cleaning up Flower SuperNode"
-    docker rm -f "${FLOWER_CONTAINER}" 2>/dev/null || true
-    docker rm -f "${DCGM_CONTAINER}" 2>/dev/null || true
-    return 0
+    # No-op: the one-appliance framework calls cleanup between lifecycle stages,
+    # but we must not destroy the container that bootstrap just created.
+    # Container lifecycle is managed by systemd (Restart=on-failure).
+    :
 }
 
 ###############################################################################
