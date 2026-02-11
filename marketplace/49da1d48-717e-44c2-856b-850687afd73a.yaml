@@ -1,0 +1,94 @@
+---
+name: Flower SuperLink 1.25.0
+version: 1.25.0-1.0.0
+publisher: OpenNebula Systems
+description: |-
+  VM template for the [Flower](https://flower.ai/) SuperLink appliance
+  (federated learning coordinator).
+
+  Deploys a SuperLink VM that coordinates federated training rounds,
+  aggregates model updates from SuperNodes, and publishes its endpoint
+  to OneGate for automatic discovery. Supports 6 aggregation strategies
+  (FedAvg, FedProx, FedAdam, Krum, Bulyan, FedTrimmedAvg), model
+  checkpointing, and optional TLS encryption.
+
+  Part of the **Flower Federated Learning** appliance set.
+  Imported automatically when you export the
+  [Service Flower FL 1.25.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
+
+  Requires
+  [OneGate](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/onegate_usage.html)
+  for SuperNode auto-discovery.
+short_description: Flower SuperLink VM template (FL coordinator)
+tags:
+- flower
+- federated-learning
+- superlink
+- ubuntu
+- service
+type: VMTEMPLATE
+format: qcow2
+creation_time: 1770822863
+os-id: Ubuntu
+os-release: '24.04 LTS'
+os-arch: x86_64
+hypervisor: KVM
+opennebula_version: 6.8, 6.10, 7.0
+opennebula_template:
+  context:
+    token: 'YES'
+    network: 'YES'
+    report_ready: 'YES'
+    ssh_public_key: "$USER[SSH_PUBLIC_KEY]"
+    oneapp_flower_version: "$ONEAPP_FLOWER_VERSION"
+    oneapp_fl_tls_enabled: "$ONEAPP_FL_TLS_ENABLED"
+    oneapp_fl_log_level: "$ONEAPP_FL_LOG_LEVEL"
+    oneapp_fl_log_format: "$ONEAPP_FL_LOG_FORMAT"
+    oneapp_fl_num_rounds: "$ONEAPP_FL_NUM_ROUNDS"
+    oneapp_fl_strategy: "$ONEAPP_FL_STRATEGY"
+    oneapp_fl_min_fit_clients: "$ONEAPP_FL_MIN_FIT_CLIENTS"
+    oneapp_fl_min_evaluate_clients: "$ONEAPP_FL_MIN_EVALUATE_CLIENTS"
+    oneapp_fl_min_available_clients: "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
+    oneapp_fl_proximal_mu: "$ONEAPP_FL_PROXIMAL_MU"
+    oneapp_fl_server_lr: "$ONEAPP_FL_SERVER_LR"
+    oneapp_fl_client_lr: "$ONEAPP_FL_CLIENT_LR"
+    oneapp_fl_num_malicious: "$ONEAPP_FL_NUM_MALICIOUS"
+    oneapp_fl_trim_beta: "$ONEAPP_FL_TRIM_BETA"
+    oneapp_fl_checkpoint_enabled: "$ONEAPP_FL_CHECKPOINT_ENABLED"
+    oneapp_fl_checkpoint_interval: "$ONEAPP_FL_CHECKPOINT_INTERVAL"
+    oneapp_fl_checkpoint_path: "$ONEAPP_FL_CHECKPOINT_PATH"
+    oneapp_fl_metrics_enabled: "$ONEAPP_FL_METRICS_ENABLED"
+    oneapp_fl_metrics_port: "$ONEAPP_FL_METRICS_PORT"
+  cpu: '2'
+  memory: '4096'
+  graphics:
+    listen: 0.0.0.0
+    type: vnc
+  inputs_order: >-
+    ONEAPP_FL_NUM_ROUNDS,ONEAPP_FL_STRATEGY,ONEAPP_FL_MIN_FIT_CLIENTS,ONEAPP_FL_MIN_AVAILABLE_CLIENTS,ONEAPP_FL_TLS_ENABLED,ONEAPP_FL_CHECKPOINT_ENABLED,ONEAPP_FL_METRICS_ENABLED,ONEAPP_FL_LOG_LEVEL
+  os:
+    arch: x86_64
+  user_inputs:
+    oneapp_flower_version: "O|text|Flower Docker image version tag||1.25.0"
+    oneapp_fl_num_rounds: "O|number|Number of federated training rounds||3"
+    oneapp_fl_strategy: "O|list|Aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg"
+    oneapp_fl_min_fit_clients: "O|number|Minimum clients for training round||2"
+    oneapp_fl_min_evaluate_clients: "O|number|Minimum clients for evaluation||2"
+    oneapp_fl_min_available_clients: "O|number|Minimum available clients to start round||2"
+    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||NO"
+    oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
+    oneapp_fl_log_format: "O|list|Log output format|text,json|text"
+    oneapp_fl_proximal_mu: "O|number-float|FedProx proximal term mu||1.0"
+    oneapp_fl_server_lr: "O|number-float|FedAdam server learning rate||0.1"
+    oneapp_fl_client_lr: "O|number-float|FedAdam client learning rate||0.1"
+    oneapp_fl_num_malicious: "O|number|Expected malicious clients (Krum/Bulyan)||0"
+    oneapp_fl_trim_beta: "O|number-float|FedTrimmedAvg trim ratio||0.2"
+    oneapp_fl_checkpoint_enabled: "O|boolean|Enable model checkpointing||NO"
+    oneapp_fl_checkpoint_interval: "O|number|Rounds between checkpoints||5"
+    oneapp_fl_checkpoint_path: "O|text|Container path for checkpoints||/app/checkpoints"
+    oneapp_fl_metrics_enabled: "O|boolean|Enable Prometheus metrics endpoint||NO"
+    oneapp_fl_metrics_port: "O|number|Prometheus metrics port||9101"
+logo: flower.png
+disks:
+- "Flower SuperLink 1.25.0 OS disk"
+images: []

@@ -36,7 +36,7 @@ template_body:
       min_vms: 1
       max_vms: 1
       cooldown: 60
-      vm_template: 0                  # Replace with actual template ID
+      vm_template: 0                  # Flower SuperLink
       parents: []
 
       vm_template_contents: |
@@ -91,7 +91,7 @@ template_body:
       min_vms: 2
       max_vms: 10
       cooldown: 30
-      vm_template: 0                  # Replace with actual template ID
+      vm_template: 2                  # Flower SuperNode MultiFW
       parents:
         - 'superlink'
 

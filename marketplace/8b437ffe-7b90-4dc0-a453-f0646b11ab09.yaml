@@ -1,0 +1,147 @@
+---
+name: Service Flower FL 1.25.0
+version: 1.25.0-1.0.0
+publisher: OpenNebula Systems
+description: |-
+  Privacy-preserving [Flower](https://flower.ai/) federated learning cluster
+  deployed as an OpenNebula service, orchestrated by
+  [OneFlow](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/appflow_elasticity.html).
+
+  Deploys one SuperLink coordinator and N SuperNode training clients.
+  The SuperLink boots first, publishes its endpoint to OneGate, and reports
+  READY. SuperNodes then start, auto-discover the SuperLink, and connect
+  to the Fleet API. Raw training data never leaves the SuperNode VMs --
+  only model weights are transmitted.
+
+  **Features:**
+  - 6 aggregation strategies: FedAvg, FedProx, FedAdam, Krum, Bulyan, FedTrimmedAvg
+  - 3 ML frameworks pre-baked: PyTorch 2.6.0, TensorFlow 2.18.1, scikit-learn
+  - Automatic service discovery via OneGate
+  - Optional TLS encryption, model checkpointing, GPU passthrough
+  - Auto-scaling from 2 to 10 SuperNodes
+
+  Requires
+  [OneFlow](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/overview.html)
+  and
+  [OneGate](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/onegate_usage.html)
+  OpenNebula components.
+
+  Based on VM templates:
+  - [Flower SuperLink 1.25.0](49da1d48-717e-44c2-856b-850687afd73a)
+  - [Flower SuperNode 1.25.0](b4d08fae-f02d-4061-b130-870e4a9a93f8)
+short_description: Flower federated learning cluster (SuperLink + SuperNodes) orchestrated by OneFlow
+tags:
+- flower
+- federated-learning
+- service
+- ubuntu
+creation_time: 1770822863
+os-id: Ubuntu
+os-release: '24.04 LTS'
+os-arch: x86_64
+hypervisor: KVM
+opennebula_version: 6.8, 6.10, 7.0
+type: 'SERVICE_TEMPLATE'
+roles:
+  superlink: 'Flower SuperLink 1.25.0'
+  supernode: 'Flower SuperNode 1.25.0'
+opennebula_template:
+  name: Service Flower FL
+  deployment: straight
+  description: ''
+  ready_status_gate: true
+  shutdown_action: shutdown
+  roles:
+  - name: superlink
+    cardinality: 1
+    min_vms: 1
+    max_vms: 1
+    cooldown: 60
+    vm_template_contents: |
+      NIC = [ NETWORK_ID = "$Private" ]
+      CONTEXT = [
+        TOKEN = "YES",
+        NETWORK = "YES",
+        REPORT_READY = "YES",
+        READY_SCRIPT_PATH = "/opt/flower/scripts/health-check.sh",
+        SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+        ONEAPP_FLOWER_VERSION = "$ONEAPP_FLOWER_VERSION",
+        ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED",
+        ONEAPP_FL_LOG_LEVEL = "$ONEAPP_FL_LOG_LEVEL",
+        ONEAPP_FL_LOG_FORMAT = "$ONEAPP_FL_LOG_FORMAT",
+        ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS",
+        ONEAPP_FL_STRATEGY = "$ONEAPP_FL_STRATEGY",
+        ONEAPP_FL_MIN_FIT_CLIENTS = "$ONEAPP_FL_MIN_FIT_CLIENTS",
+        ONEAPP_FL_MIN_EVALUATE_CLIENTS = "$ONEAPP_FL_MIN_EVALUATE_CLIENTS",
+        ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS",
+        ONEAPP_FL_PROXIMAL_MU = "$ONEAPP_FL_PROXIMAL_MU",
+        ONEAPP_FL_SERVER_LR = "$ONEAPP_FL_SERVER_LR",
+        ONEAPP_FL_CLIENT_LR = "$ONEAPP_FL_CLIENT_LR",
+        ONEAPP_FL_NUM_MALICIOUS = "$ONEAPP_FL_NUM_MALICIOUS",
+        ONEAPP_FL_TRIM_BETA = "$ONEAPP_FL_TRIM_BETA",
+        ONEAPP_FL_CHECKPOINT_ENABLED = "$ONEAPP_FL_CHECKPOINT_ENABLED",
+        ONEAPP_FL_CHECKPOINT_INTERVAL = "$ONEAPP_FL_CHECKPOINT_INTERVAL",
+        ONEAPP_FL_CHECKPOINT_PATH = "$ONEAPP_FL_CHECKPOINT_PATH",
+        ONEAPP_FL_METRICS_ENABLED = "$ONEAPP_FL_METRICS_ENABLED",
+        ONEAPP_FL_METRICS_PORT = "$ONEAPP_FL_METRICS_PORT"
+      ]
+    elasticity_policies: []
+    scheduled_policies: []
+  - name: supernode
+    parents:
+    - superlink
+    cardinality: 2
+    min_vms: 2
+    max_vms: 10
+    cooldown: 30
+    vm_template_contents: |
+      NIC = [ NETWORK_ID = "$Private" ]
+      CONTEXT = [
+        TOKEN = "YES",
+        NETWORK = "YES",
+        REPORT_READY = "YES",
+        READY_SCRIPT_PATH = "/opt/flower/scripts/health-check.sh",
+        SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+        ONEAPP_FLOWER_VERSION = "$ONEAPP_FLOWER_VERSION",
+        ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED",
+        ONEAPP_FL_LOG_LEVEL = "$ONEAPP_FL_LOG_LEVEL",
+        ONEAPP_FL_LOG_FORMAT = "$ONEAPP_FL_LOG_FORMAT",
+        ONEAPP_FL_NODE_CONFIG = "$ONEAPP_FL_NODE_CONFIG",
+        ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED",
+        ONEAPP_FL_CUDA_VISIBLE_DEVICES = "$ONEAPP_FL_CUDA_VISIBLE_DEVICES",
+        ONEAPP_FL_GPU_MEMORY_FRACTION = "$ONEAPP_FL_GPU_MEMORY_FRACTION",
+        ONEAPP_FL_DCGM_ENABLED = "$ONEAPP_FL_DCGM_ENABLED",
+        ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
+      ]
+    elasticity_policies: []
+    scheduled_policies: []
+  networks:
+    Private: 'M|network|Private network for FL cluster communication| |id::'
+  custom_attrs:
+    ONEAPP_FLOWER_VERSION: 'O|text|Flower Docker image version tag||1.25.0'
+    ONEAPP_FL_TLS_ENABLED: 'O|boolean|Enable TLS encryption between SuperLink and SuperNodes||NO'
+    ONEAPP_FL_LOG_LEVEL: 'O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO'
+    ONEAPP_FL_LOG_FORMAT: 'O|list|Log output format|text,json|text'
+    ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
+    ONEAPP_FL_STRATEGY: 'O|list|Aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg'
+    ONEAPP_FL_MIN_FIT_CLIENTS: 'O|number|Minimum clients for training round||2'
+    ONEAPP_FL_MIN_EVALUATE_CLIENTS: 'O|number|Minimum clients for evaluation||2'
+    ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum available clients to start round||2'
+    ONEAPP_FL_FRAMEWORK: 'O|list|ML framework for training|pytorch,tensorflow,sklearn|pytorch'
+    ONEAPP_FL_PROXIMAL_MU: 'O|number-float|FedProx proximal term mu||1.0'
+    ONEAPP_FL_SERVER_LR: 'O|number-float|FedAdam server learning rate||0.1'
+    ONEAPP_FL_CLIENT_LR: 'O|number-float|FedAdam client learning rate||0.1'
+    ONEAPP_FL_NUM_MALICIOUS: 'O|number|Expected malicious clients (Krum/Bulyan)||0'
+    ONEAPP_FL_TRIM_BETA: 'O|number-float|FedTrimmedAvg trim ratio||0.2'
+    ONEAPP_FL_CHECKPOINT_ENABLED: 'O|boolean|Enable model checkpointing||NO'
+    ONEAPP_FL_CHECKPOINT_INTERVAL: 'O|number|Rounds between checkpoints||5'
+    ONEAPP_FL_CHECKPOINT_PATH: 'O|text|Container path for checkpoints||/app/checkpoints'
+    ONEAPP_FL_METRICS_ENABLED: 'O|boolean|Enable Prometheus metrics endpoint||NO'
+    ONEAPP_FL_METRICS_PORT: 'O|number|Prometheus metrics port||9101'
+    ONEAPP_FL_NODE_CONFIG: 'O|text|Space-separated key=value node config||'
+    ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU passthrough||NO'
+    ONEAPP_FL_CUDA_VISIBLE_DEVICES: 'O|text|CUDA devices (all or comma-separated IDs)||all'
+    ONEAPP_FL_GPU_MEMORY_FRACTION: 'O|number-float|GPU memory fraction per client||0.8'
+    ONEAPP_FL_DCGM_ENABLED: 'O|boolean|Enable DCGM GPU metrics exporter||NO'
+logo: flower.png
+images: []

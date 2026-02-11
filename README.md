@@ -76,22 +76,21 @@ Each appliance is a QCOW2 VM image: Ubuntu 24.04 + Docker + pre-pulled Flower co
 Get a working cluster in ~15 minutes. Full tutorial: **[tutorial/QUICKSTART.md](tutorial/QUICKSTART.md)**
 
 ```bash
-# 1. Build appliance images with Packer
-cd build && make all
+# Option A: Import from marketplace (recommended)
+# In Sunstone: Storage -> Apps -> "Service Flower FL 1.25.0" -> Export
 
-# 2. Upload to OpenNebula
+# Option B: Build from source
+cd build && make all
 oneimage create --name "Flower SuperLink" --path ./export/flower-superlink.qcow2 -d default
 oneimage create --name "Flower SuperNode" --path ./export/flower-supernode.qcow2 -d default
-
-# 3. Create VM templates and register the OneFlow service
 onetemplate create /tmp/superlink.tmpl
 onetemplate create /tmp/supernode.tmpl
 oneflow-template create build/oneflow/flower-cluster.yaml
 
-# 4. Deploy the cluster (SuperLink boots first, SuperNodes auto-discover)
+# Deploy the cluster (SuperLink boots first, SuperNodes auto-discover)
 oneflow-template instantiate <service-template-id>
 
-# 5. Run federated training
+# Run federated training
 cd demo && pip install -e . && flwr run . opennebula
 ```
 
@@ -518,6 +517,7 @@ flower-opennebula/
     docker/                       # Docker Compose stacks for each role
     oneflow/flower-cluster.yaml   # OneFlow service template
     Makefile                      # Build driver
+  marketplace/                    # OpenNebula marketplace appliance YAML files
   dashboard/
     app.py                        # FastAPI real-time monitoring dashboard
     static/index.html             # Tailwind CSS frontend with SVG topology
