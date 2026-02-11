@@ -9,40 +9,40 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
     :root {
-      --bg: #f5f0ea;
+      --bg: #f4f6f9;
       --surface: #ffffff;
-      --border: #e0dbd4;
-      --text-primary: #1a1613;
-      --text-secondary: #6b6157;
-      --text-tertiary: #a89f94;
-      --accent: #c96442;
-      --green: #2d9e6c;
-      --orange: #d4900e;
-      --red: #c94234;
-      --nav-bg: rgba(245,240,234,0.85);
+      --border: #dde1e8;
+      --text-primary: #1b2332;
+      --text-secondary: #576171;
+      --text-tertiary: #8e96a4;
+      --accent: #2ea3f2;
+      --green: #27ae60;
+      --orange: #e67e22;
+      --red: #e74c3c;
+      --nav-bg: rgba(244,246,249,0.85);
       --node-fill: white;
       --shadow-color: rgba(0,0,0,0.06);
-      --chart-grid: #ece7e0;
-      --progress-track: #ece7e0;
-      --scrollbar: #d5cfc8;
+      --chart-grid: #e8ecf1;
+      --progress-track: #e8ecf1;
+      --scrollbar: #c8cdd6;
     }
     [data-theme="dark"] {
-      --bg: #1a1714;
-      --surface: #2a2520;
-      --border: #3d362e;
-      --text-primary: #ece5da;
-      --text-secondary: #a89f94;
-      --text-tertiary: #6b6157;
-      --accent: #da7756;
-      --green: #4eca89;
-      --orange: #e9a832;
-      --red: #e05a4f;
-      --nav-bg: rgba(26,23,20,0.88);
-      --node-fill: #2a2520;
-      --shadow-color: rgba(0,0,0,0.4);
-      --chart-grid: #332e28;
-      --progress-track: #332e28;
-      --scrollbar: #4a433b;
+      --bg: #111827;
+      --surface: #1e2738;
+      --border: #2d3a4e;
+      --text-primary: #ffffff;
+      --text-secondary: #d1d5db;
+      --text-tertiary: #9ca3af;
+      --accent: #38b6ff;
+      --green: #34d399;
+      --orange: #fbbf24;
+      --red: #f87171;
+      --nav-bg: rgba(17,24,39,0.9);
+      --node-fill: #1e2738;
+      --shadow-color: rgba(0,0,0,0.5);
+      --chart-grid: #283346;
+      --progress-track: #283346;
+      --scrollbar: #3b4a60;
     }
     * { box-sizing: border-box; }
     body {
@@ -218,13 +218,13 @@ let prevData = null;
 function renderTopology(nodes, connectedCount, runStatus) {
   const svg = document.getElementById('topology-canvas');
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const nodeFill = isDark ? '#2a2520' : 'white';
-  const textPrimary = isDark ? '#ece5da' : '#1a1613';
-  const textSecondary = isDark ? '#a89f94' : '#6b6157';
-  const textTertiary = isDark ? '#6b6157' : '#a89f94';
-  const accent = isDark ? '#da7756' : '#c96442';
-  const green = isDark ? '#4eca89' : '#2d9e6c';
-  const borderIdle = isDark ? '#3d362e' : '#e0dbd4';
+  const nodeFill = isDark ? '#1e2738' : 'white';
+  const textPrimary = isDark ? '#ffffff' : '#1b2332';
+  const textSecondary = isDark ? '#d1d5db' : '#576171';
+  const textTertiary = isDark ? '#9ca3af' : '#8e96a4';
+  const accent = isDark ? '#38b6ff' : '#2ea3f2';
+  const green = isDark ? '#34d399' : '#27ae60';
+  const borderIdle = isDark ? '#2d3a4e' : '#dde1e8';
 
   if (!nodes || nodes.length === 0) {
     svg.innerHTML = `<text x="400" y="160" text-anchor="middle" fill="${textTertiary}" font-size="14" font-family="Inter,sans-serif">No nodes detected</text>`;
@@ -339,14 +339,14 @@ function renderLossChart(rounds) {
   const labels = rounds.map(r => `Round ${r.round_num}`);
   const lossData = rounds.map(r => r.loss);
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const accent = isDark ? '#da7756' : '#c96442';
-  const gridColor = isDark ? '#332e28' : '#ece7e0';
-  const tickColor = isDark ? '#6b6157' : '#a89f94';
-  const tooltipBg = isDark ? '#2a2520' : '#fff';
-  const tooltipTitle = isDark ? '#ece5da' : '#1a1613';
-  const tooltipBody = isDark ? '#a89f94' : '#6b6157';
-  const tooltipBorder = isDark ? '#3d362e' : '#e0dbd4';
-  const pointBg = isDark ? '#2a2520' : '#fff';
+  const accent = isDark ? '#38b6ff' : '#2ea3f2';
+  const gridColor = isDark ? '#283346' : '#e8ecf1';
+  const tickColor = isDark ? '#9ca3af' : '#8e96a4';
+  const tooltipBg = isDark ? '#1e2738' : '#fff';
+  const tooltipTitle = isDark ? '#ffffff' : '#1b2332';
+  const tooltipBody = isDark ? '#d1d5db' : '#576171';
+  const tooltipBorder = isDark ? '#2d3a4e' : '#dde1e8';
+  const pointBg = isDark ? '#1e2738' : '#fff';
 
   if (lossChart) {
     lossChart.data.labels = labels;
@@ -363,7 +363,7 @@ function renderLossChart(rounds) {
         label: 'Loss',
         data: lossData,
         borderColor: accent,
-        backgroundColor: isDark ? 'rgba(218, 119, 86, 0.1)' : 'rgba(201, 100, 66, 0.06)',
+        backgroundColor: isDark ? 'rgba(56, 182, 255, 0.1)' : 'rgba(46, 163, 242, 0.06)',
         borderWidth: 2,
         pointBackgroundColor: pointBg,
         pointBorderColor: accent,
