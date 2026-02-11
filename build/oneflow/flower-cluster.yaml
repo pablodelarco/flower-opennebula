@@ -111,10 +111,12 @@ template_body:
           ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED",
           ONEAPP_FL_CUDA_VISIBLE_DEVICES = "$ONEAPP_FL_CUDA_VISIBLE_DEVICES",
           ONEAPP_FL_GPU_MEMORY_FRACTION = "$ONEAPP_FL_GPU_MEMORY_FRACTION",
-          ONEAPP_FL_DCGM_ENABLED = "$ONEAPP_FL_DCGM_ENABLED"
+          ONEAPP_FL_DCGM_ENABLED = "$ONEAPP_FL_DCGM_ENABLED",
+          ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
         ]
 
       custom_attrs:
+        ONEAPP_FL_FRAMEWORK: 'O|list|ML framework for training|pytorch,tensorflow,sklearn|pytorch'
         ONEAPP_FL_NODE_CONFIG: 'O|text|Space-separated key=value node config||'
         ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU passthrough||NO'
         ONEAPP_FL_CUDA_VISIBLE_DEVICES: 'O|text|CUDA devices (all or comma-separated IDs)||all'

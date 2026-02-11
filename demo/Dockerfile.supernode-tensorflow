@@ -1,0 +1,26 @@
+# TensorFlow-enabled SuperNode image for Flower FL demo.
+#
+# Uses tensorflow-cpu to avoid pulling CUDA stubs. TF 2.18.x is the first
+# version whose protobuf requirement (>=4.23) overlaps with flwr 1.25.0's
+# (>=5.28), enabling co-installation.
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user matching upstream UID convention
+RUN groupadd -g 49999 app && useradd -u 49999 -g app -m app
+
+USER app
+ENV PATH="/home/app/.local/bin:${PATH}"
+
+# Pin NumPy 1.x — NumPy 2.x wheels require x86_v2 (SSE4) which KVM VMs may lack
+RUN pip install --no-cache-dir --user "numpy==1.26.4"
+
+# Install Flower SuperNode + TensorFlow CPU + datasets
+RUN pip install --no-cache-dir --user \
+    "flwr[simulation]==1.25.0" \
+    "tensorflow-cpu==2.18.1" \
+    "flwr-datasets[vision]>=0.4.0"
+
+ENTRYPOINT ["flower-supernode"]

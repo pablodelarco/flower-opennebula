@@ -1,0 +1,25 @@
+# scikit-learn SuperNode image for Flower FL demo.
+#
+# Lightweight alternative for classical ML workloads (logistic regression,
+# random forests, etc.) that don't need GPU acceleration.
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user matching upstream UID convention
+RUN groupadd -g 49999 app && useradd -u 49999 -g app -m app
+
+USER app
+ENV PATH="/home/app/.local/bin:${PATH}"
+
+# Pin NumPy 1.x — NumPy 2.x wheels require x86_v2 (SSE4) which KVM VMs may lack
+RUN pip install --no-cache-dir --user "numpy==1.26.4"
+
+# Install Flower SuperNode + scikit-learn + datasets
+RUN pip install --no-cache-dir --user \
+    "flwr[simulation]==1.25.0" \
+    "scikit-learn>=1.4.0" \
+    "flwr-datasets[vision]>=0.4.0"
+
+ENTRYPOINT ["flower-supernode"]

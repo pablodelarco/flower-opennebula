@@ -59,6 +59,7 @@ ONE_SERVICE_RECONFIGURABLE=true
 ONE_SERVICE_PARAMS=(
     # Phase 1: Base architecture
     'ONEAPP_FLOWER_VERSION'            'configure' 'Flower Docker image version tag'                            '1.25.0'
+    'ONEAPP_FL_FRAMEWORK'              'configure' 'ML framework (pytorch|tensorflow|sklearn)'                  'pytorch'
     'ONEAPP_FL_SUPERLINK_ADDRESS'      'configure' 'SuperLink Fleet API address (host:port)'                    ''
     'ONEAPP_FL_NODE_CONFIG'            'configure' 'Space-separated key=value node config'                      ''
     'ONEAPP_FL_MAX_RETRIES'            'configure' 'Max reconnection attempts (0=unlimited)'                    '0'
@@ -85,6 +86,7 @@ ONE_SERVICE_PARAMS=(
 ### Default Value Assignments #################################################
 
 ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.25.0}"
+ONEAPP_FL_FRAMEWORK="${ONEAPP_FL_FRAMEWORK:-pytorch}"
 ONEAPP_FL_SUPERLINK_ADDRESS="${ONEAPP_FL_SUPERLINK_ADDRESS:-}"
 ONEAPP_FL_NODE_CONFIG="${ONEAPP_FL_NODE_CONFIG:-}"
 ONEAPP_FL_MAX_RETRIES="${ONEAPP_FL_MAX_RETRIES:-0}"
@@ -192,8 +194,16 @@ service_configure()
         compute_partition_id
     fi
 
-    # Determine container image version
+    # Determine container image version and framework-specific image
     VERSION="${ONEAPP_FLOWER_VERSION}"
+
+    case "${ONEAPP_FL_FRAMEWORK}" in
+        pytorch)    IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
+        tensorflow) IMAGE_TAG="flower-supernode-tensorflow:${VERSION}" ;;
+        sklearn)    IMAGE_TAG="flower-supernode-sklearn:${VERSION}" ;;
+        *)          IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
+    esac
+    msg info "Using ML framework image: ${IMAGE_TAG}"
 
     # Build TLS-related Docker flags
     TLS_FLAGS="--insecure"
@@ -213,6 +223,7 @@ service_configure()
     cat > "${FLOWER_CONFIG_DIR}/configure.state" <<EOF
 SUPERLINK_ADDRESS='${SUPERLINK_ADDRESS}'
 VERSION='${VERSION}'
+IMAGE_TAG='${IMAGE_TAG}'
 TLS_FLAGS='${TLS_FLAGS}'
 TLS_VOLUME_FLAGS='${TLS_VOLUME_FLAGS}'
 TLS_MODE='${TLS_MODE}'
@@ -222,11 +233,13 @@ EOF
     # Write service report
     cat > "${ONE_SERVICE_REPORT:-/etc/one-appliance/config}" <<EOF
 [Flower SuperNode]
-superlink = ${SUPERLINK_ADDRESS}
-version   = ${VERSION}
-isolation = ${ONEAPP_FL_ISOLATION}
-tls       = ${TLS_MODE}
-gpu       = ${ONEAPP_FL_GPU_ENABLED}
+superlink  = ${SUPERLINK_ADDRESS}
+version    = ${VERSION}
+framework  = ${ONEAPP_FL_FRAMEWORK}
+image      = ${IMAGE_TAG}
+isolation  = ${ONEAPP_FL_ISOLATION}
+tls        = ${TLS_MODE}
+gpu        = ${ONEAPP_FL_GPU_ENABLED}
 EOF
     chmod 600 "${ONE_SERVICE_REPORT:-/etc/one-appliance/config}" 2>/dev/null
 
@@ -262,11 +275,16 @@ service_bootstrap()
 
     # Step 10: handle version override
     if [ "${VERSION}" != "${PREBAKED_VERSION}" ]; then
-        msg info "Requested version ${VERSION} differs from prebaked ${PREBAKED_VERSION}; pulling..."
-        if ! docker pull "flwr/supernode:${VERSION}" 2>/dev/null; then
-            msg warning "Pull failed for flwr/supernode:${VERSION}; using prebaked ${PREBAKED_VERSION}"
-            VERSION="${PREBAKED_VERSION}"
-        fi
+        msg info "Requested version ${VERSION} differs from prebaked ${PREBAKED_VERSION}"
+        msg warning "Framework images are prebaked; falling back to prebaked ${PREBAKED_VERSION}"
+        VERSION="${PREBAKED_VERSION}"
+        # Re-derive IMAGE_TAG with corrected version
+        case "${ONEAPP_FL_FRAMEWORK:-pytorch}" in
+            pytorch)    IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
+            tensorflow) IMAGE_TAG="flower-supernode-tensorflow:${VERSION}" ;;
+            sklearn)    IMAGE_TAG="flower-supernode-sklearn:${VERSION}" ;;
+            *)          IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
+        esac
     fi
 
     # Create the container (Step 11 prep -- container creation separate from systemd start)
@@ -279,7 +297,7 @@ service_bootstrap()
     create_cmd+=" -v ${FLOWER_DATA_DIR}:/app/data:ro"
     create_cmd+=" ${TLS_VOLUME_FLAGS}"
     create_cmd+=" --env-file ${FLOWER_CONFIG_DIR}/supernode.env"
-    create_cmd+=" flwr/supernode:${VERSION}"
+    create_cmd+=" ${IMAGE_TAG}"
     create_cmd+=" ${TLS_FLAGS}"
     create_cmd+=" --superlink ${SUPERLINK_ADDRESS}"
     create_cmd+=" --isolation ${ONEAPP_FL_ISOLATION}"
@@ -302,6 +320,7 @@ service_bootstrap()
     publish_to_onegate "FL_NODE_READY" "YES"
     publish_to_onegate "FL_NODE_ID" "${VMID:-unknown}"
     publish_to_onegate "FL_VERSION" "${VERSION}"
+    publish_to_onegate "FL_FRAMEWORK" "${ONEAPP_FL_FRAMEWORK:-pytorch}"
     publish_to_onegate "FL_GPU_AVAILABLE" "${FL_GPU_AVAILABLE}"
 
     # Step 14a: start DCGM exporter sidecar if requested
@@ -321,6 +340,7 @@ service_help()
     msg info ""
     msg info "Context variables:"
     msg info "  ONEAPP_FLOWER_VERSION            Flower version (default: 1.25.0)"
+    msg info "  ONEAPP_FL_FRAMEWORK              ML framework: pytorch, tensorflow, sklearn (default: pytorch)"
     msg info "  ONEAPP_FL_SUPERLINK_ADDRESS      Static SuperLink address (host:port)"
     msg info "  ONEAPP_FL_NODE_CONFIG            key=value pairs for ClientApp"
     msg info "  ONEAPP_FL_GPU_ENABLED            Enable GPU passthrough (YES/NO)"
@@ -401,6 +421,13 @@ validate_config()
         msg error "Invalid ONEAPP_FLOWER_VERSION: '${ONEAPP_FLOWER_VERSION}'. Expected format: X.Y.Z"
         errors=$((errors + 1))
     fi
+
+    # FL_FRAMEWORK: enum
+    case "${ONEAPP_FL_FRAMEWORK}" in
+        pytorch|tensorflow|sklearn) ;;
+        *) msg error "Invalid ONEAPP_FL_FRAMEWORK: '${ONEAPP_FL_FRAMEWORK}'. Must be pytorch, tensorflow, or sklearn"
+           errors=$((errors + 1)) ;;
+    esac
 
     # FL_SUPERLINK_ADDRESS: host:port if set
     if [ -n "${ONEAPP_FL_SUPERLINK_ADDRESS}" ] && \
