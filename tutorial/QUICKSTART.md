@@ -93,9 +93,26 @@ Before starting, confirm every item on this list. Missing any one of them will b
 
 ---
 
-## Step 1 of 6: Upload Images and Create Templates
+## Step 1 of 6: Import Appliances
 
 **Time:** ~3 minutes
+
+### Option A: From the Marketplace (recommended)
+
+If your OpenNebula instance has the community marketplace configured:
+
+1. Open Sunstone -> **Storage -> Apps**
+2. Search for **"Flower FL"**
+3. Select **"Service Flower FL 1.25.0"** -> click **Export**
+4. Choose a datastore and confirm
+
+OpenNebula automatically imports all disk images, VM templates, and the OneFlow
+service template. Skip to **Step 2**.
+
+### Option B: Build from source
+
+If you built the QCOW2 images with Packer (see [BUILD.md](BUILD.md)), upload
+them manually.
 
 If the appliance images are not already in your datastore, upload them.
 

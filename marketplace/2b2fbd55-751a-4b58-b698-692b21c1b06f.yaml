@@ -1,0 +1,42 @@
+---
+name: Flower SuperLink 1.25.0 OS disk
+version: 1.25.0-1.0.0
+publisher: OpenNebula Systems
+description: |-
+  OS disk image for the [Flower](https://flower.ai/) SuperLink appliance
+  (federated learning coordinator).
+
+  Ubuntu 24.04 LTS with Docker CE and `flwr/superlink:1.25.0` container
+  pre-pulled. At boot, OpenNebula contextualization configures the SuperLink
+  from CONTEXT variables -- number of rounds, aggregation strategy, TLS, and
+  more. The SuperLink publishes its endpoint to OneGate so SuperNodes
+  discover it automatically.
+
+  Part of the **Flower Federated Learning** appliance set.
+  Imported automatically when you export the
+  [Service Flower FL 1.25.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
+short_description: Flower SuperLink appliance OS disk (Ubuntu 24.04 + Docker + flwr 1.25.0)
+tags:
+- flower
+- federated-learning
+- superlink
+- ubuntu
+- service
+format: qcow2
+creation_time: 1770822863
+os-id: Ubuntu
+os-release: '24.04 LTS'
+os-arch: x86_64
+hypervisor: KVM
+opennebula_version: 6.8, 6.10, 7.0
+logo: flower.png
+images:
+- name: flower_superlink_os
+  url: ''
+  type: OS
+  dev_prefix: vd
+  driver: qcow2
+  size: 10737418240
+  checksum:
+    md5: ''
+    sha256: ''
