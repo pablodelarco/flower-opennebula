@@ -5,7 +5,7 @@ variable "appliance_name" {
 
 variable "input_dir" {
   type        = string
-  description = "Directory containing base OS image (ubuntu2204.qcow2)"
+  description = "Directory containing base OS image (ubuntu2404.qcow2)"
 }
 
 variable "output_dir" {

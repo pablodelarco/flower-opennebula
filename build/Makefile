@@ -10,7 +10,7 @@
 #   - Packer >= 1.9 with QEMU plugin
 #   - QEMU/KVM
 #   - one-apps repo at ONE_APPS_DIR (default: ../one-apps)
-#   - Base image at INPUT_DIR/ubuntu2204.qcow2
+#   - Base image at INPUT_DIR/ubuntu2404.qcow2
 
 SHELL := /bin/bash
 
@@ -36,15 +36,18 @@ flower-superlink: $(OUTPUT_DIR)/flower-superlink.qcow2
 $(OUTPUT_DIR)/flower-superlink.qcow2: superlink/appliance.sh packer/superlink/superlink.pkr.hcl
 	@echo "==> Building Flower SuperLink image..."
 	@mkdir -p $(OUTPUT_DIR)
+	@rm -rf $(OUTPUT_DIR)/superlink-build
 	cd packer/superlink && \
 	packer init . && \
 	packer build \
 		-var "input_dir=$(INPUT_DIR)" \
-		-var "output_dir=$(OUTPUT_DIR)" \
+		-var "output_dir=$(OUTPUT_DIR)/superlink-build" \
 		-var "one_apps_dir=$(ONE_APPS_DIR)" \
 		-var "headless=$(HEADLESS)" \
 		$(PACKER_FLAGS) \
 		.
+	@mv $(OUTPUT_DIR)/superlink-build/flower-superlink.qcow2 $(OUTPUT_DIR)/flower-superlink.qcow2
+	@rm -rf $(OUTPUT_DIR)/superlink-build
 	@echo "==> SuperLink image: $(OUTPUT_DIR)/flower-superlink.qcow2"
 
 # ---------- SuperNode ----------
@@ -53,15 +56,18 @@ flower-supernode: $(OUTPUT_DIR)/flower-supernode.qcow2
 $(OUTPUT_DIR)/flower-supernode.qcow2: supernode/appliance.sh packer/supernode/supernode.pkr.hcl
 	@echo "==> Building Flower SuperNode image..."
 	@mkdir -p $(OUTPUT_DIR)
+	@rm -rf $(OUTPUT_DIR)/supernode-build
 	cd packer/supernode && \
 	packer init . && \
 	packer build \
 		-var "input_dir=$(INPUT_DIR)" \
-		-var "output_dir=$(OUTPUT_DIR)" \
+		-var "output_dir=$(OUTPUT_DIR)/supernode-build" \
 		-var "one_apps_dir=$(ONE_APPS_DIR)" \
 		-var "headless=$(HEADLESS)" \
 		$(PACKER_FLAGS) \
 		.
+	@mv $(OUTPUT_DIR)/supernode-build/flower-supernode.qcow2 $(OUTPUT_DIR)/flower-supernode.qcow2
+	@rm -rf $(OUTPUT_DIR)/supernode-build
 	@echo "==> SuperNode image: $(OUTPUT_DIR)/flower-supernode.qcow2"
 
 # ---------- Validation ----------
@@ -79,8 +85,6 @@ validate:
 # ---------- Clean ----------
 clean:
 	rm -rf $(OUTPUT_DIR)
-	rm -f packer/superlink/flower-superlink-context.iso
-	rm -rf packer/superlink/context/
-	rm -f packer/supernode/flower-supernode-context.iso
-	rm -rf packer/supernode/context/
+	rm -f packer/superlink/flower-superlink-cloud-init.iso
+	rm -f packer/supernode/flower-supernode-cloud-init.iso
 	@echo "==> Build artifacts cleaned."

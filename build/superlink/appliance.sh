@@ -692,7 +692,7 @@ generate_systemd_unit() {
     # Join with backslash-newline continuations
     local _exec_start
     _exec_start=$(printf ' \\\n%s' "${_exec_parts[@]}")
-    _exec_start="ExecStart=${_exec_start:4}"  # strip leading ' \\\n'
+    _exec_start="ExecStart=${_exec_start:3}"  # strip leading ' \\\n' (3 chars: space, backslash, newline)
 
     cat > "${FLOWER_SYSTEMD_UNIT}" <<EOF
 [Unit]

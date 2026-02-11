@@ -792,7 +792,6 @@ Type=simple
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=120
-ExecStartPre=-/usr/bin/docker rm -f flower-supernode
 ExecStart=/usr/bin/docker start -a flower-supernode
 ExecStop=/usr/bin/docker stop -t 30 flower-supernode
 
