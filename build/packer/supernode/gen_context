@@ -1,23 +1,10 @@
 #!/usr/bin/env bash
-# Generate OpenNebula contextualization ISO content for Packer build
+# Generate cloud-init seed ISO for Packer build using cloud-localds.
+# Matches the one-apps build approach for Ubuntu cloud images.
 
-SCRIPT=$(cat <<'CONTEXTEOF'
-#!/bin/bash
-# Enable SSH access for Packer provisioning (insecure, reverted by 81-configure-ssh.sh)
-sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-systemctl reload sshd
-# Set DNS
-echo "nameserver 1.1.1.1" > /etc/resolv.conf
-CONTEXTEOF
-)
+set -euo pipefail
 
-cat <<EOF
-ETH0_METHOD='dhcp'
-NETWORK='YES'
-SET_HOSTNAME='flower-supernode'
-PASSWORD='opennebula'
-ETH0_MAC='00:11:22:33:44:55'
-NETCFG_TYPE='nm'
-START_SCRIPT_BASE64='$(echo "${SCRIPT}" | base64 -w0)'
-EOF
+APPLIANCE_NAME="${1:?Usage: gen_context <appliance-name>}"
+INPUT_DIR="$(dirname "$0")"
+
+cloud-localds "${INPUT_DIR}/${APPLIANCE_NAME}-cloud-init.iso" "${INPUT_DIR}/cloud-init.yml"

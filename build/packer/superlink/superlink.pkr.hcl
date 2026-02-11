@@ -8,7 +8,7 @@ packer {
 }
 
 # --------------------------------------------------------------------------
-# Build 1: Generate contextualization ISO for Packer SSH access
+# Build 1: Generate cloud-init seed ISO for Packer SSH access
 # --------------------------------------------------------------------------
 source "null" "context" {
   communicator = "none"
@@ -21,9 +21,7 @@ build {
 
   provisioner "shell-local" {
     inline = [
-      "mkdir -p context",
-      "bash gen_context > context/context.sh",
-      "mkisofs -o ${var.appliance_name}-context.iso -V CONTEXT -J -R context/",
+      "cloud-localds ${var.appliance_name}-cloud-init.iso cloud-init.yml",
     ]
   }
 }
@@ -38,7 +36,7 @@ source "qemu" "superlink" {
   memory    = 4096
   disk_size = "10G"
 
-  iso_url      = "${var.input_dir}/ubuntu2204.qcow2"
+  iso_url      = "${var.input_dir}/ubuntu2404.qcow2"
   iso_checksum = "none"
   disk_image   = true
 
@@ -52,7 +50,7 @@ source "qemu" "superlink" {
   disk_interface = "virtio"
 
   qemuargs = [
-    ["-cdrom", "${var.appliance_name}-context.iso"],
+    ["-cdrom", "${var.appliance_name}-cloud-init.iso"],
     ["-serial", "mon:stdio"],
   ]
 
@@ -74,7 +72,21 @@ build {
     script = "../scripts/81-configure-ssh.sh"
   }
 
-  # Step 2: Create one-appliance directory structure
+  # Step 2: Install one-context package (OpenNebula contextualization)
+  provisioner "shell" {
+    inline = ["mkdir -p /context"]
+  }
+
+  provisioner "file" {
+    source      = "${var.one_apps_dir}/context-linux/out/"
+    destination = "/context"
+  }
+
+  provisioner "shell" {
+    script = "../scripts/80-install-context.sh"
+  }
+
+  # Step 3: Create one-appliance directory structure
   provisioner "shell" {
     inline = [
       "mkdir -p /etc/one-appliance/service.d",
@@ -83,7 +95,7 @@ build {
     ]
   }
 
-  # Step 3: Install one-apps framework files
+  # Step 4: Install one-apps framework files
   provisioner "file" {
     sources = [
       "${var.one_apps_dir}/appliances/scripts/net-90-service-appliance",
@@ -111,29 +123,35 @@ build {
     destination = "/etc/one-appliance/lib/functions.sh"
   }
 
-  # Step 4: Install Flower SuperLink appliance script
+  # Step 5: Install Flower SuperLink appliance script
   provisioner "file" {
     source      = "../../superlink/appliance.sh"
     destination = "/etc/one-appliance/service.d/appliance.sh"
   }
 
-  # Step 5: Move context hooks into place
+  # Step 6: Move context hooks into place
   provisioner "shell" {
     script = "../scripts/82-configure-context.sh"
   }
 
-  # Step 6: Run service install (downloads Docker, pulls images)
+  # Step 7: Run service install (downloads Docker, pulls images)
   provisioner "shell" {
     inline = ["/etc/one-appliance/service install"]
   }
 
-  # Step 7: Clean up for cloud reuse
+  # Step 8: Clean up for cloud reuse
   provisioner "shell" {
     inline = [
+      "export DEBIAN_FRONTEND=noninteractive",
+      "apt-get purge -y cloud-init snapd fwupd || true",
+      "apt-get autoremove -y --purge || true",
+      "apt-get clean -y",
+      "rm -rf /var/lib/apt/lists/*",
+      "rm -f /etc/sysctl.d/99-cloudimg-ipv6.conf",
+      "rm -rf /context/",
       "truncate -s 0 /etc/machine-id",
       "rm -f /var/lib/dbus/machine-id",
       "rm -rf /tmp/* /var/tmp/*",
-      "cloud-init clean --logs || true",
       "sync",
     ]
   }
