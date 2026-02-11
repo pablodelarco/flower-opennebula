@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flower FL</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+    :root {
+      --bg: #fafafa;
+      --surface: #ffffff;
+      --border: #e5e5e5;
+      --text-primary: #1d1d1f;
+      --text-secondary: #6e6e73;
+      --text-tertiary: #aeaeb2;
+      --accent: #0071e3;
+      --green: #34c759;
+      --orange: #ff9f0a;
+      --red: #ff3b30;
+      --nav-bg: rgba(250,250,250,0.8);
+      --node-fill: white;
+      --shadow-color: rgba(0,0,0,0.08);
+      --chart-grid: #f2f2f7;
+      --progress-track: #f2f2f7;
+      --scrollbar: #d1d1d6;
+    }
+    [data-theme="dark"] {
+      --bg: #0f1729;
+      --surface: #182039;
+      --border: #293456;
+      --text-primary: #ffffff;
+      --text-secondary: #c4cde0;
+      --text-tertiary: #7b89a8;
+      --accent: #60a5fa;
+      --green: #4ade80;
+      --orange: #fbbf24;
+      --red: #f87171;
+      --nav-bg: rgba(15,23,41,0.85);
+      --node-fill: #182039;
+      --shadow-color: rgba(0,0,0,0.4);
+      --chart-grid: #1e2a4a;
+      --progress-track: #1e2a4a;
+      --scrollbar: #293456;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+    .mono { font-family: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      transition: box-shadow 0.3s ease;
+    }
+    .card:hover { box-shadow: 0 4px 24px var(--shadow-color); }
+
+    /* Topology canvas */
+    #topology-canvas {
+      width: 100%;
+      height: 320px;
+    }
+
+    /* Animated gradient lines for data flow */
+    @keyframes flowIn {
+      0% { stroke-dashoffset: 20; }
+      100% { stroke-dashoffset: 0; }
+    }
+    @keyframes flowOut {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -20; }
+    }
+    .flow-in { animation: flowIn 1.5s linear infinite; }
+    .flow-out { animation: flowOut 1.5s linear infinite; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .pulse { animation: pulse 2s ease-in-out infinite; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp 0.4s ease-out forwards; }
+
+    /* Progress ring */
+    .progress-ring { transform: rotate(-90deg); }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+    /* Theme toggle */
+    .theme-toggle {
+      width: 36px; height: 20px; border-radius: 10px;
+      background: var(--border); position: relative; cursor: pointer;
+      transition: background 0.3s ease; border: none; padding: 0;
+    }
+    .theme-toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--surface); transition: transform 0.3s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    [data-theme="dark"] .theme-toggle { background: var(--accent); }
+    [data-theme="dark"] .theme-toggle::after { transform: translateX(16px); }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Nav -->
+  <nav class="sticky top-0 z-50 border-b border-[var(--border)]" style="background:var(--nav-bg);backdrop-filter:saturate(180%) blur(20px);">
+    <div class="max-w-6xl mx-auto px-6 h-12 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <svg class="w-5 h-5 text-[var(--accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M4.22 4.22l2.83 2.83m9.9 9.9l2.83 2.83M1 12h4m14 0h4M4.22 19.78l2.83-2.83m9.9-9.9l2.83-2.83"/>
+        </svg>
+        <span class="text-sm font-semibold tracking-tight">Flower FL</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <div id="cluster-status" class="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+          <span class="w-1.5 h-1.5 rounded-full bg-[var(--text-tertiary)]"></span>
+          Connecting
+        </div>
+        <div id="last-updated" class="text-[10px] text-[var(--text-tertiary)] mono"></div>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode"></button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-6 py-8 space-y-8">
+
+    <!-- KPI Row -->
+    <section class="grid grid-cols-4 gap-4">
+      <div class="card px-5 py-4">
+        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Nodes</p>
+        <p id="kpi-nodes" class="text-3xl font-semibold mt-0.5 tracking-tight">--</p>
+      </div>
+      <div class="card px-5 py-4">
+        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Connected</p>
+        <p id="kpi-connected" class="text-3xl font-semibold mt-0.5 tracking-tight text-[var(--accent)]">--</p>
+      </div>
+      <div class="card px-5 py-4">
+        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Status</p>
+        <p id="kpi-status" class="text-3xl font-semibold mt-0.5 tracking-tight">--</p>
+      </div>
+      <div class="card px-5 py-4">
+        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Round</p>
+        <p id="kpi-round" class="text-3xl font-semibold mt-0.5 tracking-tight">--</p>
+      </div>
+    </section>
+
+    <!-- Topology Diagram -->
+    <section>
+      <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Network Topology</h2>
+      <div class="card p-6">
+        <svg id="topology-canvas" viewBox="0 0 800 320" xmlns="http://www.w3.org/2000/svg">
+          <!-- Rendered by JS -->
+        </svg>
+      </div>
+    </section>
+
+    <!-- Two columns: Chart + Rounds -->
+    <section class="grid grid-cols-5 gap-6">
+      <div class="col-span-3">
+        <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Loss Convergence</h2>
+        <div class="card p-6">
+          <canvas id="loss-chart" height="200"></canvas>
+        </div>
+      </div>
+      <div class="col-span-2">
+        <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Round Details</h2>
+        <div id="rounds-table" class="card overflow-hidden">
+          <div class="px-6 py-10 text-center text-sm text-[var(--text-tertiary)]">Waiting for training data</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Two columns: Run Info + Model -->
+    <section class="grid grid-cols-2 gap-6">
+      <div>
+        <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Run</h2>
+        <div id="run-info" class="card p-6">
+          <div class="text-sm text-[var(--text-tertiary)]">No active run</div>
+        </div>
+      </div>
+      <div>
+        <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-3">Model</h2>
+        <div id="model-panel" class="card p-6">
+          <div class="text-sm text-[var(--text-tertiary)]">No model info</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-[var(--border)] mt-4 px-6 py-3">
+    <div class="max-w-6xl mx-auto flex items-center justify-between text-[10px] text-[var(--text-tertiary)]">
+      <span>Flower Federated Learning on OpenNebula</span>
+      <span class="mono">Refreshes every 10s</span>
+    </div>
+  </footer>
+
+<script>
+// =========================================================================
+// State
+// =========================================================================
+let lossChart = null;
+let prevData = null;
+
+// =========================================================================
+// Topology Renderer (animated SVG)
+// =========================================================================
+function renderTopology(nodes, connectedCount, runStatus) {
+  const svg = document.getElementById('topology-canvas');
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const nodeFill = isDark ? '#182039' : 'white';
+  const textPrimary = isDark ? '#ffffff' : '#1d1d1f';
+  const textSecondary = isDark ? '#c4cde0' : '#6e6e73';
+  const textTertiary = isDark ? '#7b89a8' : '#aeaeb2';
+  const accent = isDark ? '#60a5fa' : '#0071e3';
+  const green = isDark ? '#4ade80' : '#34c759';
+  const borderIdle = isDark ? '#293456' : '#e5e5e5';
+
+  if (!nodes || nodes.length === 0) {
+    svg.innerHTML = `<text x="400" y="160" text-anchor="middle" fill="${textTertiary}" font-size="14" font-family="Inter,sans-serif">No nodes detected</text>`;
+    return;
+  }
+
+  const coordinator = nodes.find(n => n.role === 'superlink');
+  const workers = nodes.filter(n => n.role === 'supernode');
+  const isTraining = runStatus === 'running';
+  const isComplete = runStatus === 'completed';
+
+  // Layout: coordinator centered top, workers spread bottom
+  const cx = 400, cy = 90;
+  const workerY = 240;
+  const workerSpacing = Math.min(200, 600 / Math.max(workers.length, 1));
+  const workerStartX = cx - ((workers.length - 1) * workerSpacing) / 2;
+
+  let html = '';
+
+  // Defs for gradients and filters
+  html += `
+    <defs>
+      <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="${isDark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.08)'}"/>
+      </filter>
+      <linearGradient id="line-active" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="${accent}" stop-opacity="0.1"/>
+        <stop offset="50%" stop-color="${accent}" stop-opacity="0.6"/>
+        <stop offset="100%" stop-color="${accent}" stop-opacity="0.1"/>
+      </linearGradient>
+      <linearGradient id="line-idle" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="${borderIdle}"/>
+        <stop offset="100%" stop-color="${borderIdle}"/>
+      </linearGradient>
+    </defs>`;
+
+  // Connection lines from each worker to coordinator
+  workers.forEach((w, i) => {
+    const wx = workerStartX + i * workerSpacing;
+    const isConnected = w.container_status === 'running';
+    const lineColor = isConnected ? (isTraining ? 'url(#line-active)' : accent) : borderIdle;
+    const lineWidth = isConnected ? 2 : 1;
+    const dashArray = isTraining && isConnected ? '6 4' : 'none';
+    const animClass = isTraining && isConnected ? 'flow-in' : '';
+
+    // Curved path
+    const midY = (cy + 30 + workerY - 30) / 2;
+    html += `<path d="M${cx},${cy + 30} Q${(cx + wx) / 2},${midY} ${wx},${workerY - 30}"
+      fill="none" stroke="${lineColor}" stroke-width="${lineWidth}"
+      stroke-dasharray="${dashArray}" class="${animClass}" opacity="${isConnected ? 1 : 0.4}"/>`;
+
+    // Data flow particles (small circles moving along the line during training)
+    if (isTraining && isConnected) {
+      html += `
+        <circle r="3" fill="${accent}" opacity="0.8">
+          <animateMotion dur="2s" repeatCount="indefinite" path="M${cx},${cy + 30} Q${(cx + wx) / 2},${midY} ${wx},${workerY - 30}"/>
+        </circle>
+        <circle r="3" fill="${green}" opacity="0.8">
+          <animateMotion dur="2.5s" repeatCount="indefinite" path="M${wx},${workerY - 30} Q${(cx + wx) / 2},${midY} ${cx},${cy + 30}"/>
+        </circle>`;
+    }
+  });
+
+  // Coordinator node
+  if (coordinator) {
+    const cRunning = coordinator.container_status === 'running';
+    const cRingColor = cRunning ? accent : borderIdle;
+    html += `
+      <g filter="url(#shadow)" transform="translate(${cx},${cy})">
+        <rect x="-70" y="-28" width="140" height="56" rx="14" fill="${nodeFill}" stroke="${cRingColor}" stroke-width="1.5"/>
+        <circle cx="-45" cy="0" r="6" fill="${cRunning ? green : borderIdle}"/>
+        ${cRunning ? `<circle cx="-45" cy="0" r="6" fill="${green}" class="pulse" opacity="0.5"/>` : ''}
+        <text x="-30" y="-6" font-size="13" font-weight="600" fill="${textPrimary}" font-family="Inter,sans-serif">Coordinator</text>
+        <text x="-30" y="10" font-size="10" fill="${textSecondary}" font-family="JetBrains Mono,monospace">${coordinator.ip || '\u2014'}</text>
+      </g>`;
+    html += `<text x="${cx}" y="${cy + 46}" text-anchor="middle" font-size="10" fill="${textTertiary}" font-family="Inter,sans-serif">VM ${coordinator.vm_id} \u00b7 ${coordinator.cpu} vCPU \u00b7 ${(coordinator.memory_mb / 1024).toFixed(0)} GB</text>`;
+  }
+
+  // Worker nodes
+  workers.forEach((w, i) => {
+    const wx = workerStartX + i * workerSpacing;
+    const wRunning = w.container_status === 'running';
+    const wRingColor = wRunning ? accent : borderIdle;
+    html += `
+      <g filter="url(#shadow)" transform="translate(${wx},${workerY})">
+        <rect x="-65" y="-25" width="130" height="50" rx="12" fill="${nodeFill}" stroke="${wRingColor}" stroke-width="1.5"/>
+        <circle cx="-42" cy="0" r="5" fill="${wRunning ? green : borderIdle}"/>
+        ${wRunning ? `<circle cx="-42" cy="0" r="5" fill="${green}" class="pulse" opacity="0.5"/>` : ''}
+        <text x="-28" y="-5" font-size="12" font-weight="500" fill="${textPrimary}" font-family="Inter,sans-serif">Worker ${i + 1}</text>
+        <text x="-28" y="9" font-size="10" fill="${textSecondary}" font-family="JetBrains Mono,monospace">${w.ip || '\u2014'}</text>
+      </g>`;
+    html += `<text x="${wx}" y="${workerY + 42}" text-anchor="middle" font-size="10" fill="${textTertiary}" font-family="Inter,sans-serif">VM ${w.vm_id} \u00b7 ${w.cpu} vCPU \u00b7 ${(w.memory_mb / 1024).toFixed(0)} GB</text>`;
+  });
+
+  // Legend
+  if (isTraining) {
+    html += `
+      <g transform="translate(20,300)">
+        <circle r="3" cx="5" cy="0" fill="${accent}" opacity="0.8"/><text x="14" y="4" font-size="9" fill="${textSecondary}" font-family="Inter,sans-serif">Global weights</text>
+        <circle r="3" cx="105" cy="0" fill="${green}" opacity="0.8"/><text x="114" y="4" font-size="9" fill="${textSecondary}" font-family="Inter,sans-serif">Local gradients</text>
+      </g>`;
+  }
+
+  svg.innerHTML = html;
+}
+
+// =========================================================================
+// Chart
+// =========================================================================
+function renderLossChart(rounds) {
+  const ctx = document.getElementById('loss-chart').getContext('2d');
+  const labels = rounds.map(r => `Round ${r.round_num}`);
+  const lossData = rounds.map(r => r.loss);
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const accent = isDark ? '#60a5fa' : '#0071e3';
+  const gridColor = isDark ? '#1e2a4a' : '#f2f2f7';
+  const tickColor = isDark ? '#7b89a8' : '#aeaeb2';
+  const tooltipBg = isDark ? '#182039' : '#fff';
+  const tooltipTitle = isDark ? '#ffffff' : '#1d1d1f';
+  const tooltipBody = isDark ? '#c4cde0' : '#6e6e73';
+  const tooltipBorder = isDark ? '#293456' : '#e5e5e5';
+  const pointBg = isDark ? '#182039' : '#fff';
+
+  if (lossChart) {
+    lossChart.data.labels = labels;
+    lossChart.data.datasets[0].data = lossData;
+    lossChart.update('none');
+    return;
+  }
+
+  lossChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Loss',
+        data: lossData,
+        borderColor: accent,
+        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(0, 113, 227, 0.05)',
+        borderWidth: 2,
+        pointBackgroundColor: pointBg,
+        pointBorderColor: accent,
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        fill: true,
+        tension: 0.35,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: tooltipBg,
+          titleColor: tooltipTitle,
+          bodyColor: tooltipBody,
+          borderColor: tooltipBorder,
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: 10,
+          titleFont: { family: 'Inter', weight: '600', size: 12 },
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+          callbacks: { label: ctx => `Loss: ${ctx.parsed.y?.toFixed(4) ?? 'N/A'}` }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: { family: 'Inter', size: 11 } },
+          border: { display: false },
+        },
+        y: {
+          grid: { color: gridColor },
+          ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 } },
+          border: { display: false },
+          title: { display: true, text: 'Loss', color: tickColor, font: { family: 'Inter', size: 11, weight: '500' } },
+        }
+      }
+    }
+  });
+}
+
+// =========================================================================
+// Rounds Table
+// =========================================================================
+function renderRoundsTable(rounds) {
+  const el = document.getElementById('rounds-table');
+  if (!rounds || rounds.length === 0) {
+    el.innerHTML = `<div class="px-6 py-10 text-center text-sm text-[var(--text-tertiary)]">Waiting for training data</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="border-b border-[var(--border)]">
+        <th class="text-left px-5 py-3 text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Round</th>
+        <th class="text-right px-5 py-3 text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Loss</th>
+        <th class="text-right px-5 py-3 text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Clients</th>
+        <th class="text-right px-5 py-3 text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Eval</th>
+      </tr></thead>
+      <tbody>
+        ${rounds.map(r => `
+          <tr class="border-b border-[var(--border)] last:border-0">
+            <td class="px-5 py-3 mono font-medium text-[var(--accent)]">${r.round_num}</td>
+            <td class="px-5 py-3 text-right mono">${r.loss !== null ? r.loss.toFixed(4) : '--'}</td>
+            <td class="px-5 py-3 text-right">
+              <span class="text-[var(--green)]">${r.fit_clients}</span>${r.fit_failures > 0 ? `<span class="text-[var(--red)]"> / ${r.fit_failures}</span>` : ''}
+            </td>
+            <td class="px-5 py-3 text-right">
+              <span class="text-[var(--green)]">${r.eval_clients}</span>${r.eval_failures > 0 ? `<span class="text-[var(--red)]"> / ${r.eval_failures}</span>` : ''}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+// =========================================================================
+// Run Info
+// =========================================================================
+function renderRunInfo(run) {
+  const el = document.getElementById('run-info');
+  if (!run.run_id) {
+    el.innerHTML = `<div class="text-sm text-[var(--text-tertiary)]">No active run</div>`;
+    return;
+  }
+
+  const statusColor = { idle: 'var(--text-tertiary)', running: 'var(--orange)', completed: 'var(--green)', failed: 'var(--red)' };
+  const sc = statusColor[run.status] || statusColor.idle;
+  const pct = run.num_rounds_configured > 0 ? Math.round((run.num_rounds_completed / run.num_rounds_configured) * 100) : 0;
+
+  el.innerHTML = `
+    <div class="grid grid-cols-2 gap-6">
+      <div>
+        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Run ID</p>
+        <p class="mono text-sm truncate">${run.run_id}</p>
+      </div>
+      <div>
+        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Status</p>
+        <p class="text-sm font-semibold" style="color:${sc}">${(run.status || 'idle').toUpperCase()}</p>
+      </div>
+      <div>
+        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Progress</p>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 h-1.5 rounded-full bg-[#f2f2f7] overflow-hidden">
+            <div class="h-full rounded-full bg-[var(--accent)] transition-all duration-700" style="width:${pct}%"></div>
+          </div>
+          <span class="text-xs mono text-[var(--text-secondary)]">${run.num_rounds_completed}/${run.num_rounds_configured}</span>
+        </div>
+      </div>
+      <div>
+        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Duration</p>
+        <p class="text-sm mono">${run.total_duration_s > 0 ? `${(run.total_duration_s / 60).toFixed(1)} min` : '--'}</p>
+      </div>
+    </div>`;
+}
+
+// =========================================================================
+// Model Panel
+// =========================================================================
+function renderModelPanel(model) {
+  const el = document.getElementById('model-panel');
+  if (!model || Object.keys(model).length === 0) {
+    el.innerHTML = `<div class="text-sm text-[var(--text-tertiary)]">No model info</div>`;
+    return;
+  }
+
+  const rows = [
+    ['Architecture', model.architecture],
+    ['Parameters', model.parameters],
+    ['Framework', model.framework],
+    ['Dataset', model.dataset],
+    ['Strategy', model.strategy],
+    ['Weight Size', model.weight_size_bytes],
+  ].filter(r => r[1]);
+
+  el.innerHTML = `<div class="space-y-3">
+    ${rows.map(([k, v]) => `
+      <div class="flex justify-between items-baseline">
+        <span class="text-xs text-[var(--text-tertiary)]">${k}</span>
+        <span class="text-sm font-medium text-right max-w-[60%] truncate">${v}</span>
+      </div>`).join('')}
+  </div>`;
+}
+
+// =========================================================================
+// Main refresh
+// =========================================================================
+async function refresh() {
+  try {
+    const res = await fetch('/api/cluster');
+    const data = await res.json();
+    prevData = data;
+
+    // KPIs
+    document.getElementById('kpi-nodes').textContent = data.nodes?.length || 0;
+    document.getElementById('kpi-connected').textContent = data.connected_supernodes || 0;
+
+    const run = data.current_run || {};
+    const statusEl = document.getElementById('kpi-status');
+    const st = run.status || 'idle';
+    statusEl.textContent = st.charAt(0).toUpperCase() + st.slice(1);
+    statusEl.style.color = { completed: 'var(--green)', running: 'var(--orange)', failed: 'var(--red)' }[st] || 'var(--text-primary)';
+
+    document.getElementById('kpi-round').textContent = run.num_rounds_completed > 0
+      ? `${run.num_rounds_completed}/${run.num_rounds_configured || '?'}`
+      : '--';
+
+    // Nav status
+    const running = data.nodes?.filter(n => n.container_status === 'running').length || 0;
+    const total = data.nodes?.length || 0;
+    const csEl = document.getElementById('cluster-status');
+    csEl.innerHTML = `
+      <span class="w-1.5 h-1.5 rounded-full ${running === total && total > 0 ? 'bg-[var(--green)] pulse' : running > 0 ? 'bg-[var(--orange)]' : 'bg-[var(--text-tertiary)]'}"></span>
+      <span>${running}/${total} online</span>`;
+
+    document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+
+    // Panels
+    renderTopology(data.nodes, data.connected_supernodes, run.status);
+    renderLossChart(run.rounds || []);
+    renderRoundsTable(run.rounds || []);
+    renderRunInfo(run);
+    renderModelPanel(run.model_info);
+
+  } catch (err) {
+    document.getElementById('cluster-status').innerHTML = `
+      <span class="w-1.5 h-1.5 rounded-full bg-[var(--red)]"></span>
+      <span class="text-[var(--red)]">Offline</span>`;
+  }
+}
+
+// =========================================================================
+// Dark mode toggle
+// =========================================================================
+function initTheme() {
+  const saved = localStorage.getItem('fl-theme');
+  if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const next = isDark ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next === 'dark' ? 'dark' : '');
+  if (next === 'light') document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem('fl-theme', next);
+
+  // Recreate chart with new theme colors
+  if (lossChart) {
+    lossChart.destroy();
+    lossChart = null;
+  }
+  if (prevData) {
+    const run = prevData.current_run || {};
+    renderLossChart(run.rounds || []);
+    renderTopology(prevData.nodes, prevData.connected_supernodes, run.status);
+  }
+}
+
+initTheme();
+document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

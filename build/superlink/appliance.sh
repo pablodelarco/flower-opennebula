@@ -290,9 +290,10 @@ HELP
 #  LIFECYCLE: service_cleanup
 # ==========================================================================
 service_cleanup() {
-    msg info "Cleaning up Flower SuperLink"
-    systemctl stop flower-superlink.service 2>/dev/null || true
-    docker rm -f flower-superlink 2>/dev/null || true
+    # No-op: the one-appliance framework calls cleanup between lifecycle stages,
+    # but we must not destroy the container/service that bootstrap just started.
+    # Container lifecycle is managed by systemd (Restart=on-failure).
+    :
 }
 
 # ==========================================================================
