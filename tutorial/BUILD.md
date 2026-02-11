@@ -455,9 +455,11 @@ The service template uses a three-level configuration hierarchy.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ONEAPP_FL_FRAMEWORK` | `pytorch` | ML framework (`pytorch`, `tensorflow`, `sklearn`) |
 | `ONEAPP_FL_NODE_CONFIG` | (empty) | key=value pairs for ClientApp |
 | `ONEAPP_FL_GPU_ENABLED` | `NO` | Enable GPU passthrough |
 | `ONEAPP_FL_CUDA_VISIBLE_DEVICES` | `all` | GPU device selection |
+| `ONEAPP_FL_GPU_MEMORY_FRACTION` | `0.8` | GPU memory fraction per client (0.0-1.0) |
 | `ONEAPP_FL_DCGM_ENABLED` | `NO` | Enable DCGM GPU metrics |
 
 For the full variable reference (48 variables with validation rules), see [`spec/03-contextualization-reference.md`](../spec/03-contextualization-reference.md).

@@ -463,7 +463,9 @@ demo/
 │   ├── model.py                   # SimpleCNN + train/test/weight helpers
 │   ├── client_app.py              # ClientApp: local PyTorch training
 │   └── server_app.py              # ServerApp: FedAvg (no torch!)
-├── Dockerfile.supernode           # PyTorch-enabled SuperNode image
+├── Dockerfile.supernode-pytorch    # PyTorch SuperNode image
+├── Dockerfile.supernode-tensorflow # TensorFlow SuperNode image
+├── Dockerfile.supernode-sklearn    # scikit-learn SuperNode image
 └── setup/
     ├── prepare-cluster.sh         # Build + deploy PyTorch image
     └── verify-cluster.sh          # Pre-flight connectivity checks

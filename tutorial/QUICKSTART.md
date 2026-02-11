@@ -44,7 +44,8 @@
 
 | Component | Where it runs | What it does |
 |-----------|--------------|--------------|
-| `oneimage`, `onetemplate`, `onevm` | Frontend shell | OpenNebula CLI manages VMs |
+| `oneflow-template`, `oneflow` | Frontend shell | OneFlow service orchestration (primary) |
+| `oneimage`, `onetemplate` | Frontend shell | Image and template management |
 | SuperLink container | SuperLink VM | Coordinates rounds, aggregates weights |
 | SuperNode containers | SuperNode VMs | Train locally on private data |
 | `flwr run . opennebula` | Frontend shell | Submits training job to SuperLink |
@@ -72,7 +73,7 @@
 Before starting, confirm every item on this list. Missing any one of them will block deployment.
 
 - **SSH access to the OpenNebula frontend** -- all commands in this guide run there
-- **OpenNebula CLI configured** -- `oneimage`, `onetemplate`, `onevm` available in your shell
+- **OpenNebula CLI configured** -- `oneimage`, `onetemplate`, `oneflow-template`, `oneflow` available in your shell
 - **Python 3.11+ and pip** -- required on the frontend for `flwr run`
 - **SSH public key in your OpenNebula user profile**
   ```bash
@@ -183,7 +184,7 @@ EOF
 onetemplate create /tmp/supernode.tmpl
 ```
 
-Note the template IDs from the output -- you will need them in the next step.
+Note the template IDs from the output -- you will need them for the OneFlow service template.
 
 Expected output:
 
@@ -191,40 +192,74 @@ Expected output:
 ID: 31
 ```
 
+### 1.3 Register the OneFlow service template
+
+The OneFlow service template orchestrates the full cluster: it boots the SuperLink first, waits for it to report `READY`, then starts the SuperNodes which auto-discover the SuperLink via OneGate.
+
+**1. Edit `build/oneflow/flower-cluster.yaml`** -- set your template IDs and network:
+
+```bash
+# Find your template and network IDs
+onetemplate list | grep "Flower"
+onevnet list
+```
+
+Update the `vm_template` fields in the YAML with your actual template IDs. The `$Private` network reference resolves from the `networks` section -- it maps to your FL cluster network.
+
+**2. Register the service template:**
+
+```bash
+oneflow-template create build/oneflow/flower-cluster.yaml
+```
+
+Note the service template ID from the output -- you will use it in Step 2.
+
 ---
 
 ## Step 2 of 6: Deploy the Cluster
 
 **Time:** ~2 minutes
 
-The appliance boot sequence handles everything automatically: Docker starts, the Flower container launches via systemd, and SuperNodes connect to the SuperLink.
+OneFlow deploys the entire cluster in the correct order: SuperLink boots first, reports `READY`, then SuperNodes start and auto-discover the SuperLink via OneGate.
 
-### 2.1 Start the SuperLink
-
-```bash
-onetemplate instantiate <superlink-template-id> --name flower-superlink
-```
-
-Wait for it to reach `RUNNING` state:
+### 2.1 Instantiate the service
 
 ```bash
-watch -n 5 'onevm list | grep flower'
+oneflow-template instantiate <service-template-id>
 ```
 
-Expected output:
-
-```
-  74 oneadmin   flower-superlink   runn    2/4G   172.16.100.3   0d 00h01
-```
-
-### 2.2 Get the SuperLink IP
+To select a specific ML framework at deployment time:
 
 ```bash
-SUPERLINK_IP=$(onevm show <superlink-vm-id> -j | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d['VM']['TEMPLATE']['NIC']['IP'])
-")
+oneflow-template instantiate <service-template-id> \
+    --user_inputs '{"ONEAPP_FL_FRAMEWORK": "pytorch"}'
+```
+
+Available frameworks: `pytorch` (default), `tensorflow`, `sklearn`.
+
+### 2.2 Monitor deployment
+
+```bash
+watch -n 5 oneflow show <service-id>
+```
+
+The deployment runs in two phases:
+
+1. **Phase 1:** SuperLink VM boots, configures Docker, starts Flower, publishes endpoint to OneGate, reports `READY`
+2. **Phase 2:** SuperNode VMs boot, discover SuperLink via OneGate, connect to Fleet API on port 9092
+
+Expected progression:
+
+```
+PENDING → DEPLOYING → RUNNING
+```
+
+### 2.3 Get the SuperLink IP
+
+```bash
+SUPERLINK_IP=$(oneflow show <service-id> --json | \
+    jq -r '.DOCUMENT.TEMPLATE.BODY.roles[] |
+    select(.name=="superlink") | .nodes[0].vm_info.VM.TEMPLATE.NIC[0].IP')
 echo "SuperLink IP: $SUPERLINK_IP"
 ```
 
@@ -234,33 +269,7 @@ Expected output:
 SuperLink IP: 172.16.100.3
 ```
 
-### 2.3 Start the SuperNodes
-
-Pass the SuperLink address via the `ONEAPP_FL_SUPERLINK_ADDRESS` context variable:
-
-```bash
-onetemplate instantiate <supernode-template-id> --name flower-supernode-1 \
-    --context ONEAPP_FL_SUPERLINK_ADDRESS=$SUPERLINK_IP:9092
-
-onetemplate instantiate <supernode-template-id> --name flower-supernode-2 \
-    --context ONEAPP_FL_SUPERLINK_ADDRESS=$SUPERLINK_IP:9092
-```
-
-Wait for all three VMs to reach `RUNNING` (~1-2 minutes):
-
-```bash
-watch -n 5 'onevm list | grep flower'
-```
-
-Expected output:
-
-```
-  74 oneadmin   flower-superlink     runn    2/4G   172.16.100.3   0d 00h03
-  75 oneadmin   flower-supernode-1   runn    2/4G   172.16.100.4   0d 00h01
-  76 oneadmin   flower-supernode-2   runn    2/4G   172.16.100.5   0d 00h01
-```
-
-> **Note:** Using **OneFlow** instead? A single command deploys the whole cluster with automatic sequencing -- the SuperLink boots first, then SuperNodes discover it via OneGate. See [BUILD.md Section 6-7](BUILD.md#6-creating-the-oneflow-service-template).
+> **Manual deployment:** For environments without OneFlow or when deploying across zones, see [BUILD.md Appendix A](BUILD.md#appendix-a-manual-deployment-without-packer) or deploy individual VMs with `onetemplate instantiate` and pass `ONEAPP_FL_SUPERLINK_ADDRESS` manually.
 
 ---
 
@@ -268,7 +277,16 @@ Expected output:
 
 **Time:** ~1 minute
 
-The appliance images boot with Docker and systemd services pre-configured. The SuperNode image includes PyTorch and all ML dependencies pre-baked. Verify all containers are running.
+The appliance images boot with Docker and systemd services pre-configured. The SuperNode image includes PyTorch, TensorFlow, and scikit-learn pre-baked. The framework is selected at deployment via `ONEAPP_FL_FRAMEWORK`.
+
+First, confirm the OneFlow service is fully running:
+
+```bash
+oneflow show <service-id>
+# All roles should show state: RUNNING
+```
+
+Then verify the containers on each VM.
 
 ### 3.1 Check the SuperLink
 
@@ -478,17 +496,16 @@ The dashboard displays:
 
 ## Cleanup
 
-Terminate all VMs when finished. Containers stop automatically.
+Delete the OneFlow service when finished. This terminates all VMs and stops all containers.
 
 ```bash
-onevm terminate <superlink-vm-id>
-onevm terminate <supernode-1-vm-id>
-onevm terminate <supernode-2-vm-id>
+oneflow delete <service-id>
 ```
 
-To also remove the templates and images:
+To also remove the service template, VM templates, and images:
 
 ```bash
+oneflow-template delete <service-template-id>
 onetemplate delete <superlink-template-id>
 onetemplate delete <supernode-template-id>
 oneimage delete "Flower SuperLink v1.25.0"
@@ -544,16 +561,15 @@ oneimage delete "Flower SuperNode v1.25.0"
 
 You have a working federated learning cluster. Here is where to go from here.
 
-**Scale up** -- Add more SuperNodes by instantiating additional VMs from the existing template. Each new node joins the federation automatically at boot. Or use OneFlow auto-scaling policies to scale based on demand.
+**Choose a different ML framework** -- Redeploy with a different framework by setting `ONEAPP_FL_FRAMEWORK` at instantiation time. Options: `pytorch` (default), `tensorflow`, `sklearn`. All three are pre-baked in the SuperNode image.
+
+**Scale up** -- Add more SuperNodes with `oneflow scale <service-id> supernode 5`. Each new node joins the federation automatically. Or use OneFlow auto-scaling policies to scale based on demand.
 
 **Secure the cluster** -- Enable mTLS encryption for all gRPC channels between SuperLink and SuperNodes via CONTEXT variables. No code changes required.
 See [`spec/03-security-hardening.md`](../spec/03-security-hardening.md).
 
 **Add GPU acceleration** -- Pass through GPUs to SuperNode VMs for dramatically faster training. Set `ONEAPP_FL_GPU_ENABLED=YES` in the SuperNode CONTEXT.
 See [`spec/10-gpu-passthrough.md`](../spec/10-gpu-passthrough.md).
-
-**Orchestrate with OneFlow** -- Deploy the entire cluster with a single command, including automatic SuperLink-first sequencing and SuperNode discovery via OneGate.
-See [BUILD.md Section 6-7](BUILD.md#6-creating-the-oneflow-service-template).
 
 **Experiment with the training** -- Try non-IID data partitioning (Dirichlet), swap FedAvg for FedProx, or bring your own model. The `demo/` directory is designed for experimentation.
 See [`demo/README.md`](../demo/README.md) for detailed code walkthroughs and experiment ideas.

@@ -139,18 +139,30 @@ build {
     inline = ["/etc/one-appliance/service install"]
   }
 
-  # Step 7b: Build PyTorch-enabled SuperNode image (replaces Alpine-based upstream)
+  # Step 7b: Build all ML framework SuperNode images (pytorch, tensorflow, sklearn)
   provisioner "file" {
-    source      = "../../../demo/Dockerfile.supernode"
-    destination = "/tmp/Dockerfile.supernode"
+    source      = "../../../demo/Dockerfile.supernode-pytorch"
+    destination = "/tmp/Dockerfile.supernode-pytorch"
+  }
+
+  provisioner "file" {
+    source      = "../../../demo/Dockerfile.supernode-tensorflow"
+    destination = "/tmp/Dockerfile.supernode-tensorflow"
+  }
+
+  provisioner "file" {
+    source      = "../../../demo/Dockerfile.supernode-sklearn"
+    destination = "/tmp/Dockerfile.supernode-sklearn"
   }
 
   provisioner "shell" {
     inline = [
       "systemctl start docker",
-      "docker build -t flower-supernode-pytorch:demo -f /tmp/Dockerfile.supernode /tmp",
-      "docker tag flower-supernode-pytorch:demo flwr/supernode:1.25.0",
-      "rm -f /tmp/Dockerfile.supernode",
+      "docker build -t flower-supernode-pytorch:1.25.0 -f /tmp/Dockerfile.supernode-pytorch /tmp",
+      "docker build -t flower-supernode-tensorflow:1.25.0 -f /tmp/Dockerfile.supernode-tensorflow /tmp",
+      "docker build -t flower-supernode-sklearn:1.25.0 -f /tmp/Dockerfile.supernode-sklearn /tmp",
+      "docker image prune -f",
+      "rm -f /tmp/Dockerfile.supernode-*",
       "systemctl stop docker",
     ]
   }

@@ -54,14 +54,14 @@ This repository contains both the **implementation** (Packer templates, applianc
   +-----------+
 ```
 
-Each appliance is a QCOW2 VM image: Ubuntu 24.04 + Docker + pre-pulled Flower containers. At boot, OpenNebula's contextualization injects configuration and the appliance self-configures. Users never SSH in. They never write code. They deploy from the marketplace and get a running FL cluster.
+Each appliance is a QCOW2 VM image: Ubuntu 24.04 + Docker + pre-pulled Flower containers. At boot, OpenNebula's contextualization injects configuration and the appliance self-configures. The SuperNode image includes all three ML frameworks (PyTorch, TensorFlow, scikit-learn); set `ONEAPP_FL_FRAMEWORK` to select one at deployment time. Users never SSH in. They never write code. They deploy from the marketplace and get a running FL cluster.
 
 ## Features
 
 - **Zero-code deployment** -- Deploy from the OpenNebula marketplace with context variables. No Dockerfiles, no scripts, no SSH.
 - **Automatic service discovery** -- SuperLink publishes its endpoint to OneGate; SuperNodes find it automatically.
 - **TLS encryption** -- Auto-generated self-signed CA with zero-config setup, or bring your own PKI.
-- **Three ML frameworks** -- PyTorch, TensorFlow, and scikit-learn as separate optimized QCOW2 images.
+- **Three ML frameworks** -- PyTorch, TensorFlow, and scikit-learn pre-baked in a single SuperNode image. Select at deployment time via `ONEAPP_FL_FRAMEWORK`.
 - **Six aggregation strategies** -- FedAvg, FedProx, FedAdam, Krum, Bulyan, FedTrimmedAvg.
 - **Pre-built use cases** -- Image classification, anomaly detection, LLM fine-tuning. Set one variable, deploy.
 - **GPU passthrough** -- Full NVIDIA PCI passthrough with CUDA Container Toolkit. Falls back to CPU gracefully.
@@ -83,14 +83,15 @@ cd build && make all
 oneimage create --name "Flower SuperLink" --path ./export/flower-superlink.qcow2 -d default
 oneimage create --name "Flower SuperNode" --path ./export/flower-supernode.qcow2 -d default
 
-# 3. Deploy (SuperLink first, then SuperNodes with discovery)
-onetemplate instantiate <superlink-tmpl> --name flower-superlink
-onetemplate instantiate <supernode-tmpl> --name flower-supernode-1 \
-    --context ONEAPP_FL_SUPERLINK_ADDRESS=<superlink-ip>:9092
-onetemplate instantiate <supernode-tmpl> --name flower-supernode-2 \
-    --context ONEAPP_FL_SUPERLINK_ADDRESS=<superlink-ip>:9092
+# 3. Create VM templates and register the OneFlow service
+onetemplate create /tmp/superlink.tmpl
+onetemplate create /tmp/supernode.tmpl
+oneflow-template create build/oneflow/flower-cluster.yaml
 
-# 4. Run federated training
+# 4. Deploy the cluster (SuperLink boots first, SuperNodes auto-discover)
+oneflow-template instantiate <service-template-id>
+
+# 5. Run federated training
 cd demo && pip install -e . && flwr run . opennebula
 ```
 
@@ -413,7 +414,7 @@ Central SuperLink + lightweight edge SuperNodes (<2 GB) on intermittent WAN with
 | Discovery | Dual: OneGate > static IP | OneGate for single-site, static for multi-site control |
 | Reconnection | Delegate to Flower native | No custom wrappers. Flower handles gRPC reconnection. |
 | TLS default | Self-signed CA, auto-generated | Zero-config security. Operator PKI as override. |
-| Framework variants | Separate QCOW2 per framework | Avoids fat image bloat and library conflicts |
+| Framework variants | Single QCOW2, all frameworks pre-baked | Instant framework selection at boot, no image proliferation |
 | GPU approach | Full PCI passthrough | License-free, near-bare-metal performance, simpler than vGPU |
 | Monitoring | FL Dashboard + structured logging | No external dependencies, works out of the box |
 | Edge base OS | Ubuntu Minimal | one-apps compatibility, consistency with standard stack |
