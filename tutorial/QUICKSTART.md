@@ -433,13 +433,15 @@ With 10 rounds and 2 local epochs, expect ~65-70% accuracy on CIFAR-10.
 
 ---
 
-## Step 6 of 6: Monitor with Dashboard and Grafana
+## Step 6 of 6: Monitor with Dashboard
 
-**Time:** ~2 minutes
+**Time:** ~1 minute
 
-The project includes three monitoring services that run on the OpenNebula frontend.
+The project includes a real-time monitoring dashboard built with FastAPI and animated SVG topology visualization.
 
-### 6.1 Start the FL Dashboard
+### 6.1 Start the dashboard
+
+From the frontend, install dependencies and launch:
 
 ```bash
 source /opt/flwr-env/bin/activate
@@ -448,44 +450,29 @@ cd dashboard
 python -m uvicorn app:app --host 0.0.0.0 --port 8080 &
 ```
 
-### 6.2 Start Prometheus + Grafana
+### 6.2 Access the dashboard
 
-```bash
-cd /path/to/monitoring
-docker compose up -d
+Open your browser to:
+
 ```
-
-This starts:
-- **Prometheus** on port `9090` -- pre-configured to scrape SuperLink metrics, 30-day retention
-- **Grafana** on port `3000` -- pre-built "FL Training Overview" dashboard with 10 panels
-
-### 6.3 Access the monitoring stack
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| FL Dashboard | `http://<frontend-ip>:8080` | None |
-| Prometheus | `http://<frontend-ip>:9090` | None |
-| Grafana | `http://<frontend-ip>:3000` | `admin` / `changeme123` |
+http://<frontend-ip>:8080
+```
 
 Or through an SSH tunnel:
 
 ```bash
-ssh -N -L 8080:<frontend-ip>:8080 -L 9090:<frontend-ip>:9090 -L 3000:<frontend-ip>:3000 root@<frontend-ip>
-# Then open http://localhost:8080, http://localhost:3000, etc.
+ssh -N -L 8080:<frontend-ip>:8080 root@<frontend-ip>
+# Then open http://localhost:8080
 ```
 
-**FL Dashboard** provides:
+The dashboard displays:
+
 - **Cluster topology** -- animated SVG showing SuperLink and SuperNode connections
 - **VM status** -- running/stopped state for each node
 - **Training metrics** -- per-round loss and accuracy as training progresses
 - **Dark/light mode** -- toggle for your preference
 
-**Grafana** provides the "FL Training Overview" dashboard with panels for:
-- Current round, connected clients, fit/evaluate round duration
-- Training rounds over time, connected clients over time
-- Raw metrics explorer
-
-> **Note:** The FL Dashboard collects state from OpenNebula CLI and Docker container logs via SSH. Prometheus scrapes the SuperLink at `:9101`. Both are independent -- you can use either or both.
+> **Note:** The dashboard reads cluster state from OpenNebula CLI and Docker container logs via SSH. It requires SSH access to each VM, which is already configured if you completed the previous steps.
 
 ---
 
@@ -571,5 +558,5 @@ See [BUILD.md Section 6-7](BUILD.md#6-creating-the-oneflow-service-template).
 **Experiment with the training** -- Try non-IID data partitioning (Dirichlet), swap FedAvg for FedProx, or bring your own model. The `demo/` directory is designed for experimentation.
 See [`demo/README.md`](../demo/README.md) for detailed code walkthroughs and experiment ideas.
 
-**Extend monitoring** -- Prometheus and Grafana are already deployed with a pre-built dashboard. Add custom metrics to your ServerApp strategy using `prometheus_client`, or configure alerts in Grafana.
+**Custom metrics** -- Add `prometheus_client` gauges to your ServerApp strategy for Prometheus-based monitoring, or use container-level metrics via cAdvisor.
 See [`spec/13-monitoring-observability.md`](../spec/13-monitoring-observability.md).

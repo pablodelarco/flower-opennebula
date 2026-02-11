@@ -48,10 +48,10 @@ This repository contains both the **implementation** (Packer templates, applianc
             rounds, aggregates      on private data
             model updates           sends weights back
 
-  +-----------+    +-----------+    +-----------+
-  | Dashboard |    | Prometheus |    | Grafana    |
-  |   :8080   |    |   :9090    |    |   :3000    |
-  +-----------+    +-----------+    +-----------+
+  +-----------+
+  | Dashboard |
+  |   :8080   |
+  +-----------+
 ```
 
 Each appliance is a QCOW2 VM image: Ubuntu 24.04 + Docker + pre-pulled Flower containers. At boot, OpenNebula's contextualization injects configuration and the appliance self-configures. Users never SSH in. They never write code. They deploy from the marketplace and get a running FL cluster.
@@ -120,28 +120,21 @@ INFO :              round 3: 0.94
 
 Loss dropped from **1.27 to 0.94** across 3 rounds. Only model weights (~3.5 MB per round) crossed the network -- raw CIFAR-10 images never left their respective VMs.
 
-## Monitoring
+## Dashboard
 
-Three monitoring services run on the OpenNebula frontend as Docker containers:
+The real-time monitoring dashboard runs at **port 8080** on the OpenNebula frontend. Built with FastAPI and Tailwind CSS, it provides:
 
-| Service | Port | What it does |
-|---------|------|-------------|
-| **FL Dashboard** | `8080` | Real-time cluster topology, training progress, node health (FastAPI + Tailwind CSS) |
-| **Prometheus** | `9090` | Metrics collection with 30-day retention, pre-configured to scrape the SuperLink |
-| **Grafana** | `3000` | Pre-built "FL Training Overview" dashboard with 10 panels (login: `admin` / `changeme123`) |
-
-The FL Dashboard provides an animated SVG topology showing SuperLink/SuperNode connectivity, round-by-round loss curves, and dark/light mode. It collects state from OpenNebula CLI and Docker logs via SSH -- no agents needed on the VMs.
-
-Prometheus is configured to scrape SuperLink metrics at `:9101`. Grafana ships with a provisioned datasource and dashboard covering training rounds, connected clients, fit/evaluate duration, and raw metrics.
+- **Animated SVG topology** -- Visual cluster map showing SuperLink and SuperNode connectivity
+- **Live training progress** -- Round-by-round loss/accuracy curves updated in real time
+- **Node health** -- Per-VM container status, uptime, resource utilization
+- **Dark/light mode** -- Toggleable theme with responsive layout
 
 ```bash
-# Start the FL Dashboard
 cd dashboard && pip install fastapi uvicorn
 uvicorn app:app --host 0.0.0.0 --port 8080
-
-# Start Prometheus + Grafana (on the frontend)
-cd /path/to/monitoring && docker compose up -d
 ```
+
+The dashboard collects state from OpenNebula CLI and Docker container logs via SSH. No agents needed on the VMs.
 
 ## Documentation
 
@@ -250,14 +243,14 @@ Flower deployment across multiple OpenNebula zones -- SuperLink in one datacente
 
 ### Phase 8: Monitoring and Observability
 
-Structured JSON logging, Prometheus metrics, GPU telemetry via DCGM, Grafana dashboards, and alerting rules.
+Structured JSON logging, real-time FL Dashboard, and GPU telemetry via DCGM.
 
 | Tier | What | Enabled By |
 |------|------|-----------|
 | Structured Logging | JSON logs with 12 FL event types | `FL_LOG_FORMAT=json` |
-| Prometheus/Grafana | Metrics + 3 dashboards + 8 alert rules | `FL_METRICS_ENABLED=YES` |
+| FL Dashboard | Real-time cluster topology and training progress at port 8080 | Built-in |
 
-**Note:** The deployment includes Prometheus + Grafana with a pre-built "FL Training Overview" dashboard (10 panels). Prometheus is configured to scrape SuperLink metrics at `:9101`. The real-time FL Dashboard at port 8080 provides cluster topology and training progress independently.
+**Note:** Flower 1.25.0 does not expose native Prometheus metrics. The FL Dashboard at port 8080 provides monitoring by collecting state from OpenNebula CLI and Docker logs.
 
 **Spec file:** `spec/13-monitoring-observability.md`
 
@@ -406,7 +399,6 @@ Central SuperLink + lightweight edge SuperNodes (<2 GB) on intermittent WAN with
 | TLS | OpenSSL | system | Self-signed CA and certificate generation |
 | GPU | NVIDIA Container Toolkit | latest | GPU passthrough from host to container |
 | GPU metrics | DCGM Exporter | 4.5.1 | GPU telemetry (utilization, memory, temperature) |
-| Monitoring | Prometheus + Grafana | operator | Metrics collection, dashboards, alerting |
 | Dashboard | FastAPI + Tailwind CSS | -- | Real-time FL monitoring at port 8080 |
 | VPN (multi-site) | WireGuard | system | Encrypted cross-zone networking |
 
@@ -423,7 +415,7 @@ Central SuperLink + lightweight edge SuperNodes (<2 GB) on intermittent WAN with
 | TLS default | Self-signed CA, auto-generated | Zero-config security. Operator PKI as override. |
 | Framework variants | Separate QCOW2 per framework | Avoids fat image bloat and library conflicts |
 | GPU approach | Full PCI passthrough | License-free, near-bare-metal performance, simpler than vGPU |
-| Monitoring | Exporters only in appliances | Operators bring their own Prometheus/Grafana stack |
+| Monitoring | FL Dashboard + structured logging | No external dependencies, works out of the box |
 | Edge base OS | Ubuntu Minimal | one-apps compatibility, consistency with standard stack |
 | Edge backoff | Exponential (10s to 300s) | WAN-friendly, avoids hammering coordinator during outages |
 
@@ -512,8 +504,6 @@ Current capabilities cover AI inference (LLM deployment with Mistral, EuroLLM, H
 | Deployment topologies | 3 (single-site, multi-site, edge) |
 | ML framework variants | 3 (PyTorch, TensorFlow, scikit-learn) |
 | Use case templates | 3 (image classification, anomaly detection, LLM fine-tuning) |
-| Grafana dashboards | 3 |
-| Alerting rules | 8 |
 | Specification phases | 9 |
 
 ## Project Structure

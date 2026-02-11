@@ -843,29 +843,18 @@ ONEAPP_FL_LOG_FORMAT=json
 
 All Flower log output becomes single-line JSON objects with structured FL event data. Use with Docker's `json-file` log driver and query with `docker logs` or forward to any log aggregation system.
 
-**Tier 2: Prometheus, Grafana, and FL Dashboard**
+**Tier 2: FL Dashboard**
 
-The monitoring stack runs as Docker containers on the OpenNebula frontend (not inside appliance VMs):
-
-| Service | Port | URL | Description |
-|---------|------|-----|-------------|
-| FL Dashboard | 8080 | `http://<frontend>:8080` | Real-time cluster topology, training progress, node health |
-| Prometheus | 9090 | `http://<frontend>:9090` | Metrics collection with 30-day retention |
-| Grafana | 3000 | `http://<frontend>:3000` | Pre-built "FL Training Overview" dashboard (login: `admin` / `changeme123`) |
-
-Prometheus is pre-configured to scrape SuperLink metrics at `:9101` with a 5-second interval. Grafana ships with a provisioned Prometheus datasource and an "FL Training Overview" dashboard containing 10 panels:
-
-- Current round, connected clients, fit/evaluate round duration
-- Training rounds over time, connected clients over time
-- Raw metrics explorer
+The FL Dashboard runs on the OpenNebula frontend as a lightweight FastAPI service:
 
 ```bash
-# Deploy the monitoring stack
-cd /path/to/monitoring
-docker compose up -d
+cd dashboard && pip install fastapi uvicorn
+uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
-> **Note:** The `ONEAPP_FL_METRICS_ENABLED` context variable and port 9101 are reserved for Flower's native metric export. To add custom FL metrics today, instrument your ServerApp strategy with `prometheus_client` gauges and expose them on the SuperLink VM.
+Access at `http://<frontend>:8080`. The dashboard provides real-time cluster topology (animated SVG), per-round training metrics, node health, and dark/light mode. It collects state from OpenNebula CLI and Docker container logs via SSH -- no agents or exporters needed on the VMs.
+
+> **Note:** Flower 1.25.0 does not expose native Prometheus metrics. The `ONEAPP_FL_METRICS_ENABLED` context variable and port 9101 are reserved for future Flower releases. To add custom metrics today, instrument your ServerApp strategy with `prometheus_client` gauges.
 
 **Tier 3: GPU metrics** (for GPU-enabled SuperNodes)
 
