@@ -175,45 +175,79 @@ demo/
     └── verify-cluster.sh                  # Pre-flight checks
 ```
 
-## Framework Differences
+## Aggregation Strategy
 
-### PyTorch
-- Uses `torch.nn.Module` with explicit forward pass
-- DataLoader wraps `flwr_datasets` with `apply_transforms`
-- SGD optimizer with lr=0.01, momentum=0.9
-- Device-aware (GPU if available, CPU otherwise)
+All three demos use **Federated Averaging (FedAvg)**, the foundational
+aggregation algorithm for federated learning (McMahan et al., 2017).
 
-### TensorFlow
-- Uses `keras.Sequential` model with `.fit()` / `.evaluate()`
-- Images converted to numpy arrays, normalized to [0, 1]
-- SGD optimizer (Keras default)
-- `model.get_weights()` / `model.set_weights()` for serialization
+### How FedAvg Works
 
-### scikit-learn
-- Uses `MLPClassifier` with `partial_fit()` for incremental learning
-- Images flattened from 32×32×3 to 3072-dim vectors
-- `warm_start=True` preserves weights between rounds
-- Weights manually initialized before first round (sklearn quirk)
+Each training round follows the same cycle:
 
-## Understanding the Code
+1. **Broadcast** — The SuperLink sends the current global model weights to all
+   participating SuperNodes
+2. **Local training** — Each SuperNode trains the model on its private data
+   partition for one or more epochs, producing updated local weights
+3. **Collect** — SuperNodes send their updated weights (never raw data) back to
+   the SuperLink
+4. **Aggregate** — The SuperLink computes a weighted average of all client
+   weights, proportional to each client's dataset size:
 
-### server_app.py (shared)
+```
+w_global = SUM( n_k / n_total * w_k )   for each client k
+```
 
-The ServerApp is **identical** across all three demos. It configures FedAvg with:
-- `fraction_fit=1.0` — All clients participate every round
-- `min_fit_clients=2` — Wait for both hospitals
-- No `initial_parameters` — First client's weights initialize the global model
+Where `n_k` is the number of training samples on client `k`, `w_k` are its
+updated weights, and `n_total` is the sum of all samples across clients.
 
-**Critical constraint**: This file must NOT import any ML framework. The
-SuperLink container only has `flwr` installed.
+### Strategy Configuration
 
-### client_app.py (framework-specific)
+The `server_app.py` (identical in all three demos) configures FedAvg as:
 
-Each client follows the same pattern:
-1. Load a CIFAR-10 partition using `flwr_datasets`
-2. `get_parameters()` — Serialize model weights as numpy arrays
-3. `fit()` — Set weights, train locally, return updated weights
-4. `evaluate()` — Set weights, evaluate, return loss + accuracy
+| Parameter | Value | Meaning |
+|---|---|---|
+| `fraction_fit` | 1.0 | All connected clients participate in every round |
+| `fraction_evaluate` | 1.0 | All clients evaluate the global model each round |
+| `min_fit_clients` | 2 | Wait for at least 2 clients before starting a round |
+| `min_available_clients` | 2 | Don't start training until 2 clients are connected |
+| `initial_parameters` | None | First client's weights become the starting point |
+
+The ServerApp is **framework-agnostic** — it only sees numpy arrays of weights.
+It does not import PyTorch, TensorFlow, or sklearn. This is a hard constraint
+because the SuperLink container only has `flwr` installed.
+
+### What Each Framework Trains
+
+While the aggregation strategy is the same, each demo uses a different model
+architecture and local training approach:
+
+**PyTorch** — `demo/pytorch/`
+- **Model**: `SimpleCNN` — a `torch.nn.Module` with two Conv2d layers (5x5
+  kernels, padding=1), two max-pool layers, and two fully connected layers
+  (2304→512→10). ~878K parameters.
+- **Optimizer**: SGD with lr=0.01, momentum=0.9
+- **Data pipeline**: `torchvision` transforms normalize images to [-1, 1],
+  served via `DataLoader`
+- **Serialization**: `state_dict()` values converted to numpy arrays
+
+**TensorFlow** — `demo/tensorflow/`
+- **Model**: `keras.Sequential` CNN — two Conv2D layers (5x5 kernels,
+  padding='same'), two MaxPooling2D layers, and two Dense layers (512→10
+  with softmax output). ~880K parameters.
+- **Optimizer**: SGD (Keras default)
+- **Data pipeline**: Images converted to numpy arrays, normalized to [0, 1]
+- **Serialization**: `model.get_weights()` returns native numpy arrays
+
+**scikit-learn** — `demo/sklearn/`
+- **Model**: `MLPClassifier` — a single hidden layer MLP (3072→512→10).
+  ~1.6M parameters (larger because no convolutions — raw pixel input).
+- **Training**: `partial_fit()` with `warm_start=True` for incremental
+  learning across federated rounds
+- **Data pipeline**: Images flattened from 32x32x3 to 3072-dim vectors,
+  normalized to [0, 1]
+- **Serialization**: Manually extracts `coefs_` and `intercepts_` arrays.
+  Weights are initialized before the first round since sklearn only creates
+  these attributes after the first `fit()` call.
 
 ---
 
