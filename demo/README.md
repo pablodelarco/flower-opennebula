@@ -53,7 +53,7 @@ This demo runs that scenario on a real OpenNebula cluster using the
 ## OpenNebula Architecture
 
 ```
-  Your Workstation                  OpenNebula Frontend (51.158.111.100)
+  Your Workstation                  OpenNebula Frontend (<frontend-ip>)
  ┌─────────────────┐               ┌────────────────────────────────────────┐
  │                  │   SSH tunnel  │  KVM Host                              │
  │  flwr run .     │───────────────│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ │
@@ -61,7 +61,7 @@ This demo runs that scenario on a real OpenNebula cluster using the
  │                  │               │  ┌──────────┐ ┌──────────┐ ┌────────┐ │
  └─────────────────┘               │  │ VM 74    │ │ VM 75    │ │ VM 76  │ │
                                    │  │ SuperLink│ │ SuperNode│ │ SNode  │ │
-                                   │  │ .100.3   │ │ .100.4   │ │ .100.5 │ │
+                                   │  │ SLink IP │ │ SNode1 IP│ │SNode2IP│ │
                                    │  │          │ │          │ │        │ │
                                    │  │ ┌──────┐ │ │ ┌──────┐ │ │┌──────┐│ │
                                    │  │ │Docker│ │ │ │Docker│ │ ││Docker││ │
@@ -72,7 +72,7 @@ This demo runs that scenario on a real OpenNebula cluster using the
                                    │  └──────────┘ └──────────┘ └────────┘ │
                                    │       :9092 ◄─── Fleet API ──►        │
                                    └────────────────────────────────────────┘
-                                        Private network: 172.16.100.0/24
+                                        Private network: <private-network>
 ```
 
 ## Training Round Sequence
@@ -119,7 +119,7 @@ This demo runs that scenario on a real OpenNebula cluster using the
 |---|---|---|
 | Python | 3.11+ | For `flwr run` on your workstation |
 | pip | latest | `pip install --upgrade pip` |
-| SSH access | — | To `root@51.158.111.100` (OpenNebula frontend) |
+| SSH access | — | To `root@<frontend-ip>` (OpenNebula frontend) |
 | Docker | 20.10+ | Only needed if rebuilding the SuperNode image |
 
 ## Quick Start
@@ -128,7 +128,7 @@ Six commands from zero to federated training:
 
 ```bash
 # 1. Open SSH tunnel to SuperLink Control API (run in a separate terminal)
-ssh -L 9093:172.16.100.3:9093 root@51.158.111.100
+ssh -L 9093:<superlink-ip>:9093 root@<frontend-ip>
 
 # 2. Install the demo project locally
 cd demo
@@ -199,11 +199,11 @@ Defines two federation targets:
 
 ### 1. Set Up SSH Tunnel
 
-The cluster runs on a private network (`172.16.100.0/24`). Your workstation
+The cluster runs on a private network (`<private-network>`). Your workstation
 needs to reach the SuperLink's Control API (port 9093) via an SSH tunnel:
 
 ```bash
-ssh -L 9093:172.16.100.3:9093 -N root@51.158.111.100
+ssh -L 9093:<superlink-ip>:9093 -N root@<frontend-ip>
 ```
 
 The `-N` flag keeps the tunnel open without starting a shell. Leave this
@@ -246,19 +246,19 @@ Flower FL Demo — Cluster Verification
   PASS  SSH tunnel active (127.0.0.1:9093)
   PASS  flwr CLI installed
 
-[SuperLink — 172.16.100.3]
+[SuperLink — <superlink-ip>]
   PASS  SSH reachable
   PASS  Docker running
   PASS  SuperLink container up
 
-[SuperNode — 172.16.100.4]
+[SuperNode — <supernode-1-ip>]
   PASS  SSH reachable
   PASS  Docker running
   PASS  SuperNode container up
   PASS  PyTorch importable
   PASS  flwr-datasets importable
 
-[SuperNode — 172.16.100.5]
+[SuperNode — <supernode-2-ip>]
   PASS  SSH reachable
   PASS  Docker running
   PASS  SuperNode container up
@@ -327,12 +327,12 @@ tcpdump -r /tmp/flower-traffic.pcap -A | grep -c "JFIF\|PNG\|CIFAR"
 
 ```bash
 # CIFAR-10 data exists ONLY on the SuperNode where it was downloaded
-ssh root@51.158.111.100 "ssh root@172.16.100.4 \
+ssh root@<frontend-ip> "ssh root@<supernode-1-ip> \
     docker exec flower-supernode find / -name '*.pkl' -o -name 'cifar*' 2>/dev/null"
 # Shows local dataset cache
 
 # SuperLink has NO training data
-ssh root@51.158.111.100 "ssh root@172.16.100.3 \
+ssh root@<frontend-ip> "ssh root@<superlink-ip> \
     docker exec flower-superlink find / -name '*.pkl' -o -name 'cifar*' 2>/dev/null"
 # Empty output
 ```
@@ -341,7 +341,7 @@ ssh root@51.158.111.100 "ssh root@172.16.100.3 \
 
 ```bash
 # SuperLink logs show only aggregation events, never data content
-ssh root@51.158.111.100 "ssh root@172.16.100.3 \
+ssh root@<frontend-ip> "ssh root@<superlink-ip> \
     docker logs flower-superlink 2>&1 | tail -20"
 ```
 
@@ -441,7 +441,7 @@ containers. This means:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Connection refused` on `flwr run` | SSH tunnel not active | Open tunnel: `ssh -L 9093:172.16.100.3:9093 root@51.158.111.100` |
+| `Connection refused` on `flwr run` | SSH tunnel not active | Open tunnel: `ssh -L 9093:<superlink-ip>:9093 root@<frontend-ip>` |
 | `min_available_clients=2` timeout | SuperNode(s) not connected | Check containers: `bash setup/verify-cluster.sh` |
 | `ModuleNotFoundError: torch` on SuperLink | ServerApp imports torch | Remove any torch imports from `server_app.py` |
 | `ModuleNotFoundError: torch` on SuperNode | Old image without PyTorch | Redeploy: `bash setup/prepare-cluster.sh` |

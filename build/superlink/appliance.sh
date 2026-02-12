@@ -677,7 +677,7 @@ generate_systemd_unit() {
 
     # Build ExecStart command as an array to avoid empty-line continuation bugs
     local _exec_parts=()
-    _exec_parts+=("/usr/bin/docker run --name flower-superlink --rm")
+    _exec_parts+=("/usr/bin/docker run --name flower-superlink")
     _exec_parts+=("  --env-file ${FLOWER_ENV_FILE}")
     _exec_parts+=("  -p 9091:9091 -p 9092:9092 -p 9093:9093")
     [ -n "${_metrics_port_flag}" ]  && _exec_parts+=("  ${_metrics_port_flag}")
@@ -770,42 +770,39 @@ publish_to_onegate() {
     local _vm_ip
     _vm_ip=$(hostname -I | awk '{print $1}')
 
-    # OneGate token and VM ID from contextualization
-    local _token _vmid _endpoint
-    _token=$(cat /run/one-context/token.txt 2>/dev/null) || true
-    _vmid=$(source /run/one-context/one_env 2>/dev/null && echo "${VMID}") || true
-    _endpoint=$(source /run/one-context/one_env 2>/dev/null && echo "${ONEGATE_ENDPOINT}") || true
-
-    if [ -z "${_token}" ] || [ -z "${_vmid}" ] || [ -z "${_endpoint}" ]; then
-        msg warning "OneGate not available -- skipping readiness publication"
+    # Check onegate CLI is available
+    if ! command -v onegate >/dev/null 2>&1; then
+        msg warning "OneGate CLI not available -- skipping readiness publication"
         return 0
     fi
 
-    # Build data payload
-    local _data="FL_READY=${_ready}"
-    _data+="&FL_ENDPOINT=${_vm_ip}:${ONEAPP_FL_FLEET_API_ADDRESS##*:}"
-    _data+="&FL_VERSION=${ONEAPP_FLOWER_VERSION}"
-    _data+="&FL_ROLE=superlink"
+    # Publish each attribute individually via onegate CLI (reliable encoding)
+    local _fl_port="${ONEAPP_FL_FLEET_API_ADDRESS##*:}"
+    _fl_port="${_fl_port:-9092}"
+    local _fl_endpoint="${_vm_ip}:${_fl_port}"
+    local _failed=0
+
+    onegate vm update --data "FL_READY=${_ready}" 2>/dev/null || _failed=1
+    onegate vm update --data "FL_ENDPOINT=${_fl_endpoint}" 2>/dev/null || _failed=1
+    onegate vm update --data "FL_VERSION=${ONEAPP_FLOWER_VERSION}" 2>/dev/null || _failed=1
+    onegate vm update --data "FL_ROLE=superlink" 2>/dev/null || _failed=1
 
     if [ -n "${_error}" ]; then
-        _data+="&FL_ERROR=${_error}"
+        onegate vm update --data "FL_ERROR=${_error}" 2>/dev/null || _failed=1
     fi
 
     # Publish TLS info if enabled
     if [ "${ONEAPP_FL_TLS_ENABLED}" = "YES" ] && [ "${_ready}" = "YES" ]; then
-        _data+="&FL_TLS=YES"
+        onegate vm update --data "FL_TLS=YES" 2>/dev/null || _failed=1
         if [ -f "${FLOWER_CERT_DIR}/ca.crt" ]; then
             local _ca_b64
             _ca_b64=$(base64 -w0 "${FLOWER_CERT_DIR}/ca.crt")
-            _data+="&FL_CA_CERT=${_ca_b64}"
+            onegate vm update --data "FL_CA_CERT=${_ca_b64}" 2>/dev/null || _failed=1
         fi
     fi
 
-    if curl -sf -X PUT "${_endpoint}/vm" \
-            -H "X-ONEGATE-TOKEN: ${_token}" \
-            -H "X-ONEGATE-VMID: ${_vmid}" \
-            -d "${_data}" >/dev/null 2>&1; then
-        msg info "Published to OneGate: FL_READY=${_ready}, FL_ENDPOINT=${_vm_ip}:${ONEAPP_FL_FLEET_API_ADDRESS##*:}"
+    if [ "${_failed}" -eq 0 ]; then
+        msg info "Published to OneGate: FL_READY=${_ready}, FL_ENDPOINT=${_fl_endpoint}"
     else
         msg warning "OneGate publication failed -- SuperNodes must use static FL_SUPERLINK_ADDRESS"
     fi

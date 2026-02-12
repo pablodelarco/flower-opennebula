@@ -1,9 +1,9 @@
 ---
 # Flower Federated Learning — OneFlow Service Template
-# Deploys a SuperLink coordinator + N SuperNode clients
+# Deploys a SuperLink coordinator + N SuperNode training nodes
 #
 # Usage:
-#   oneflow-template create flower-cluster.yaml
+#   oneflow-template create flower-cluster.json   (convert YAML→JSON first)
 #   oneflow-template instantiate <template_id>
 #
 # References:
@@ -17,112 +17,56 @@ template_body:
   ready_status_gate: true
   shutdown_action: 'shutdown'
 
-  # Service-level inputs (apply to ALL roles)
-  custom_attrs:
-    ONEAPP_FLOWER_VERSION: 'O|text|Flower Docker image version tag||1.25.0'
-    ONEAPP_FL_TLS_ENABLED: 'O|boolean|Enable TLS encryption between SuperLink and SuperNodes||NO'
-    ONEAPP_FL_LOG_LEVEL: 'O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO'
-    ONEAPP_FL_LOG_FORMAT: 'O|list|Log output format|text,json|text'
+  # ── Service Inputs ─────────────────────────────────────────────────
+  # These 5 fields appear on the main instantiation form.
+  # Every other setting uses sensible defaults inside the appliance.
+  user_inputs:
+    ONEAPP_FL_ML_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn|pytorch'
+    ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
+    ONEAPP_FL_AGG_STRATEGY: 'O|list|Model aggregation strategy|FedAvg,FedProx,FedAdam|FedAvg'
+    ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum SuperNodes required to start training||2'
+    ONEAPP_FL_TLS_ENABLED: 'O|boolean|Encrypt communication between SuperLink and SuperNodes||NO'
+    ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU acceleration for model training||NO'
 
   networks:
-    Private:
-      description: 'Private network for FL cluster communication'
-      mandatory: true
+    Private: 'M|network|Private network for FL cluster| |id::'
 
   roles:
-    # ---- SuperLink: Federated Learning coordinator (singleton) ----
+    # ── SuperLink: the central coordinator (singleton) ───────────────
     - name: 'superlink'
       cardinality: 1
       min_vms: 1
       max_vms: 1
       cooldown: 60
-      vm_template: 0                  # Flower SuperLink
+      vm_template: 5
       parents: []
 
       vm_template_contents: |
         NIC = [ NETWORK_ID = "$Private" ]
-        CONTEXT = [
-          TOKEN = "YES",
-          NETWORK = "YES",
-          REPORT_READY = "YES",
-          READY_SCRIPT_PATH = "/opt/flower/scripts/health-check.sh",
-          SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
-          ONEAPP_FLOWER_VERSION = "$ONEAPP_FLOWER_VERSION",
-          ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED",
-          ONEAPP_FL_LOG_LEVEL = "$ONEAPP_FL_LOG_LEVEL",
-          ONEAPP_FL_LOG_FORMAT = "$ONEAPP_FL_LOG_FORMAT",
-          ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS",
-          ONEAPP_FL_STRATEGY = "$ONEAPP_FL_STRATEGY",
-          ONEAPP_FL_MIN_FIT_CLIENTS = "$ONEAPP_FL_MIN_FIT_CLIENTS",
-          ONEAPP_FL_MIN_EVALUATE_CLIENTS = "$ONEAPP_FL_MIN_EVALUATE_CLIENTS",
-          ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS",
-          ONEAPP_FL_PROXIMAL_MU = "$ONEAPP_FL_PROXIMAL_MU",
-          ONEAPP_FL_SERVER_LR = "$ONEAPP_FL_SERVER_LR",
-          ONEAPP_FL_CLIENT_LR = "$ONEAPP_FL_CLIENT_LR",
-          ONEAPP_FL_NUM_MALICIOUS = "$ONEAPP_FL_NUM_MALICIOUS",
-          ONEAPP_FL_TRIM_BETA = "$ONEAPP_FL_TRIM_BETA",
-          ONEAPP_FL_CHECKPOINT_ENABLED = "$ONEAPP_FL_CHECKPOINT_ENABLED",
-          ONEAPP_FL_CHECKPOINT_INTERVAL = "$ONEAPP_FL_CHECKPOINT_INTERVAL",
-          ONEAPP_FL_CHECKPOINT_PATH = "$ONEAPP_FL_CHECKPOINT_PATH",
-          ONEAPP_FL_METRICS_ENABLED = "$ONEAPP_FL_METRICS_ENABLED",
-          ONEAPP_FL_METRICS_PORT = "$ONEAPP_FL_METRICS_PORT"
-        ]
+        ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK"
+        ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS"
+        ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY"
+        ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
+        ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
 
-      custom_attrs:
-        ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
-        ONEAPP_FL_STRATEGY: 'O|list|Aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg'
-        ONEAPP_FL_MIN_FIT_CLIENTS: 'O|number|Minimum clients for training||2'
-        ONEAPP_FL_MIN_EVALUATE_CLIENTS: 'O|number|Minimum clients for evaluation||2'
-        ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum available clients to start round||2'
-        ONEAPP_FL_PROXIMAL_MU: 'O|number-float|FedProx proximal term mu||1.0'
-        ONEAPP_FL_SERVER_LR: 'O|number-float|FedAdam server learning rate||0.1'
-        ONEAPP_FL_CLIENT_LR: 'O|number-float|FedAdam client learning rate||0.1'
-        ONEAPP_FL_NUM_MALICIOUS: 'O|number|Expected malicious clients (Krum/Bulyan)||0'
-        ONEAPP_FL_TRIM_BETA: 'O|number-float|FedTrimmedAvg trim ratio||0.2'
-        ONEAPP_FL_CHECKPOINT_ENABLED: 'O|boolean|Enable model checkpointing||NO'
-        ONEAPP_FL_CHECKPOINT_INTERVAL: 'O|number|Rounds between checkpoints||5'
-        ONEAPP_FL_CHECKPOINT_PATH: 'O|text|Container path for checkpoints||/app/checkpoints'
-        ONEAPP_FL_METRICS_ENABLED: 'O|boolean|Enable Prometheus metrics endpoint||NO'
-        ONEAPP_FL_METRICS_PORT: 'O|number|Prometheus metrics port||9101'
-
-    # ---- SuperNode: Federated Learning clients (scalable) ----
+    # ── SuperNode: training nodes (scalable) ─────────────────────────
     - name: 'supernode'
       cardinality: 2
       min_vms: 2
       max_vms: 10
       cooldown: 30
-      vm_template: 2                  # Flower SuperNode MultiFW
+      vm_template: 6
       parents:
         - 'superlink'
 
       vm_template_contents: |
         NIC = [ NETWORK_ID = "$Private" ]
-        CONTEXT = [
-          TOKEN = "YES",
-          NETWORK = "YES",
-          REPORT_READY = "YES",
-          READY_SCRIPT_PATH = "/opt/flower/scripts/health-check.sh",
-          SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
-          ONEAPP_FLOWER_VERSION = "$ONEAPP_FLOWER_VERSION",
-          ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED",
-          ONEAPP_FL_LOG_LEVEL = "$ONEAPP_FL_LOG_LEVEL",
-          ONEAPP_FL_LOG_FORMAT = "$ONEAPP_FL_LOG_FORMAT",
-          ONEAPP_FL_NODE_CONFIG = "$ONEAPP_FL_NODE_CONFIG",
-          ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED",
-          ONEAPP_FL_CUDA_VISIBLE_DEVICES = "$ONEAPP_FL_CUDA_VISIBLE_DEVICES",
-          ONEAPP_FL_GPU_MEMORY_FRACTION = "$ONEAPP_FL_GPU_MEMORY_FRACTION",
-          ONEAPP_FL_DCGM_ENABLED = "$ONEAPP_FL_DCGM_ENABLED",
-          ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
-        ]
+        ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK"
+        ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS"
+        ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY"
+        ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
+        ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
+        ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED"
 
-      custom_attrs:
-        ONEAPP_FL_FRAMEWORK: 'O|list|ML framework for training|pytorch,tensorflow,sklearn|pytorch'
-        ONEAPP_FL_NODE_CONFIG: 'O|text|Space-separated key=value node config||'
-        ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU passthrough||NO'
-        ONEAPP_FL_CUDA_VISIBLE_DEVICES: 'O|text|CUDA devices (all or comma-separated IDs)||all'
-        ONEAPP_FL_GPU_MEMORY_FRACTION: 'O|number-float|GPU memory fraction per client||0.8'
-        ONEAPP_FL_DCGM_ENABLED: 'O|boolean|Enable DCGM GPU metrics exporter||NO'
-
-      # Auto-scaling policies (optional, admin can customize)
       elasticity_policies: []
       scheduled_policies: []

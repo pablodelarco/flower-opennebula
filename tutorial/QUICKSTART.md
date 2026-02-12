@@ -82,14 +82,25 @@ Before starting, confirm every item on this list. Missing any one of them will b
 - **Pre-built appliance images** -- uploaded to an OpenNebula datastore (see [BUILD.md](BUILD.md) for how to build them with Packer, or import from the marketplace)
 - **Virtual network with internet access** -- VMs must reach each other and download CIFAR-10 (~170 MB) on first run
 
-> **Warning:** If you are using a **bridge-type virtual network**, you must manually assign the gateway IP to the bridge interface on the KVM host. Without this, VMs will have no internet connectivity and the deployment will fail silently.
+> **Warning:** If you are using a **bridge-type virtual network**, you must assign the gateway IP to the bridge interface on the KVM host. Without this, VMs cannot reach the host or external networks.
 >
+> **Persistent fix (recommended):**
 > ```bash
-> # Replace <bridge-name> with your bridge (e.g., br0) and adjust the subnet
-> ip addr add 172.20.0.1/24 dev <bridge-name>
-> iptables -t nat -A POSTROUTING -s 172.20.0.0/24 ! -d 172.20.0.0/24 -j MASQUERADE
+> cat > /etc/systemd/network/50-<bridge-name>.network <<'EOF'
+> [Match]
+> Name=<bridge-name>
+>
+> [Network]
+> Address=<gateway-ip>/24
+> EOF
+> systemctl restart systemd-networkd
 > ```
-> Run `ip addr show <bridge-name>` to confirm the gateway is assigned before proceeding.
+>
+> **Quick test fix:**
+> ```bash
+> ip addr add <gateway-ip>/24 dev <bridge-name>
+> iptables -t nat -A POSTROUTING -s <subnet>/24 ! -d <subnet>/24 -j MASQUERADE
+> ```
 
 ---
 
@@ -173,7 +184,14 @@ CONTEXT = [
   TOKEN = "YES",
   NETWORK = "YES",
   REPORT_READY = "YES",
-  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+  ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+  ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+  ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS",
+  ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+  ONEAPP_FL_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+  ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS",
+  ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
 ]
 EOF
 onetemplate create /tmp/superlink.tmpl
@@ -195,7 +213,15 @@ CONTEXT = [
   TOKEN = "YES",
   NETWORK = "YES",
   REPORT_READY = "YES",
-  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+  ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+  ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+  ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS",
+  ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+  ONEAPP_FL_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+  ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS",
+  ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED",
+  ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED"
 ]
 EOF
 onetemplate create /tmp/supernode.tmpl
@@ -249,7 +275,7 @@ To select a specific ML framework at deployment time:
 
 ```bash
 oneflow-template instantiate <service-template-id> \
-    --user_inputs '{"ONEAPP_FL_FRAMEWORK": "pytorch"}'
+    --user_inputs '{"ONEAPP_FL_ML_FRAMEWORK": "pytorch"}'
 ```
 
 Available frameworks: `pytorch` (default), `tensorflow`, `sklearn`.
@@ -363,9 +389,10 @@ INFO :      Starting insecure HTTP channel to 172.16.100.3:9092
 ### 4.1 Set up the Python environment
 
 ```bash
-python3 -m venv /opt/flwr-env
-source /opt/flwr-env/bin/activate
-pip install "flwr[simulation]>=1.25.0" torch==2.6.0 torchvision==0.21.0 "flwr-datasets[vision]>=0.4.0"
+cd demo
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
 
 ### 4.2 Configure the SuperLink address

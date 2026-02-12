@@ -547,14 +547,15 @@ validate_config()
 # Outputs the discovered address on stdout; returns non-zero on failure.
 discover_superlink()
 {
+    # NOTE: This function returns the address on stdout, so all msg info
+    # calls must redirect to stderr to avoid polluting the return value.
+
     # Read OneGate environment
     local onegate_endpoint="${ONEGATE_ENDPOINT:-}"
     local onegate_token=""
     local vmid="${VMID:-}"
 
-    if [ -f /run/one-context/token.txt ]; then
-        onegate_token=$(cat /run/one-context/token.txt)
-    fi
+    onegate_token="${TOKENTXT:-}"
 
     if [ -z "${onegate_endpoint}" ] || [ -z "${onegate_token}" ]; then
         msg error "OneGate not available (no ONEGATE_ENDPOINT or token). Set ONEAPP_FL_SUPERLINK_ADDRESS for static mode."
@@ -571,28 +572,56 @@ discover_superlink()
         msg error "OneGate unreachable at ${onegate_endpoint} (HTTP ${pre_status})"
         return 1
     fi
-    msg info "OneGate connectivity verified"
+    msg info "OneGate connectivity verified" >&2
 
-    # Retry loop: 30 attempts at 10s interval (fixed mode) or exponential backoff
+    # Step 1: Get SuperLink VM ID from service endpoint
+    local service_json superlink_vmid
+    service_json=$(curl -s "${onegate_endpoint}/service" \
+        -H "X-ONEGATE-TOKEN: ${onegate_token}" \
+        -H "X-ONEGATE-VMID: ${vmid}" 2>/dev/null)
+
+    superlink_vmid=$(echo "${service_json}" | jq -r '
+        .SERVICE.roles[]
+        | select(.name == "superlink")
+        | .nodes[0].vm_info.VM.ID // empty
+    ' 2>/dev/null)
+
+    if [ -z "${superlink_vmid}" ]; then
+        msg error "Could not find SuperLink VM ID from service endpoint"
+        return 1
+    fi
+    msg info "Found SuperLink VM ID: ${superlink_vmid}" >&2
+
+    # Step 2: Retry loop — query SuperLink VM directly for FL_ENDPOINT
     local max_retries=30
     local interval=10
     local attempt=1
     local fl_endpoint=""
 
     while [ "${attempt}" -le "${max_retries}" ] || [ "${ONEAPP_FL_EDGE_BACKOFF}" = "exponential" ]; do
-        local service_json
-        service_json=$(curl -s "${onegate_endpoint}/service" \
-            -H "X-ONEGATE-TOKEN: ${onegate_token}" \
-            -H "X-ONEGATE-VMID: ${vmid}" 2>/dev/null)
+        # Use onegate CLI for cross-VM query (curl /vm/<id> not supported)
+        local vm_json
+        vm_json=$(onegate vm show "${superlink_vmid}" --json 2>/dev/null)
 
-        fl_endpoint=$(echo "${service_json}" | jq -r '
-            .SERVICE.roles[]
-            | select(.name == "superlink")
-            | .nodes[0].vm_info.VM.USER_TEMPLATE.FL_ENDPOINT // empty
+        # Try FL_ENDPOINT from USER_TEMPLATE first
+        fl_endpoint=$(echo "${vm_json}" | jq -r '
+            .VM.USER_TEMPLATE.FL_ENDPOINT // empty
         ' 2>/dev/null)
 
+        # Fallback: derive from NIC IP (assume port 9092)
+        if [ -z "${fl_endpoint}" ] && [ -n "${vm_json}" ]; then
+            local sl_ip
+            sl_ip=$(echo "${vm_json}" | jq -r '
+                .VM.TEMPLATE.NIC[0].IP // empty
+            ' 2>/dev/null)
+            if [ -n "${sl_ip}" ]; then
+                fl_endpoint="${sl_ip}:9092"
+                msg info "Derived SuperLink endpoint from NIC IP: ${fl_endpoint}" >&2
+            fi
+        fi
+
         if [ -n "${fl_endpoint}" ]; then
-            msg info "Discovered SuperLink at ${fl_endpoint} (attempt ${attempt})"
+            msg info "Discovered SuperLink at ${fl_endpoint} (attempt ${attempt})" >&2
             echo "${fl_endpoint}"
             return 0
         fi
@@ -610,7 +639,7 @@ discover_superlink()
             fi
         fi
 
-        msg info "SuperLink not ready, waiting ${interval}s... (attempt ${attempt})"
+        msg info "SuperLink not ready, waiting ${interval}s... (attempt ${attempt})" >&2
         sleep "${interval}"
         attempt=$((attempt + 1))
     done
@@ -663,8 +692,7 @@ setup_tls_trust()
     if [ "${ONEAPP_FL_TLS_ENABLED}" = "NO" ]; then
         # Still check OneGate for FL_TLS flag to log a warning
         if [ -n "${ONEGATE_ENDPOINT:-}" ] && [ -z "${ONEAPP_FL_SUPERLINK_ADDRESS}" ]; then
-            local onegate_token=""
-            [ -f /run/one-context/token.txt ] && onegate_token=$(cat /run/one-context/token.txt)
+            local onegate_token="${TOKENTXT:-}"
 
             if [ -n "${onegate_token}" ]; then
                 local service_json
@@ -705,8 +733,7 @@ retrieve_ca_cert()
 
     # Path B: retrieve from OneGate (FL_CA_CERT on SuperLink VM)
     if [ -n "${ONEGATE_ENDPOINT:-}" ]; then
-        local onegate_token=""
-        [ -f /run/one-context/token.txt ] && onegate_token=$(cat /run/one-context/token.txt)
+        local onegate_token="${TOKENTXT:-}"
 
         if [ -n "${onegate_token}" ]; then
             local service_json
@@ -758,8 +785,7 @@ compute_partition_id()
         return 0
     fi
 
-    local onegate_token=""
-    [ -f /run/one-context/token.txt ] && onegate_token=$(cat /run/one-context/token.txt)
+    local onegate_token="${TOKENTXT:-}"
     [ -z "${onegate_token}" ] && return 0
 
     local service_json
@@ -880,8 +906,7 @@ publish_to_onegate()
     local key="$1"
     local value="$2"
 
-    local onegate_token=""
-    [ -f /run/one-context/token.txt ] && onegate_token=$(cat /run/one-context/token.txt)
+    local onegate_token="${TOKENTXT:-}"
 
     if [ -z "${ONEGATE_ENDPOINT:-}" ] || [ -z "${onegate_token}" ]; then
         return 0
