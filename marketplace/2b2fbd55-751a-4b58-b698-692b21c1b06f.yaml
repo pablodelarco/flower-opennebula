@@ -32,11 +32,11 @@ opennebula_version: 6.8, 6.10, 7.0
 logo: flower.png
 images:
 - name: flower_superlink_os
-  url: ''
+  url: 'http://100.87.180.18:9292/images/flower-superlink-1.25.0.qcow2'
   type: OS
   dev_prefix: vd
   driver: qcow2
   size: 10737418240
   checksum:
-    md5: ''
-    sha256: ''
+    md5: '3055031da0bf326bf9f375bd0b9c296c'
+    sha256: '4cba28d51942a6d64104fe3351003d44b704b8ecb9a1a407d03cd7b7a71216fb'

@@ -248,12 +248,12 @@ make flower-supernode \
 | Aspect | SuperLink | SuperNode |
 |--------|-----------|-----------|
 | Disk size | 10 GB | 20 GB |
-| Docker image | `flwr/superlink:1.25.0` | Custom image built from `python:3.12-slim` |
-| ML frameworks | None | PyTorch + torchvision baked in |
+| Docker image | `flwr/superlink:1.25.0` | 3 custom images from `python:3.12-slim` (pytorch, tensorflow, sklearn) |
+| ML frameworks | None | PyTorch, TensorFlow, scikit-learn (3 Docker images) |
 | NVIDIA toolkit | No | Best-effort install (skips if no GPU hardware) |
 | Data directory | No | `/opt/flower/data/` (UID 49999) |
 
-> **Note:** The SuperNode image uses a custom Docker image built from `python:3.12-slim` (not the upstream `flwr/supernode:1.25.0` Alpine image). This is because PyTorch manylinux wheels require glibc, and the Alpine-based upstream image uses musl. The custom image installs `flwr==1.25.0`, `torch`, `torchvision`, and `numpy==1.26.4`.
+> **Note:** The SuperNode image uses custom Docker images built from `python:3.12-slim` (not the upstream `flwr/supernode:1.25.0` Alpine image). This is because PyTorch manylinux wheels require glibc, and the Alpine-based upstream image uses musl. Three custom images are built: pytorch (torch + torchvision), tensorflow (tensorflow-cpu 2.18.1), and sklearn (scikit-learn). All pin `numpy==1.26.4` and `flwr==1.25.0`. The `ONEAPP_FL_FRAMEWORK` context variable selects which Docker image to start at boot.
 
 > **Warning:** NumPy 2.x requires the x86_v2 instruction set (SSE4.1). KVM VMs with basic CPU models may lack these instructions. Pin `numpy==1.26.4` to avoid runtime crashes. This is already handled in the build, but be aware if customizing.
 
@@ -266,7 +266,7 @@ build/export/flower-supernode.qcow2
 | Property | Value |
 |----------|-------|
 | Virtual disk | 20 GB (QCOW2, sparse) |
-| Compressed size | ~3-4 GB (includes PyTorch) |
+| Compressed size | ~13-14 GB (includes PyTorch, TensorFlow, scikit-learn) |
 | Base OS | Ubuntu 24.04 |
 | Flower version | 1.25.0 |
 
@@ -346,8 +346,14 @@ CONTEXT = [
     TOKEN = "YES",
     NETWORK = "YES",
     REPORT_READY = "YES",
-    READY_SCRIPT_PATH = "/opt/flower/scripts/health-check.sh",
-    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+    ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+    ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+    ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS",
+    ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+    ONEAPP_FL_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+    ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS",
+    ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
 ]
 EOF
 ```
@@ -369,8 +375,15 @@ CONTEXT = [
     TOKEN = "YES",
     NETWORK = "YES",
     REPORT_READY = "YES",
-    READY_SCRIPT_PATH = "/opt/flower/scripts/health-check.sh",
-    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+    SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]",
+    ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+    ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK",
+    ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS",
+    ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+    ONEAPP_FL_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY",
+    ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS",
+    ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED",
+    ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED"
 ]
 EOF
 ```
@@ -525,7 +538,7 @@ onevm list | grep flower
 oneflow-template instantiate <template_id> \
     --user_inputs '{
         "ONEAPP_FL_NUM_ROUNDS": "5",
-        "ONEAPP_FL_STRATEGY": "FedProx"
+        "ONEAPP_FL_AGG_STRATEGY": "FedProx"
     }' \
     --role supernode --cardinality 4
 ```
@@ -1118,6 +1131,61 @@ docker save <image> | gzip | ssh root@<vm_ip> 'gunzip | docker load'
 ```
 
 This avoids writing a temporary `.tar.gz` file, which can be 2-4 GB for images with PyTorch baked in.
+
+### 13n. OneGate `curl -d` Does Not Parse Multi-Field Submissions
+
+OneGate's HTTP API treats `curl -d "KEY1=VAL1&KEY2=VAL2"` as a single field — it stores the entire string `VAL1&KEY2=VAL2` as the value of `KEY1`. It does not parse `&` as a field separator.
+
+**Fix:** Use the `onegate` CLI with separate calls for each attribute:
+
+```bash
+onegate vm update --data "FL_READY=YES"
+onegate vm update --data "FL_ENDPOINT=172.20.0.100:9092"
+```
+
+The appliance scripts already use this pattern.
+
+### 13o. `msg info` Writes to STDOUT, Polluting Function Return Values
+
+The one-appliance framework's `msg info` function writes to STDOUT (not stderr). Functions that return values via `echo` (and are called with `$(...)`) will have log messages mixed into the return value.
+
+**Fix:** Redirect `msg info` to stderr in functions that return values on stdout:
+
+```bash
+msg info "Discovered SuperLink at ${fl_endpoint}" >&2
+echo "${fl_endpoint}"
+```
+
+### 13p. OneFlow Silently Drops `custom_attrs`
+
+When creating a OneFlow service template with a `custom_attrs` key in the JSON body, OneFlow silently ignores it. The service template is created with zero user inputs.
+
+**Fix:** Use `user_inputs` instead of `custom_attrs`:
+
+```yaml
+user_inputs:
+    ONEAPP_FL_ML_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn|pytorch'
+```
+
+### 13q. Bridge Network Gateway IP Not Auto-Assigned
+
+OpenNebula's bridge `VN_MAD` creates the bridge interface when the first VM deploys, but does not assign an IP address to the bridge on the host. Without a gateway IP, VMs have no route to the host or external networks.
+
+**Fix:** Create a persistent systemd-networkd configuration:
+
+```bash
+cat > /etc/systemd/network/50-<bridge-name>.network <<'EOF'
+[Match]
+Name=<bridge-name>
+
+[Network]
+Address=<gateway-ip>/24
+EOF
+
+systemctl restart systemd-networkd
+```
+
+This is more reliable than manual `ip addr add` commands, which are lost on reboot.
 
 ---
 

@@ -90,8 +90,11 @@ oneflow-template create build/oneflow/flower-cluster.yaml
 # Deploy the cluster (SuperLink boots first, SuperNodes auto-discover)
 oneflow-template instantiate <service-template-id>
 
-# Run federated training
-cd demo && pip install -e . && flwr run . opennebula
+# Run federated training (requires Python 3.11+)
+cd demo
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+flwr run . opennebula
 ```
 
 See also: **[tutorial/BUILD.md](tutorial/BUILD.md)** for building from source with Packer.
@@ -511,8 +514,8 @@ Current capabilities cover AI inference (LLM deployment with Mistral, EuroLLM, H
 ```
 flower-opennebula/
   build/
-    superlink/appliance.sh        # SuperLink lifecycle script (812 lines)
-    supernode/appliance.sh        # SuperNode lifecycle script (919 lines)
+    superlink/appliance.sh        # SuperLink lifecycle script (809 lines)
+    supernode/appliance.sh        # SuperNode lifecycle script (971 lines)
     packer/                       # Packer templates for QCOW2 image builds
     docker/                       # Docker Compose stacks for each role
     oneflow/flower-cluster.yaml   # OneFlow service template
