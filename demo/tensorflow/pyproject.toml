@@ -3,15 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "flower-demo-cifar10"
+name = "flower-demo-tensorflow"
 version = "1.0.0"
-description = "Privacy-preserving CIFAR-10 classification with Flower FL on OpenNebula"
+description = "Privacy-preserving CIFAR-10 classification with Flower FL on OpenNebula (TensorFlow)"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
     "flwr[simulation]>=1.25.0",
-    "torch==2.6.0",
-    "torchvision==0.21.0",
+    "tensorflow-cpu==2.18.1",
     "flwr-datasets[vision]>=0.4.0",
 ]
 

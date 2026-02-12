@@ -48,6 +48,7 @@ class NodeInfo:
     container_uptime: str = ""
     flower_version: str = ""
     superlink_address: str = ""
+    framework: str = ""
 
 
 @dataclass
@@ -127,7 +128,8 @@ def collect_nodes() -> list[NodeInfo]:
 
     for vm in vms:
         name = vm.get("NAME", "")
-        if "flower" not in name.lower():
+        name_lower = name.lower()
+        if not any(kw in name_lower for kw in ("flower", "superlink", "supernode")):
             continue
 
         # Determine role
@@ -189,13 +191,44 @@ def collect_container_info(node: NodeInfo) -> NodeInfo:
             except (ValueError, TypeError):
                 node.container_uptime = "unknown"
             node.flower_version = parts[2].split(":")[-1] if ":" in parts[2] else parts[2]
+            # Detect framework from Docker image name
+            image_name = parts[2].lower()
+            for fw in ("pytorch", "tensorflow", "sklearn"):
+                if fw in image_name:
+                    node.framework = fw
+                    break
     else:
         node.container_status = "not found"
 
     return node
 
 
-def collect_training_logs(superlink_ip: str) -> RunInfo:
+MODEL_INFO = {
+    "pytorch": {
+        "architecture": "SimpleCNN (Conv2d -> Conv2d -> FC -> FC)",
+        "parameters": "~878K",
+        "framework": "PyTorch 2.6.0",
+        "dataset": "CIFAR-10",
+        "strategy": "FedAvg",
+    },
+    "tensorflow": {
+        "architecture": "Sequential CNN (Conv2D -> Conv2D -> Dense -> Dense)",
+        "parameters": "~880K",
+        "framework": "TensorFlow 2.18.1",
+        "dataset": "CIFAR-10",
+        "strategy": "FedAvg",
+    },
+    "sklearn": {
+        "architecture": "MLPClassifier (3072 -> 512 -> 10)",
+        "parameters": "~1.6M",
+        "framework": "scikit-learn 1.4+",
+        "dataset": "CIFAR-10 (flattened)",
+        "strategy": "FedAvg",
+    },
+}
+
+
+def collect_training_logs(superlink_ip: str, framework: str = "") -> RunInfo:
     """Parse SuperLink logs for training metrics."""
     run_info = RunInfo()
 
@@ -289,15 +322,8 @@ def collect_training_logs(superlink_ip: str) -> RunInfo:
         if m:
             node_ids.add(m.group(1))
 
-    # Get model info from the demo
-    run_info.model_info = {
-        "architecture": "SimpleCNN (Conv2d -> Conv2d -> FC -> FC)",
-        "parameters": "~62,006",
-        "framework": "PyTorch",
-        "dataset": "CIFAR-10",
-        "strategy": "FedAvg",
-        "weight_size_bytes": "~248 KB per exchange",
-    }
+    # Get model info based on detected framework
+    run_info.model_info = MODEL_INFO.get(framework, MODEL_INFO.get("pytorch", {}))
 
     return run_info
 
@@ -330,12 +356,14 @@ async def get_cluster_state():
         collect_container_info(node)
 
     superlink_ip = ""
+    framework = ""
     for node in nodes:
         if node.role == "superlink" and node.status == "running":
             superlink_ip = node.ip
-            break
+        if node.role == "supernode" and node.framework:
+            framework = node.framework
 
-    run_info = collect_training_logs(superlink_ip)
+    run_info = collect_training_logs(superlink_ip, framework)
     connected = collect_connected_nodes(superlink_ip)
 
     state = ClusterState(
