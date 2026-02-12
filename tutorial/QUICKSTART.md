@@ -384,12 +384,34 @@ INFO :      Starting insecure HTTP channel to 172.16.100.3:9092
 
 **Time:** ~7 minutes (includes CIFAR-10 download on first run)
 
-`flwr run` submits the training job to the SuperLink's Control API (port 9093). Run it on the OpenNebula frontend, which can reach the SuperLink directly.
+The `demo/` directory contains three independent Flower projects -- one per ML framework. Each trains a CIFAR-10 image classifier using **FedAvg** (Federated Averaging), where SuperNodes train locally and only send model weights back to the SuperLink for aggregation. Raw images never leave the VMs.
 
-### 4.1 Set up the Python environment
+| Demo | Model | Params | Best for |
+|------|-------|--------|----------|
+| `demo/pytorch/` | SimpleCNN (2 conv + 2 FC layers) | ~878K | GPU training, computer vision |
+| `demo/tensorflow/` | Keras Sequential CNN | ~880K | Keras ecosystem, quick prototyping |
+| `demo/sklearn/` | MLPClassifier (3072→512→10) | ~1.6M | Tabular data, lightweight |
+
+All three share the same `server_app.py` (FedAvg strategy, framework-agnostic).
+
+### 4.1 Pick a framework and install
+
+Choose one that matches the `ONEAPP_FL_FRAMEWORK` your SuperNodes are running:
 
 ```bash
-cd demo
+# PyTorch (default)
+cd demo/pytorch
+
+# Or TensorFlow
+cd demo/tensorflow
+
+# Or scikit-learn
+cd demo/sklearn
+```
+
+Set up a venv and install:
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -397,7 +419,7 @@ pip install -e .
 
 ### 4.2 Configure the SuperLink address
 
-Edit `demo/pyproject.toml` and set the address to your SuperLink IP:
+Edit the `pyproject.toml` in your chosen demo directory:
 
 ```toml
 [tool.flwr.federations.opennebula]
@@ -405,15 +427,13 @@ address = "<superlink-ip>:9093"
 insecure = true
 ```
 
-### 4.3 Install and run the demo
+### 4.3 Run training
 
 ```bash
-cd demo
-pip install -e .
 flwr run . opennebula
 ```
 
-The `flwr run` command is non-blocking -- it submits the job and returns a run ID.
+`flwr run` ships the code as a FAB (Flower App Bundle) to the SuperLink, which distributes it to the SuperNodes. When you change Python code, just run `flwr run` again -- no need to rebuild Docker images.
 
 Expected output:
 
@@ -421,8 +441,6 @@ Expected output:
 Loading project configuration...
 Success
 ```
-
-> **Note:** `flwr run` ships code as a FAB (Flower App Bundle). When you change the Python code in `flower_demo/`, just run `flwr run` again -- no need to rebuild Docker images or redeploy VMs.
 
 ### 4.4 Monitor training progress
 
@@ -482,7 +500,7 @@ INFO :          round 3: 0.94
 
 ### Tuning for better accuracy
 
-Edit `demo/pyproject.toml` to increase rounds or local training:
+Edit the `pyproject.toml` in your demo directory to increase rounds or local training:
 
 ```toml
 [tool.flwr.app.config]
@@ -603,20 +621,14 @@ oneimage delete "Flower SuperNode v1.25.0"
 
 ## What's Next?
 
-You have a working federated learning cluster. Here is where to go from here.
+You have a working federated learning cluster.
 
-**Choose a different ML framework** -- Redeploy with a different framework by setting `ONEAPP_FL_FRAMEWORK` at instantiation time. Options: `pytorch` (default), `tensorflow`, `sklearn`. All three are pre-baked in the SuperNode image.
+**Try another framework** -- Switch SuperNodes to TensorFlow or scikit-learn by setting `ONEAPP_FL_FRAMEWORK` and rebooting. Then run the matching demo from `demo/tensorflow/` or `demo/sklearn/`.
 
-**Scale up** -- Add more SuperNodes with `oneflow scale <service-id> supernode 5`. Each new node joins the federation automatically. Or use OneFlow auto-scaling policies to scale based on demand.
+**Try a different aggregation strategy** -- Swap FedAvg for FedProx (better with non-IID data) or FedAdam (adaptive learning rates) by changing one import in `server_app.py`. See [`demo/README.md`](../demo/README.md) for code examples.
 
-**Secure the cluster** -- Enable mTLS encryption for all gRPC channels between SuperLink and SuperNodes via CONTEXT variables. No code changes required.
-See [`spec/03-security-hardening.md`](../spec/03-security-hardening.md).
+**Scale up** -- Add more SuperNodes with `oneflow scale <service-id> supernode 5`. Each new node joins the federation automatically.
 
-**Add GPU acceleration** -- Pass through GPUs to SuperNode VMs for dramatically faster training. Set `ONEAPP_FL_GPU_ENABLED=YES` in the SuperNode CONTEXT.
-See [`spec/10-gpu-passthrough.md`](../spec/10-gpu-passthrough.md).
+**Enable TLS** -- Set `ONEAPP_FL_TLS_ENABLED=YES` in the VM CONTEXT. The SuperLink auto-generates certificates and distributes the CA via OneGate.
 
-**Experiment with the training** -- Try non-IID data partitioning (Dirichlet), swap FedAvg for FedProx, or bring your own model. The `demo/` directory is designed for experimentation.
-See [`demo/README.md`](../demo/README.md) for detailed code walkthroughs and experiment ideas.
-
-**Custom metrics** -- Add `prometheus_client` gauges to your ServerApp strategy for Prometheus-based monitoring, or use container-level metrics via cAdvisor.
-See [`spec/13-monitoring-observability.md`](../spec/13-monitoring-observability.md).
+**Enable GPU** -- Set `ONEAPP_FL_GPU_ENABLED=YES` on SuperNode VMs with PCI-passthrough GPUs. Requires host-level IOMMU setup.
