@@ -73,7 +73,37 @@ The `server_app.py` is framework-agnostic and identical across all demos.
 ssh -L 9093:<superlink-ip>:9093 -N root@<frontend-ip>
 ```
 
-### 2. Pick a Framework and Run
+### 2. Bootstrap SuperNodes with the Right Framework
+
+The SuperNode QCOW2 image ships with all three framework Docker images
+pre-baked. Set the `ONEAPP_FL_FRAMEWORK` context variable to tell each
+SuperNode which one to run at boot.
+
+**Via Sunstone UI:**
+1. Go to **Templates → VMs → SuperNode template → Update**
+2. Under **Context → Custom Vars**, set `ONEAPP_FL_FRAMEWORK` to `pytorch`,
+   `tensorflow`, or `sklearn`
+3. Restart the SuperNode VMs (or instantiate new ones from the updated template)
+
+**Via CLI:**
+```bash
+# Update the running SuperNode VMs (replace <vm-id> with actual IDs)
+onevm updateconf <vm-id> --append 'CONTEXT=[ONEAPP_FL_FRAMEWORK="pytorch"]'
+onevm reboot <vm-id>
+```
+
+**Via OneFlow service template:**
+
+The service template exposes `ONEAPP_FL_ML_FRAMEWORK` as a dropdown. Select
+the framework when instantiating the service, and all SuperNodes in the role
+will boot with that image.
+
+After reboot, each SuperNode's appliance will:
+1. Read `ONEAPP_FL_FRAMEWORK` from VM context
+2. Select the matching Docker image (`flower-supernode-{framework}:1.25.0`)
+3. Create and start the container via systemd
+
+### 3. Pick a Framework and Run
 
 **PyTorch** (default):
 ```bash
@@ -96,11 +126,11 @@ pip install -e .
 flwr run . opennebula
 ```
 
-Make sure the SuperNode VMs are running the matching framework Docker image.
-Set `ONEAPP_FL_FRAMEWORK` to `pytorch`, `tensorflow`, or `sklearn` in the VM
-context and restart the SuperNodes.
+The demo framework must match the `ONEAPP_FL_FRAMEWORK` set on the SuperNodes.
+For example, running `demo/tensorflow` requires SuperNodes bootstrapped with
+`ONEAPP_FL_FRAMEWORK=tensorflow`.
 
-### 3. Local Simulation (No Cluster Needed)
+### 4. Local Simulation (No Cluster Needed)
 
 Each demo includes a `local-sim` federation for testing without a cluster:
 
