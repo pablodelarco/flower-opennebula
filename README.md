@@ -5,8 +5,6 @@
 [![Flower](https://img.shields.io/badge/Flower-1.25.0-blue)](https://flower.ai/)
 [![OpenNebula](https://img.shields.io/badge/OpenNebula-7.0+-brightgreen)](https://opennebula.io/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange)](LICENSE)
-[![Spec](https://img.shields.io/badge/Spec-11%2C500_lines-lightgrey)](#documentation)
-[![IPCEI-CIS](https://img.shields.io/badge/EU-IPCEI--CIS-yellow)](#project-context)
 
 ## What is this?
 
@@ -147,198 +145,6 @@ The dashboard collects state from OpenNebula CLI and Docker container logs via S
 | **[tutorial/BUILD.md](tutorial/BUILD.md)** | Build appliance images from source |
 | **[spec/00-overview.md](spec/00-overview.md)** | Architecture overview and design principles |
 | **[spec/](spec/)** | Full technical specification (15 documents, ~11,500 lines) |
-
-<details>
-<summary><strong>The 9 Specification Phases</strong></summary>
-
-### Phase 1: Base Appliance Architecture
-
-Defines the two core appliances -- SuperLink (server) and SuperNode (client) -- with their VM packaging, boot sequences, and all configuration parameters. This is the foundation everything builds on.
-
-**Key deliverables:**
-- SuperLink appliance: 12-step boot sequence, Docker container configuration, OneGate publication contract
-- SuperNode appliance: 15-step boot sequence, dual discovery model (OneGate + static IP)
-- Contextualization reference: 48 variables with types, defaults, and validation rules
-- Pre-baked fat image strategy: Docker images pre-pulled in QCOW2, zero network needed at boot
-
-**Spec files:** `spec/01-superlink-appliance.md`, `spec/02-supernode-appliance.md`, `spec/03-contextualization-reference.md`
-
----
-
-### Phase 2: Security and Certificate Automation
-
-Automatic TLS encryption between SuperLink and SuperNodes -- certificate generation, distribution, and trust establishment.
-
-**How it works:**
-1. SuperLink generates a self-signed CA + server certificate at boot
-2. CA certificate is published to OneGate (base64-encoded)
-3. SuperNodes retrieve the CA cert from OneGate at boot
-4. gRPC connection is TLS-encrypted
-5. Operators can provide their own certificates via `FL_SSL_*` variables
-
-**Spec files:** `spec/04-tls-certificate-lifecycle.md`, `spec/05-supernode-tls-trust.md`
-
----
-
-### Phase 3: ML Framework Variants and Use Cases
-
-Separate QCOW2 images per ML framework and pre-built use case templates deployable by setting a single variable.
-
-| Variant | QCOW2 Size | Includes |
-|---------|-----------|----------|
-| PyTorch | ~4-5 GB | PyTorch, torchvision, PEFT, transformers |
-| TensorFlow | ~3 GB | TensorFlow, Keras |
-| scikit-learn | ~2.5 GB | scikit-learn, NumPy, pandas |
-
-**Use case templates:** `image-classification`, `anomaly-detection`, `llm-fine-tuning`
-
-**Spec files:** `spec/06-ml-framework-variants.md`, `spec/07-use-case-templates.md`
-
----
-
-### Phase 4: Single-Site Orchestration
-
-OneFlow service template that deploys a complete Flower cluster (1 SuperLink + N SuperNodes) with automatic dependency ordering and ready-state gating.
-
-**Spec file:** `spec/08-single-site-orchestration.md`
-
----
-
-### Phase 5: Training Configuration
-
-Aggregation strategy selection, training parameter tuning, and model checkpointing with automatic save/resume.
-
-| Strategy | Use Case |
-|----------|----------|
-| FedAvg | Default. Homogeneous data. |
-| FedProx | Heterogeneous data across clients. |
-| FedAdam | Adaptive learning rate, non-IID data. |
-| Krum | Byzantine-robust (tolerates malicious clients). |
-| Bulyan | Stronger Byzantine robustness. |
-| FedTrimmedAvg | Outlier-tolerant aggregation. |
-
-**Spec file:** `spec/09-training-configuration.md`
-
----
-
-### Phase 6: GPU Acceleration
-
-Complete NVIDIA GPU passthrough stack from host BIOS through VM template to container runtime.
-
-```
-Layer 1: Host        IOMMU enabled, VFIO driver bound to GPU
-Layer 2: VM          UEFI firmware, q35 machine, PCI passthrough
-Layer 3: Container   NVIDIA Container Toolkit, --gpus all
-Layer 4: App         CUDA visible devices, memory management
-```
-
-**Spec files:** `spec/10-gpu-passthrough.md`, `spec/11-gpu-validation.md`
-
----
-
-### Phase 7: Multi-Site Federation
-
-Flower deployment across multiple OpenNebula zones -- SuperLink in one datacenter, SuperNodes distributed across others. Cross-zone networking via WireGuard VPN or direct public IP.
-
-**Spec file:** `spec/12-multi-site-federation.md`
-
----
-
-### Phase 8: Monitoring and Observability
-
-Structured JSON logging, real-time FL Dashboard, and GPU telemetry via DCGM.
-
-| Tier | What | Enabled By |
-|------|------|-----------|
-| Structured Logging | JSON logs with 12 FL event types | `FL_LOG_FORMAT=json` |
-| FL Dashboard | Real-time cluster topology and training progress at port 8080 | Built-in |
-
-**Note:** Flower 1.25.0 does not expose native Prometheus metrics. The FL Dashboard at port 8080 provides monitoring by collecting state from OpenNebula CLI and Docker logs.
-
-**Spec file:** `spec/13-monitoring-observability.md`
-
----
-
-### Phase 9: Edge and Auto-Scaling
-
-Lightweight edge SuperNode (<2 GB) for constrained environments and OneFlow auto-scaling for dynamic client management.
-
-| Property | Standard SuperNode | Edge SuperNode |
-|----------|-------------------|----------------|
-| QCOW2 size | 2.5-5 GB | <2 GB |
-| Resources | 4 vCPU, 8 GB RAM | 2 vCPU, 2-4 GB RAM |
-| Connectivity | Reliable LAN | Intermittent WAN (exponential backoff) |
-
-**Spec file:** `spec/14-edge-and-auto-scaling.md`
-
-</details>
-
-<details>
-<summary><strong>Configuration Variables (48 total)</strong></summary>
-
-All 48 variables have sensible defaults. Deploy with zero changes for a working FL cluster running FedAvg for 3 rounds.
-
-### Essential Variables
-
-| Variable | Appliance | Default | What It Controls |
-|----------|-----------|---------|-----------------|
-| `FLOWER_VERSION` | Both | `1.25.0` | Flower Docker image version |
-| `FL_NUM_ROUNDS` | SuperLink | `3` | Number of training rounds |
-| `FL_STRATEGY` | SuperLink | `FedAvg` | Aggregation strategy |
-| `FL_MIN_FIT_CLIENTS` | SuperLink | `2` | Minimum clients per training round |
-| `FL_MIN_AVAILABLE_CLIENTS` | SuperLink | `2` | Minimum clients before training starts |
-| `FL_TLS_ENABLED` | Both | `NO` | Enable TLS encryption |
-| `FL_GPU_ENABLED` | SuperNode | `NO` | Enable NVIDIA GPU passthrough |
-| `FL_USE_CASE` | SuperNode | `none` | Pre-built template to deploy |
-| `FL_LOG_FORMAT` | Both | `text` | Log format (`text` or `json`) |
-| `FL_METRICS_ENABLED` | SuperLink | `NO` | Enable Prometheus metrics exporter |
-| `FL_SUPERLINK_ADDRESS` | SuperNode | _(empty)_ | Static SuperLink address (overrides OneGate) |
-| `FL_CHECKPOINT_ENABLED` | SuperLink | `NO` | Enable model checkpointing |
-
-### Variables by Category
-
-| Category | Count | Appliance | Phase |
-|----------|-------|-----------|-------|
-| Core FL parameters | 11 | SuperLink | 1 |
-| SuperNode connection | 7 | SuperNode | 1 |
-| TLS placeholders | 5 | Both | 2 |
-| Training strategy | 8 | SuperLink | 5 |
-| GPU configuration | 3 | SuperNode | 6 |
-| Multi-site networking | 3 | Both | 7 |
-| Monitoring | 4 | Both | 8 |
-| Edge backoff | 2 | SuperNode | 9 |
-| Shared infrastructure | 5 | Both | 1 |
-
-Full reference: [`spec/03-contextualization-reference.md`](spec/03-contextualization-reference.md)
-
-</details>
-
-<details>
-<summary><strong>Spec Documents Reference</strong></summary>
-
-All specification documents live in `spec/`. Read them in this order:
-
-| # | File | Phase | Lines | What It Covers |
-|---|------|-------|-------|---------------|
-| 00 | `spec/00-overview.md` | All | 295 | Architecture diagram, design principles, reading order |
-| 01 | `spec/01-superlink-appliance.md` | 1 | 652 | SuperLink VM: boot sequence, Docker config, OneGate contract |
-| 02 | `spec/02-supernode-appliance.md` | 1 | 663 | SuperNode VM: discovery, boot sequence, data mount |
-| 03 | `spec/03-contextualization-reference.md` | 1-9 | 1053 | All 48 variables: definitions, validation, interactions |
-| 04 | `spec/04-tls-certificate-lifecycle.md` | 2 | 770 | TLS cert generation, CA publication to OneGate |
-| 05 | `spec/05-supernode-tls-trust.md` | 2 | 835 | CA retrieval, TLS mode detection, handshake walkthrough |
-| 06 | `spec/06-ml-framework-variants.md` | 3 | 487 | PyTorch/TensorFlow/scikit-learn variant strategy |
-| 07 | `spec/07-use-case-templates.md` | 3 | 978 | Image classification, anomaly detection, LLM fine-tuning |
-| 08 | `spec/08-single-site-orchestration.md` | 4 | 977 | OneFlow service template, scaling, anti-patterns |
-| 09 | `spec/09-training-configuration.md` | 5 | 949 | 6 strategies, checkpointing, failure recovery |
-| 10 | `spec/10-gpu-passthrough.md` | 6 | 1119 | 4-layer GPU stack: host, VM, container, application |
-| 11 | `spec/11-gpu-validation.md` | 6 | -- | GPU validation scripts and procedures |
-| 12 | `spec/12-multi-site-federation.md` | 7 | 952 | Cross-zone topology, WireGuard, gRPC keepalive |
-| 13 | `spec/13-monitoring-observability.md` | 8 | 1024 | JSON logging, Prometheus, DCGM, Grafana, alerts |
-| 14 | `spec/14-edge-and-auto-scaling.md` | 9 | 801 | Edge variant, auto-scaling, client join/leave |
-
-**Total:** ~11,500 lines of specification across 15 documents.
-
-</details>
 
 ## Deployment Topologies
 
@@ -483,39 +289,13 @@ Architecture is hub-and-spoke: one SuperLink coordinates N SuperNodes. SuperNode
 
 </details>
 
-## Project Context
-
-This integration is part of [Fact8ra](https://opennebula.io/), OpenNebula's sovereign AI platform under the EU IPCEI-CIS initiative (~3B EUR investment). Fact8ra federates GPU resources across 8 EU countries to build Europe's first federated AI-as-a-Service platform.
-
-Current capabilities cover AI inference (LLM deployment with Mistral, EuroLLM, Hugging Face). This Flower integration adds **federated training** -- enabling privacy-preserving model training across distributed Fact8ra sites.
-
-**Target users:** Telcos (fraud detection across 5G edge), AI factories / HPC centers (collaborative training), healthcare (diagnostics without sharing patient data), industrial IoT (predictive maintenance across factories).
-
-**Demo target:** April 2026 -- Flower AI Summit (London) / OpenNebula OneNext (Brussels).
-
-## Project Statistics
-
-| Metric | Value |
-|--------|-------|
-| Specification documents | 15 |
-| Lines of specification | ~11,500 |
-| Implementation files | 23 (appliance scripts, Packer templates, Docker configs, dashboard, demo) |
-| Lines of implementation | ~3,900 |
-| Appliance boot steps | 12 (SuperLink) + 15 (SuperNode) |
-| Contextualization variables | 48 |
-| Aggregation strategies | 6 |
-| Deployment topologies | 3 (single-site, multi-site, edge) |
-| ML framework variants | 3 (PyTorch, TensorFlow, scikit-learn) |
-| Use case templates | 3 (image classification, anomaly detection, LLM fine-tuning) |
-| Specification phases | 9 |
-
 ## Project Structure
 
 ```
 flower-opennebula/
   build/
-    superlink/appliance.sh        # SuperLink lifecycle script (809 lines)
-    supernode/appliance.sh        # SuperNode lifecycle script (971 lines)
+    superlink/appliance.sh        # SuperLink lifecycle script
+    supernode/appliance.sh        # SuperNode lifecycle script
     packer/                       # Packer templates for QCOW2 image builds
     docker/                       # Docker Compose stacks for each role
     oneflow/flower-cluster.yaml   # OneFlow service template
@@ -525,8 +305,9 @@ flower-opennebula/
     app.py                        # FastAPI real-time monitoring dashboard
     static/index.html             # Tailwind CSS frontend with SVG topology
   demo/
-    flower_demo/                  # CIFAR-10 federated learning demo (Flower App)
-    pyproject.toml                # Flower project config with federation targets
+    pytorch/                      # PyTorch CIFAR-10 demo (Flower App)
+    tensorflow/                   # TensorFlow CIFAR-10 demo (Flower App)
+    sklearn/                      # scikit-learn CIFAR-10 demo (Flower App)
     setup/                        # Cluster verification and preparation scripts
   spec/                           # Technical specification (15 documents)
   tutorial/
