@@ -177,30 +177,135 @@ demo/
 
 ## Aggregation Strategy
 
-All three demos use **Federated Averaging (FedAvg)**, the foundational
-aggregation algorithm for federated learning (McMahan et al., 2017).
+### What Is a Model Aggregation Strategy?
 
-### How FedAvg Works
+In federated learning, multiple clients train a model independently on their
+private data. An **aggregation strategy** defines how the server (SuperLink)
+combines the locally-updated model weights from all clients into a single
+global model after each round. The choice of strategy affects convergence
+speed, final accuracy, and robustness to data heterogeneity across clients.
 
-Each training round follows the same cycle:
+All three demos use **FedAvg** by default, but Flower supports several
+strategies that can be swapped in `server_app.py` without changing the client
+code.
 
-1. **Broadcast** — The SuperLink sends the current global model weights to all
-   participating SuperNodes
-2. **Local training** — Each SuperNode trains the model on its private data
-   partition for one or more epochs, producing updated local weights
-3. **Collect** — SuperNodes send their updated weights (never raw data) back to
-   the SuperLink
-4. **Aggregate** — The SuperLink computes a weighted average of all client
-   weights, proportional to each client's dataset size:
+### FedAvg — Federated Averaging
+
+The foundational algorithm (McMahan et al., 2017). Simple, fast, and effective
+when client data distributions are similar.
+
+**How it works:** After each round, the server computes a weighted average of
+all client weights, proportional to each client's dataset size:
 
 ```
 w_global = SUM( n_k / n_total * w_k )   for each client k
 ```
 
 Where `n_k` is the number of training samples on client `k`, `w_k` are its
-updated weights, and `n_total` is the sum of all samples across clients.
+updated weights, and `n_total` is the sum across all clients.
 
-### Strategy Configuration
+**Strengths:** Minimal communication overhead, works well with IID (identically
+distributed) data, no extra hyperparameters beyond standard training config.
+
+**Weaknesses:** Can diverge when client data is highly non-IID (e.g., one
+hospital only has X-rays, another only has MRIs). Clients that do many local
+epochs drift further from the global optimum.
+
+```python
+from flwr.server.strategy import FedAvg
+
+strategy = FedAvg(
+    fraction_fit=1.0,
+    min_fit_clients=2,
+    min_available_clients=2,
+)
+```
+
+### FedProx — Federated Proximal
+
+An extension of FedAvg designed for heterogeneous settings (Li et al., 2020).
+Adds a **proximal term** to each client's local loss function that penalizes
+large deviations from the current global model.
+
+**How it works:** Each client minimizes:
+
+```
+local_loss(w) + (mu / 2) * || w - w_global ||^2
+```
+
+The proximal term `mu` acts as a leash — it lets clients learn from their
+local data but prevents them from straying too far from the global consensus.
+
+**Strengths:** More stable convergence with non-IID data. Handles stragglers
+(clients with different compute speeds) better than FedAvg.
+
+**Weaknesses:** Requires tuning `mu`. Too high and clients barely learn from
+local data; too low and it behaves like FedAvg.
+
+```python
+from flwr.server.strategy import FedProx
+
+strategy = FedProx(
+    fraction_fit=1.0,
+    min_fit_clients=2,
+    min_available_clients=2,
+    proximal_mu=0.1,  # Higher = more regularization toward global model
+)
+```
+
+### FedAdam — Federated Adam
+
+Applies the Adam optimizer (adaptive learning rates + momentum) to the
+**server-side aggregation** step (Reddi et al., 2021). While FedAvg simply
+averages weights, FedAdam treats each round's aggregated update as a gradient
+and applies Adam's adaptive step.
+
+**How it works:**
+
+1. Clients train locally and return weight updates (deltas), not raw weights
+2. Server computes the average delta across clients (like FedAvg)
+3. Instead of directly applying the average, server feeds it through Adam:
+   - Maintains running first-moment (mean) and second-moment (variance)
+     estimates of the pseudo-gradients
+   - Adapts the effective learning rate per-parameter based on history
+
+**Strengths:** Faster convergence in many settings, especially with non-IID
+data. Reduces sensitivity to client learning rate choices.
+
+**Weaknesses:** More server-side state (momentum buffers per parameter).
+Requires tuning server learning rate (`eta`) and Adam hyperparameters
+(`tau`, `beta_1`, `beta_2`).
+
+```python
+from flwr.server.strategy import FedAdam
+
+strategy = FedAdam(
+    fraction_fit=1.0,
+    min_fit_clients=2,
+    min_available_clients=2,
+    eta=0.01,       # Server-side learning rate
+    tau=0.1,        # Controls adaptivity (like Adam's epsilon)
+    beta_1=0.9,     # First moment decay
+    beta_2=0.99,    # Second moment decay
+)
+```
+
+### Strategy Comparison
+
+| | FedAvg | FedProx | FedAdam |
+|---|---|---|---|
+| **Best for** | IID data, simple setups | Non-IID data, heterogeneous clients | Non-IID data, faster convergence |
+| **Server state** | None | None | Momentum buffers per parameter |
+| **Extra hyperparams** | None | `mu` (proximal weight) | `eta`, `tau`, `beta_1`, `beta_2` |
+| **Communication** | Same | Same | Same |
+| **Complexity** | Lowest | Low | Medium |
+| **When to use** | Starting point, balanced data | Hospitals with different specialties | Large-scale, many rounds |
+
+All three strategies are available in Flower and can be swapped in
+`server_app.py` by changing only the import and constructor. No client-side
+changes are needed — the client code is strategy-agnostic.
+
+### Current Configuration
 
 The `server_app.py` (identical in all three demos) configures FedAvg as:
 
@@ -266,4 +371,6 @@ architecture and local training approach:
 - [Flower Framework Documentation](https://flower.ai/docs/)
 - [Flower App Bundle Guide](https://flower.ai/docs/framework/how-to-run-flower-using-deployment-engine.html)
 - [CIFAR-10 Dataset](https://www.cs.toronto.edu/~kriz/cifar.html)
-- [FedAvg Paper (McMahan et al., 2017)](https://arxiv.org/abs/1602.05629)
+- [FedAvg — Communication-Efficient Learning (McMahan et al., 2017)](https://arxiv.org/abs/1602.05629)
+- [FedProx — Federated Optimization in Heterogeneous Networks (Li et al., 2020)](https://arxiv.org/abs/1812.06127)
+- [FedAdam — Adaptive Federated Optimization (Reddi et al., 2021)](https://arxiv.org/abs/2003.00295)
