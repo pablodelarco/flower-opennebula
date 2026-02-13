@@ -8,7 +8,7 @@
 
 ## What Is This?
 
-Pre-built OpenNebula marketplace appliances that deploy a [Flower](https://flower.ai/) federated learning cluster. Set context variables, click deploy, run training — raw data never leaves its source VM.
+Pre-built OpenNebula marketplace appliances that deploy a [Flower](https://flower.ai/) federated learning cluster. Set context variables, click deploy, run training -- raw data never leaves its source VM.
 
 ## Architecture
 
@@ -35,33 +35,32 @@ Pre-built OpenNebula marketplace appliances that deploy a [Flower](https://flowe
 
 Each appliance is a QCOW2 image: Ubuntu 24.04 + Docker + pre-pulled Flower containers. At boot, OpenNebula contextualization injects config and the appliance self-configures. SuperNodes discover the SuperLink automatically via OneGate.
 
-The SuperNode image includes **PyTorch, TensorFlow, and scikit-learn** — set `ONEAPP_FL_FRAMEWORK` to select one at deployment time.
+The SuperNode image includes **PyTorch, TensorFlow, and scikit-learn** -- set `ONEAPP_FL_FRAMEWORK` to select one at deployment time.
 
 ## Quick Start
-
-Full step-by-step: [tutorial/QUICKSTART.md](tutorial/QUICKSTART.md) | Build from source: [tutorial/BUILD.md](tutorial/BUILD.md)
 
 ### Prerequisites
 
 - OpenNebula 7.0+ with CLI access (`oneimage`, `onetemplate`, `oneflow-template`)
 - Python 3.11+ on the frontend (for `flwr run`)
 - SSH public key in your OpenNebula user profile
-- Appliance images uploaded to a datastore ([build guide](tutorial/BUILD.md) or import from marketplace)
+- Appliance images in a datastore (import from marketplace or [build from source](#building-from-source))
 
-### Step 1: Deploy the Cluster
+### Step 1: Import Appliances
+
+**From the marketplace** (recommended): Sunstone -> Storage -> Apps -> "Flower FL 1.25.0" -> Export. This imports images, VM templates, and the OneFlow service template automatically.
+
+**From source**: see [Building from Source](#building-from-source) below.
+
+### Step 2: Deploy the Cluster
 
 ```bash
-# Import from marketplace: Sunstone → Storage → Apps → "Flower FL 1.25.0" → Export
-# Or build from source: cd build && make all
-
-# Register and instantiate the OneFlow service
+# Register the OneFlow service template (if built from source)
 oneflow-template create build/oneflow/flower-cluster.yaml
+
+# Deploy -- SuperLink boots first, then SuperNodes auto-discover via OneGate
 oneflow-template instantiate <service-template-id>
-```
 
-OneFlow boots the SuperLink first, waits for `READY`, then starts SuperNodes which auto-discover the SuperLink via OneGate.
-
-```bash
 # Monitor until RUNNING
 watch -n 5 oneflow show <service-id>
 
@@ -71,15 +70,17 @@ SUPERLINK_IP=$(oneflow show <service-id> --json | \
     select(.name=="superlink") | .nodes[0].vm_info.VM.TEMPLATE.NIC[0].IP')
 ```
 
-### Step 2: Run Federated Training
+To select a framework at deployment: `--user_inputs '{"ONEAPP_FL_ML_FRAMEWORK": "pytorch"}'`
 
-Three framework demos are included — each trains a CIFAR-10 classifier using FedAvg:
+### Step 3: Run Federated Training
+
+Three framework demos are included, each training a CIFAR-10 classifier with FedAvg:
 
 | Demo | Model | Params | Framework |
 |------|-------|--------|-----------|
-| `demo/pytorch/` | SimpleCNN (Conv→Conv→FC→FC) | ~878K | PyTorch 2.6.0 |
+| `demo/pytorch/` | SimpleCNN (Conv->Conv->FC->FC) | ~878K | PyTorch 2.6.0 |
 | `demo/tensorflow/` | Sequential CNN (Keras) | ~880K | TensorFlow 2.18.1 |
-| `demo/sklearn/` | MLPClassifier (3072→512→10) | ~1.6M | scikit-learn 1.4+ |
+| `demo/sklearn/` | MLPClassifier (3072->512->10) | ~1.6M | scikit-learn 1.4+ |
 
 Pick the framework matching your SuperNodes' `ONEAPP_FL_FRAMEWORK`:
 
@@ -92,7 +93,11 @@ pip install -e .
 flwr run . opennebula
 ```
 
-### Step 3: Monitor with Dashboard
+`flwr run` ships code as a FAB bundle to the SuperLink, which distributes it to SuperNodes. Change Python code and re-run -- no Docker rebuild needed.
+
+**Local simulation** (no cluster needed): `flwr run . local-sim`
+
+### Step 4: Monitor with Dashboard
 
 ```bash
 cd dashboard && pip install fastapi uvicorn
@@ -100,7 +105,7 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8080
 # Open http://<frontend-ip>:8080
 ```
 
-The dashboard shows an animated SVG cluster topology, per-round training metrics, node health, and dark/light mode.
+Animated SVG cluster topology, per-round training metrics, node health, dark/light mode.
 
 ## Validated Results
 
@@ -123,17 +128,182 @@ INFO :              round 2: 1.03
 INFO :              round 3: 0.94
 ```
 
-Loss dropped **1.27 → 0.94** across 3 rounds. Only model weights (~3.5 MB/round) crossed the network — raw images never left their VMs.
+Loss dropped **1.27 -> 0.94** across 3 rounds. Only model weights (~3.5 MB/round) crossed the network -- raw images never left their VMs.
+
+## Multi-Site Deployment
+
+In production, each SuperNode sits in a different organization's LAN. [Tailscale](https://tailscale.com/) makes cross-site connectivity trivial -- it's a mesh VPN built on WireGuard with automatic NAT traversal.
+
+```
+Hospital A                         Hospital B                      Hospital C
+┌──────────────┐                   ┌──────────────┐                ┌──────────────┐
+│ SuperLink    │                   │ SuperNode #1 │                │ SuperNode #2 │
+│ ts: 100.x.a  │◄── tailnet ────► │ ts: 100.x.b  │◄── mesh ────► │ ts: 100.x.c  │
+└──────────────┘   (encrypted)     └──────────────┘                └──────────────┘
+```
+
+**Setup on each VM:**
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up --authkey=tskey-auth-<YOUR_KEY> --hostname=flower-superlink  # or flower-supernode-N
+tailscale ip -4   # note the 100.x.y.z IP
+```
+
+**Configure SuperNodes** to use the SuperLink's Tailscale IP (OneGate is zone-local, can't do cross-site discovery):
+
+```
+ONEAPP_FL_SUPERLINK_ADDRESS = 100.x.a:9092
+```
+
+**TLS is optional** with Tailscale -- traffic is already WireGuard-encrypted. For compliance, set `ONEAPP_FL_TLS_ENABLED=YES` and add `ONEAPP_FL_CERT_EXTRA_SAN=IP:<tailscale-ip>` on the SuperLink.
+
+**Tailscale ACLs** for production:
+
+```bash
+tailscale up --authkey=tskey-auth-<KEY> --advertise-tags=tag:superlink   # on SuperLink
+tailscale up --authkey=tskey-auth-<KEY> --advertise-tags=tag:supernode   # on SuperNodes
+```
+
+Then restrict access in the Tailscale admin console so only `tag:supernode` can reach `tag:superlink:9092,9093`.
+
+> For raw WireGuard or public IP setups, see [spec/12-multi-site-federation.md](spec/12-multi-site-federation.md).
 
 ## Customization
 
-- **TLS encryption** — Set `ONEAPP_FL_TLS_ENABLED=YES`. Auto-generates self-signed CA, or bring your own PKI. See [spec/04-tls-certificate-lifecycle.md](spec/04-tls-certificate-lifecycle.md).
-- **GPU passthrough** — Set `ONEAPP_FL_GPU_ENABLED=YES` on SuperNodes with PCI-passthrough GPUs. See [spec/10-gpu-passthrough.md](spec/10-gpu-passthrough.md).
-- **Scaling** — `oneflow scale <service-id> supernode 5`. New nodes join automatically.
-- **Aggregation strategies** — FedAvg, FedProx, FedAdam, Krum, Bulyan, FedTrimmedAvg. See [demo/README.md](demo/README.md).
-- **Multi-site federation** — Connect SuperNodes across sites with [Tailscale](tutorial/MULTI-SITE.md) (easy) or [WireGuard](spec/12-multi-site-federation.md) (manual).
-- **Edge deployment** — Lightweight SuperNodes (<2 GB) on intermittent WAN. See [spec/14-edge-and-auto-scaling.md](spec/14-edge-and-auto-scaling.md).
-- **All context variables** — 48 variables with validation rules. See [spec/03-contextualization-reference.md](spec/03-contextualization-reference.md).
+- **TLS encryption** -- `ONEAPP_FL_TLS_ENABLED=YES`. Auto-generates self-signed CA, or bring your own. See [spec/04-tls-certificate-lifecycle.md](spec/04-tls-certificate-lifecycle.md).
+- **GPU passthrough** -- `ONEAPP_FL_GPU_ENABLED=YES` on SuperNodes with PCI-passthrough GPUs. Requires host IOMMU. See [spec/10-gpu-passthrough.md](spec/10-gpu-passthrough.md).
+- **Scaling** -- `oneflow scale <service-id> supernode 5`. New nodes join automatically.
+- **Aggregation strategies** -- FedAvg (default), FedProx, FedAdam, and more. See [Aggregation Strategies](#aggregation-strategies) below.
+- **Edge deployment** -- Lightweight SuperNodes (<2 GB) on intermittent WAN. See [spec/14-edge-and-auto-scaling.md](spec/14-edge-and-auto-scaling.md).
+- **All context variables** -- 48 variables with validation rules. See [spec/03-contextualization-reference.md](spec/03-contextualization-reference.md).
+
+<details>
+<summary><strong>Aggregation Strategies</strong></summary>
+
+All demos use **FedAvg** by default. Swap strategies in `server_app.py` by changing one import -- no client-side changes needed.
+
+**FedAvg** -- Weighted average of client weights proportional to dataset size. Simple, fast, works well with IID data.
+
+```python
+from flwr.server.strategy import FedAvg
+strategy = FedAvg(fraction_fit=1.0, min_fit_clients=2, min_available_clients=2)
+```
+
+**FedProx** -- Adds a proximal term penalizing divergence from the global model. Better with non-IID data.
+
+```python
+from flwr.server.strategy import FedProx
+strategy = FedProx(fraction_fit=1.0, min_fit_clients=2, min_available_clients=2, proximal_mu=0.1)
+```
+
+**FedAdam** -- Server-side Adam optimizer on aggregated updates. Faster convergence, more hyperparameters.
+
+```python
+from flwr.server.strategy import FedAdam
+strategy = FedAdam(fraction_fit=1.0, min_fit_clients=2, min_available_clients=2,
+                   eta=0.01, tau=0.1, beta_1=0.9, beta_2=0.99)
+```
+
+| | FedAvg | FedProx | FedAdam |
+|---|---|---|---|
+| **Best for** | IID data, simple setups | Non-IID data, stragglers | Large-scale, many rounds |
+| **Extra hyperparams** | None | `mu` | `eta`, `tau`, `beta_1`, `beta_2` |
+| **Complexity** | Lowest | Low | Medium |
+
+</details>
+
+## Building from Source
+
+<details>
+<summary><strong>Build QCOW2 images with Packer</strong></summary>
+
+### Prerequisites
+
+- x86_64 with KVM support, 30 GB free disk, 4 GB RAM
+- Packer >= 1.9, QEMU/KVM, genisoimage, jq, make
+- [one-apps](https://github.com/OpenNebula/one-apps) framework checkout
+- Ubuntu 24.04 base QCOW2 image
+
+```bash
+# Install build tools
+sudo apt-get install packer qemu-system-x86 qemu-utils genisoimage jq make
+
+# Clone one-apps
+git clone https://github.com/OpenNebula/one-apps.git
+```
+
+### Build
+
+```bash
+cd build
+
+# Build both images
+make all INPUT_DIR=./images ONE_APPS_DIR=../../one-apps
+
+# Or individually
+make flower-superlink INPUT_DIR=./images ONE_APPS_DIR=../../one-apps   # ~15 min, 10 GB disk
+make flower-supernode INPUT_DIR=./images ONE_APPS_DIR=../../one-apps   # ~20 min, 20 GB disk
+
+# Validate scripts before building
+make validate
+```
+
+Output: `build/export/flower-superlink.qcow2` and `build/export/flower-supernode.qcow2`
+
+> The SuperNode image uses custom Docker images from `python:3.12-slim` (not the upstream Alpine image) because PyTorch requires glibc. Three images are built: pytorch, tensorflow, sklearn. All pin `numpy==1.26.4` and `flwr==1.25.0`.
+
+### Upload to OpenNebula
+
+```bash
+# Copy to /var/tmp (RESTRICTED_DIRS blocks /root)
+cp build/export/*.qcow2 /var/tmp/
+
+oneimage create --name "Flower SuperLink v1.25.0" \
+    --path /var/tmp/flower-superlink.qcow2 --type OS --driver qcow2 --datastore default
+
+oneimage create --name "Flower SuperNode v1.25.0" \
+    --path /var/tmp/flower-supernode.qcow2 --type OS --driver qcow2 --datastore default
+
+# Wait for READY
+watch -n 5 'oneimage list | grep Flower'
+```
+
+### Create VM Templates
+
+```bash
+cat > /tmp/superlink.tmpl <<'EOF'
+NAME = "Flower SuperLink"
+CPU = 2
+VCPU = 2
+MEMORY = 4096
+DISK = [ IMAGE = "Flower SuperLink v1.25.0" ]
+NIC = [ NETWORK = "<your-vnet-name>" ]
+CONTEXT = [
+  TOKEN = "YES", NETWORK = "YES", REPORT_READY = "YES",
+  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+]
+EOF
+onetemplate create /tmp/superlink.tmpl
+
+cat > /tmp/supernode.tmpl <<'EOF'
+NAME = "Flower SuperNode"
+CPU = 2
+VCPU = 2
+MEMORY = 4096
+DISK = [ IMAGE = "Flower SuperNode v1.25.0" ]
+NIC = [ NETWORK = "<your-vnet-name>" ]
+CONTEXT = [
+  TOKEN = "YES", NETWORK = "YES", REPORT_READY = "YES",
+  SSH_PUBLIC_KEY = "$USER[SSH_PUBLIC_KEY]"
+]
+EOF
+onetemplate create /tmp/supernode.tmpl
+```
+
+Then register the OneFlow service template: `oneflow-template create build/oneflow/flower-cluster.yaml`
+
+</details>
 
 ## Project Structure
 
@@ -154,39 +324,57 @@ flower-opennebula/
     pytorch/                      # PyTorch CIFAR-10 demo (Flower App)
     tensorflow/                   # TensorFlow CIFAR-10 demo (Flower App)
     sklearn/                      # scikit-learn CIFAR-10 demo (Flower App)
-    setup/                        # Cluster verification and preparation scripts
   spec/                           # Technical specification (15 documents)
-  tutorial/
-    QUICKSTART.md                 # 15-minute deployment guide
-    BUILD.md                      # Build from source with Packer
 ```
 
 <details>
 <summary><strong>Troubleshooting</strong></summary>
 
+### Deployment
+
 | Problem | Fix |
 |---------|-----|
 | VM stuck in `BOOT` | Check `onevm show <id>` for CONTEXT errors. Ensure `NETWORK=YES`. |
-| VMs unreachable from frontend | Assign gateway IP to the bridge: `ip addr add <gw>/24 dev <bridge>` and add NAT. |
-| SSH host key mismatch after rebuild | `ssh-keygen -R <vm-ip>` |
-| SuperNode can't find SuperLink | Verify `FL_ENDPOINT` published: `onevm show <superlink-id> \| grep FL_ENDPOINT`. Check both VMs on same network. |
-| `flwr run` connection refused | Ensure address is `<superlink-ip>:9093` in `pyproject.toml`. Check SSH tunnel if remote. |
-| `bytes_sent/bytes_recv cannot be zero` | Clear state: `ssh root@<superlink> "systemctl stop flower-superlink && rm -f /opt/flower/state/state.db && systemctl start flower-superlink"`. Then restart all SuperNodes. |
-| SuperNodes stuck after SuperLink restart | Must also restart SuperNodes: `ssh root@<ip> systemctl restart flower-supernode` |
+| VMs unreachable from frontend | Assign gateway IP to bridge: `ip addr add <gw>/24 dev <bridge>` + NAT rule. |
+| SSH host key mismatch | `ssh-keygen -R <vm-ip>` (normal after image rebuild). |
+| Image upload fails | `RESTRICTED_DIRS` blocks `/root`. Copy to `/var/tmp/` first. |
 
-Full troubleshooting: [tutorial/QUICKSTART.md](tutorial/QUICKSTART.md#troubleshooting) | [tutorial/BUILD.md](tutorial/BUILD.md#12-troubleshooting)
+### Cluster
+
+| Problem | Fix |
+|---------|-----|
+| SuperNode can't find SuperLink | Check `onevm show <superlink-id> \| grep FL_ENDPOINT`. Verify same network. |
+| `flwr run` connection refused | Address should be `<superlink-ip>:9093` in `pyproject.toml`. Check SSH tunnel if remote. |
+| `bytes_sent/bytes_recv cannot be zero` | Clear state: `ssh root@<superlink> "systemctl stop flower-superlink && rm -f /opt/flower/state/state.db && systemctl start flower-superlink"`. Restart all SuperNodes after. |
+| SuperNodes stuck after SuperLink restart | Must restart SuperNodes too: `ssh root@<ip> systemctl restart flower-supernode` |
+| Container keeps restarting (exit 137) | OOM -- increase VM RAM. |
+
+### Multi-Site (Tailscale)
+
+| Problem | Fix |
+|---------|-----|
+| `tailscale up` hangs | Needs HTTPS outbound to coordination servers. |
+| Nodes don't see each other | Verify same tailnet: `tailscale status` on both. |
+| High latency | `tailscale netcheck` -- open UDP 41641 for direct connections. |
+| TLS SAN mismatch | `ONEAPP_FL_CERT_EXTRA_SAN=IP:<tailscale-ip>` on SuperLink, or skip TLS. |
 
 </details>
 
-## Documentation
+## Spec Documents
 
-| Resource | Description |
-|----------|-------------|
-| [tutorial/QUICKSTART.md](tutorial/QUICKSTART.md) | Step-by-step deployment in 15 minutes |
-| [tutorial/BUILD.md](tutorial/BUILD.md) | Build appliance images from source with Packer |
-| [tutorial/MULTI-SITE.md](tutorial/MULTI-SITE.md) | Multi-site federation with Tailscale |
-| [demo/README.md](demo/README.md) | Framework demos and aggregation strategies |
-| [spec/](spec/) | Full technical specification (15 documents, ~11,500 lines) |
+The `spec/` directory contains the full technical specification (15 documents, ~11,500 lines) covering every design decision:
+
+| Spec | Content |
+|------|---------|
+| [00-overview](spec/00-overview.md) | Architecture, design principles |
+| [01-superlink-appliance](spec/01-superlink-appliance.md) | SuperLink boot sequence, Docker config |
+| [02-supernode-appliance](spec/02-supernode-appliance.md) | SuperNode discovery, GPU detection |
+| [03-contextualization-reference](spec/03-contextualization-reference.md) | All 48 context variables |
+| [04-tls-certificate-lifecycle](spec/04-tls-certificate-lifecycle.md) | CA generation, cert signing |
+| [06-ml-framework-variants](spec/06-ml-framework-variants.md) | PyTorch, TensorFlow, scikit-learn |
+| [08-single-site-orchestration](spec/08-single-site-orchestration.md) | OneFlow template, scaling |
+| [10-gpu-passthrough](spec/10-gpu-passthrough.md) | NVIDIA GPU four-layer stack |
+| [12-multi-site-federation](spec/12-multi-site-federation.md) | Cross-zone WireGuard, gRPC keepalive |
 
 ## License
 
