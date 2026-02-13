@@ -48,7 +48,6 @@ roles:
 opennebula_template:
   name: Service Flower FL
   deployment: straight
-  description: ''
   ready_status_gate: true
   shutdown_action: shutdown
   custom_attrs:
@@ -73,8 +72,6 @@ opennebula_template:
       ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY"
       ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
       ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
-    elasticity_policies: []
-    scheduled_policies: []
   - name: supernode
     parents:
     - superlink
@@ -90,7 +87,5 @@ opennebula_template:
       ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
       ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
       ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED"
-    elasticity_policies: []
-    scheduled_policies: []
 logo: flower.png
 images: []
