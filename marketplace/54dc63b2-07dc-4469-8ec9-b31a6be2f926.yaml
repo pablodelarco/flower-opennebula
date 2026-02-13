@@ -31,7 +31,7 @@ opennebula_version: 6.8, 6.10, 7.0
 logo: flower.png
 images:
 - name: flower_supernode_os
-  url: 'http://100.87.180.18:9292/images/flower-supernode-1.25.0.qcow2'
+  url: 'https://PUBLISH_URL/flower-supernode-1.25.0.qcow2'
   type: OS
   dev_prefix: vd
   driver: qcow2
