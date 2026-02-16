@@ -556,10 +556,11 @@ run_on_cluster() {
 
     info "Starting federated training on the cluster..."
     info "SuperLink: $SUPERLINK"
-    info "Running: flwr run . opennebula --stream"
+    info "Running: flwr run . --stream"
     echo
 
-    (cd "$DEMO_DIR" && flwr run . opennebula --stream)
+    # Use default federation (set to "opennebula" in ~/.flwr/config.toml)
+    (cd "$DEMO_DIR" && flwr run . --stream)
     local rc=$?
 
     echo
@@ -600,8 +601,8 @@ show_next_steps() {
         echo
         echo -e "${BOLD}Next steps:${RESET}"
         echo "  Change rounds or strategy:"
-        hint "flwr run . opennebula --run-config \"num-server-rounds=10\""
-        hint "flwr run . opennebula --run-config \"strategy=FedProx\""
+        hint "flwr run . --run-config \"num-server-rounds=10\""
+        hint "flwr run . --run-config \"strategy=FedProx\""
         echo "  Use your own data:"
         hint "See the 'Bring your own data' section in README.md"
         echo "  Scale the cluster:"
