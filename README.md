@@ -41,7 +41,7 @@ SuperNode images include **PyTorch, TensorFlow, and scikit-learn** — set `ONEA
 
 **From the marketplace** (recommended): FireEdge → Storage → Apps → "Flower FL 1.25.0" → Export.
 
-**From source**: [Building from Source](#building-from-source).
+**From source**: see "Building from source" under [Going Further](#going-further).
 
 ### Step 2: Deploy the Cluster
 
