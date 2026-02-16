@@ -41,7 +41,7 @@ SuperNode images include **PyTorch, TensorFlow, and scikit-learn** — set `ONEA
 
 **From the marketplace** (recommended): FireEdge → Storage → Apps → "Flower FL 1.25.0" → Export.
 
-**From source**: see [Building from Source](#building-from-source) below.
+**From source**: [Building from Source](#building-from-source).
 
 ### Step 2: Deploy the Cluster
 
@@ -153,8 +153,6 @@ Set `ONEAPP_FL_SUPERLINK_ADDRESS = 100.x.a:9092` on SuperNodes (OneGate is zone-
 
 TLS is optional with Tailscale (traffic is already WireGuard-encrypted). For compliance: `ONEAPP_FL_TLS_ENABLED=YES` + `ONEAPP_FL_CERT_EXTRA_SAN=IP:<tailscale-ip>`.
 
-See [spec/12-multi-site-federation.md](spec/12-multi-site-federation.md) for raw WireGuard or public IP setups.
-
 </details>
 
 <details>
@@ -172,11 +170,10 @@ Animated SVG cluster topology, per-round metrics, node health, dark/light mode.
 <details>
 <summary><strong>Customization</strong></summary>
 
-- **TLS** — `ONEAPP_FL_TLS_ENABLED=YES`. Auto-generates self-signed CA, or bring your own. See [spec/04](spec/04-tls-certificate-lifecycle.md).
-- **GPU passthrough** — `ONEAPP_FL_GPU_ENABLED=YES` on SuperNodes with PCI-passthrough. See [spec/10](spec/10-gpu-passthrough.md).
+- **TLS** — `ONEAPP_FL_TLS_ENABLED=YES`. Auto-generates self-signed CA, or bring your own.
+- **GPU passthrough** — `ONEAPP_FL_GPU_ENABLED=YES` on SuperNodes with PCI-passthrough.
 - **Scaling** — `oneflow scale <service-id> supernode 5`. New nodes join automatically.
-- **Edge** — Lightweight SuperNodes (<2 GB) on intermittent WAN. See [spec/14](spec/14-edge-and-auto-scaling.md).
-- **All 48 context variables** — [spec/03](spec/03-contextualization-reference.md).
+- **Edge** — Lightweight SuperNodes (<2 GB) on intermittent WAN.
 
 **Aggregation strategies** — swap in `server_app.py` (no client-side changes):
 
@@ -243,7 +240,6 @@ build/          Packer images, Docker stacks, OneFlow template, Makefile
 appliances/     OpenNebula marketplace appliance files
 dashboard/      FastAPI monitoring dashboard with SVG topology
 demo/           PyTorch, TensorFlow, scikit-learn CIFAR-10 demos
-spec/           Technical specification (15 documents, ~11.5K lines)
 ```
 
 ## License
