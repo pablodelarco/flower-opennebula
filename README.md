@@ -74,20 +74,28 @@ To select a framework at deployment: `--user_inputs '{"ONEAPP_FL_FRAMEWORK": "py
 
 ### Step 3: Run Federated Training
 
-At this point the cluster is **running but idle** -- the SuperLink and SuperNodes are waiting for you to push a Flower Application Bundle (FAB). Think of the cluster as a distributed runtime: you develop training code on your laptop, then `flwr run` packages it and ships it to the cluster. The SuperLink distributes it to SuperNodes, each trains on its own data, and the aggregated result streams back to your terminal.
+The cluster is now **running but idle**. The quickstart script handles everything from here — it finds your cluster, sets up Python, patches the config, and runs training:
 
-**What you need on your local machine:**
+```bash
+bash demo/quickstart.sh
+```
 
-- Python 3.11+
-- `flwr` CLI (installed via `pip install flwr`)
+Options: `--skip-cluster` (local simulation only), `--superlink IP:PORT` (skip discovery), `--auto` (non-interactive). Run `bash demo/quickstart.sh --help` for details.
 
-**Included demos** -- three framework variants, each training a CIFAR-10 classifier with FedAvg:
+<details>
+<summary><strong>Manual steps</strong> (if you prefer not to use the quickstart)</summary>
+
+The SuperLink and SuperNodes are waiting for a Flower Application Bundle (FAB). You develop training code on your laptop, then `flwr run` packages it and ships it to the cluster. The SuperLink distributes it to SuperNodes, each trains on its own data, and the aggregated result streams back to your terminal.
+
+**What you need on your local machine:** Python 3.11+ and `flwr` CLI (`pip install flwr`).
+
+**Included demos** — three framework variants, each training a CIFAR-10 classifier with FedAvg:
 
 | Demo | Model | Params | Framework |
 |------|-------|--------|-----------|
-| `demo/pytorch/` | SimpleCNN (Conv->Conv->FC->FC) | ~878K | PyTorch 2.6.0 |
+| `demo/pytorch/` | SimpleCNN (Conv→Conv→FC→FC) | ~878K | PyTorch 2.6.0 |
 | `demo/tensorflow/` | Sequential CNN (Keras) | ~880K | TensorFlow 2.18.1 |
-| `demo/sklearn/` | MLPClassifier (3072->512->10) | ~1.6M | scikit-learn 1.4+ |
+| `demo/sklearn/` | MLPClassifier (3072→512→10) | ~1.6M | scikit-learn 1.4+ |
 
 Pick the framework matching your SuperNodes' `ONEAPP_FL_FRAMEWORK`:
 
@@ -100,9 +108,11 @@ pip install -e .
 flwr run . opennebula
 ```
 
-`flwr run` packages your Python code into a FAB, uploads it to the SuperLink, which distributes it to every SuperNode. Change code and re-run -- no Docker rebuild needed.
+`flwr run` packages your Python code into a FAB, uploads it to the SuperLink, which distributes it to every SuperNode. Change code and re-run — no Docker rebuild needed.
 
 **Local simulation** (no cluster needed): `flwr run . local-sim`
+
+</details>
 
 ### Bring Your Own Data
 
