@@ -48,7 +48,7 @@ The SuperNode image includes **PyTorch, TensorFlow, and scikit-learn** -- set `O
 
 ### Step 1: Import Appliances
 
-**From the marketplace** (recommended): Sunstone -> Storage -> Apps -> "Flower FL 1.25.0" -> Export. This imports images, VM templates, and the OneFlow service template automatically.
+**From the marketplace** (recommended): FireEdge -> Storage -> Apps -> "Flower FL 1.25.0" -> Export. This imports images, VM templates, and the OneFlow service template automatically.
 
 **From source**: see [Building from Source](#building-from-source) below.
 
@@ -70,11 +70,18 @@ SUPERLINK_IP=$(oneflow show <service-id> --json | \
     select(.name=="superlink") | .nodes[0].vm_info.VM.TEMPLATE.NIC[0].IP')
 ```
 
-To select a framework at deployment: `--user_inputs '{"ONEAPP_FL_ML_FRAMEWORK": "pytorch"}'`
+To select a framework at deployment: `--user_inputs '{"ONEAPP_FL_FRAMEWORK": "pytorch"}'`
 
 ### Step 3: Run Federated Training
 
-Three framework demos are included, each training a CIFAR-10 classifier with FedAvg:
+At this point the cluster is **running but idle** -- the SuperLink and SuperNodes are waiting for you to push a Flower Application Bundle (FAB). Think of the cluster as a distributed runtime: you develop training code on your laptop, then `flwr run` packages it and ships it to the cluster. The SuperLink distributes it to SuperNodes, each trains on its own data, and the aggregated result streams back to your terminal.
+
+**What you need on your local machine:**
+
+- Python 3.11+
+- `flwr` CLI (installed via `pip install flwr`)
+
+**Included demos** -- three framework variants, each training a CIFAR-10 classifier with FedAvg:
 
 | Demo | Model | Params | Framework |
 |------|-------|--------|-----------|
@@ -93,9 +100,53 @@ pip install -e .
 flwr run . opennebula
 ```
 
-`flwr run` ships code as a FAB bundle to the SuperLink, which distributes it to SuperNodes. Change Python code and re-run -- no Docker rebuild needed.
+`flwr run` packages your Python code into a FAB, uploads it to the SuperLink, which distributes it to every SuperNode. Change code and re-run -- no Docker rebuild needed.
 
 **Local simulation** (no cluster needed): `flwr run . local-sim`
+
+### Bring Your Own Data
+
+The demos auto-download CIFAR-10 from HuggingFace at runtime -- convenient for testing, but not how you'd run production FL.
+
+**For production**, pre-provision each SuperNode with its own data partition (this is the whole point of FL -- different data stays at each node):
+
+1. **Upload data** to each SuperNode VM at `/opt/flower/data/`:
+
+   ```bash
+   scp -r ./hospital_a_scans/ root@<supernode-1-ip>:/opt/flower/data/
+   scp -r ./hospital_b_scans/ root@<supernode-2-ip>:/opt/flower/data/
+   ```
+
+   Alternatives: NFS mount, or inject via OpenNebula's `FILES` CONTEXT mechanism.
+
+2. **Data is mounted read-only** into the container at `/app/data`. Modify your `client_app.py` to load from there instead of `flwr_datasets`:
+
+   ```python
+   # Instead of:
+   # fds = FederatedDataset(dataset="cifar10", partitioners={"train": NumPartitioner(2)})
+   # partition = fds.load_partition(partition_id)
+
+   # Load from the pre-provisioned path:
+   import os
+   from torchvision import datasets, transforms
+
+   data_dir = os.environ.get("FL_DATA_DIR", "/app/data")
+   train_dataset = datasets.ImageFolder(data_dir, transform=transforms.ToTensor())
+   ```
+
+3. **Each SuperNode gets different data.** That's the point -- the model learns across sites without the data ever moving.
+
+### Retrieving the Trained Model
+
+Training loss and accuracy are printed directly in the `flwr run` output. For persisting model checkpoints:
+
+1. Set `ONEAPP_FL_CHECKPOINT_ENABLED=YES` on the SuperLink VM (via CONTEXT or at deployment time).
+2. After training completes, checkpoints are saved at `/opt/flower/checkpoints/` on the SuperLink VM.
+3. Download the latest checkpoint:
+
+   ```bash
+   scp root@<superlink-ip>:/opt/flower/checkpoints/checkpoint_latest.npz ./
+   ```
 
 ### Step 4: Monitor with Dashboard
 
@@ -316,7 +367,7 @@ flower-opennebula/
     docker/                       # Docker Compose stacks for each role
     oneflow/flower-cluster.yaml   # OneFlow service template
     Makefile                      # Build driver
-  marketplace/                    # OpenNebula marketplace appliance YAML files
+  appliances/flower_service/      # OpenNebula community marketplace appliance files
   dashboard/
     app.py                        # FastAPI real-time monitoring dashboard
     static/index.html             # Tailwind CSS frontend with SVG topology

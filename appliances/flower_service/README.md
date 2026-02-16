@@ -19,7 +19,7 @@ The following roles are defined:
 
    This automatically imports the dependent VM templates and OS disk images.
 
-2. Adjust the service template to your needs. You can set the CPU, RAM, and disk size for each role's VM template in Sunstone or via the CLI.
+2. Adjust the service template to your needs. You can set the CPU, RAM, and disk size for each role's VM template in FireEdge or via the CLI.
 
 3. Configure networks for the service template by selecting an existing private network that all FL cluster VMs will share.
 
@@ -27,9 +27,9 @@ The following roles are defined:
 
    | Parameter | Description | Default |
    |-----------|-------------|---------|
-   | `ONEAPP_FL_ML_FRAMEWORK` | ML framework: `pytorch`, `tensorflow`, `sklearn` | `pytorch` |
+   | `ONEAPP_FL_FRAMEWORK` | ML framework: `pytorch`, `tensorflow`, `sklearn` | `pytorch` |
    | `ONEAPP_FL_NUM_ROUNDS` | Number of federated training rounds | `3` |
-   | `ONEAPP_FL_AGG_STRATEGY` | Aggregation strategy: `FedAvg`, `FedProx`, `FedAdam` | `FedAvg` |
+   | `ONEAPP_FL_STRATEGY` | Aggregation strategy: `FedAvg`, `FedProx`, `FedAdam`, `Krum`, `Bulyan`, `FedTrimmedAvg` | `FedAvg` |
    | `ONEAPP_FL_MIN_AVAILABLE_CLIENTS` | Minimum SuperNodes required to start a round | `2` |
    | `ONEAPP_FL_TLS_ENABLED` | Encrypt SuperLink-SuperNode communication | `NO` |
    | `ONEAPP_FL_GPU_ENABLED` | Enable GPU passthrough for training | `NO` |
@@ -40,13 +40,24 @@ The following roles are defined:
    $ oneflow-template instantiate 'Service Flower FL'
    ```
 
-6. The SuperLink deploys first and reports READY via OneGate. SuperNodes then auto-deploy, discover the SuperLink endpoint, and begin training.
+6. The SuperLink deploys first and reports READY via OneGate. SuperNodes then auto-deploy, discover the SuperLink endpoint, and connect.
+
+## After Deployment
+
+Once the service is RUNNING, the cluster is idle and waiting for a Flower Application Bundle (FAB). You push training code from your local machine using `flwr run`, and the SuperLink distributes it to all SuperNodes. See the [main project README](../../README.md#step-3-run-federated-training) for a full walkthrough of running your first training, using custom datasets, and retrieving trained models.
 
 ## Requirements
 
 * OpenNebula version: >= 6.8
 * [OneFlow](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/overview.html) and [OneGate](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/onegate_usage.html) for multi-VM orchestration and service discovery.
 
-## Logo
+## Components
 
-> **TODO**: Add `flower.png` (512x512 PNG) to the marketplace `logos/` directory. The YAML files reference `logo: flower.png`.
+| Component | Version |
+|-----------|---------|
+| Flower    | 1.25.0  |
+| PyTorch   | 2.6.0   |
+| TensorFlow | 2.18.1 |
+| scikit-learn | 1.4+ |
+| Ubuntu    | 24.04 LTS |
+| Docker CE | 27+    |

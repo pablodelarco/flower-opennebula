@@ -21,9 +21,9 @@ template_body:
   # These 5 fields appear on the main instantiation form.
   # Every other setting uses sensible defaults inside the appliance.
   user_inputs:
-    ONEAPP_FL_ML_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn|pytorch'
+    ONEAPP_FL_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn|pytorch'
     ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
-    ONEAPP_FL_AGG_STRATEGY: 'O|list|Model aggregation strategy|FedAvg,FedProx,FedAdam|FedAvg'
+    ONEAPP_FL_STRATEGY: 'O|list|Model aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg'
     ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum SuperNodes required to start training||2'
     ONEAPP_FL_TLS_ENABLED: 'O|boolean|Encrypt communication between SuperLink and SuperNodes||NO'
     ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU acceleration for model training||NO'
@@ -38,14 +38,15 @@ template_body:
       min_vms: 1
       max_vms: 1
       cooldown: 60
-      vm_template: 5
+      # vm_template: Replace with your actual SuperLink VM template ID
+      vm_template: 0
       parents: []
 
       vm_template_contents: |
         NIC = [ NETWORK_ID = "$Private" ]
-        ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK"
+        ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
         ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS"
-        ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY"
+        ONEAPP_FL_STRATEGY = "$ONEAPP_FL_STRATEGY"
         ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
         ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
 
@@ -55,15 +56,16 @@ template_body:
       min_vms: 2
       max_vms: 10
       cooldown: 30
-      vm_template: 6
+      # vm_template: Replace with your actual SuperNode VM template ID
+      vm_template: 0
       parents:
         - 'superlink'
 
       vm_template_contents: |
         NIC = [ NETWORK_ID = "$Private" ]
-        ONEAPP_FL_ML_FRAMEWORK = "$ONEAPP_FL_ML_FRAMEWORK"
+        ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
         ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS"
-        ONEAPP_FL_AGG_STRATEGY = "$ONEAPP_FL_AGG_STRATEGY"
+        ONEAPP_FL_STRATEGY = "$ONEAPP_FL_STRATEGY"
         ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
         ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
         ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED"
