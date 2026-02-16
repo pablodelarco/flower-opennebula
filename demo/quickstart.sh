@@ -463,12 +463,6 @@ setup_venv() {
 configure_federation() {
     stage 5 "Configure federation"
 
-    local toml="$DEMO_DIR/pyproject.toml"
-
-    if [[ ! -f "$toml" ]]; then
-        die "pyproject.toml not found in $DEMO_DIR"
-    fi
-
     if $SKIP_CLUSTER; then
         info "Skipping federation config (--skip-cluster)"
         return
@@ -478,21 +472,46 @@ configure_federation() {
     local sl_port="${SUPERLINK##*:}"
     local address="${sl_host}:${sl_port}"
 
-    info "Patching SuperLink address in pyproject.toml..."
+    # Flower 1.25+ stores connection config in ~/.flwr/config.toml
+    local flwr_config="$HOME/.flwr/config.toml"
 
-    if grep -q 'address = ".*:'"$SUPERLINK_PORT"'"' "$toml"; then
-        sed -i "s|address = \".*:${SUPERLINK_PORT}\"|address = \"${address}\"|" "$toml"
-        success "Updated address → $address"
-    elif grep -q '\[tool\.flwr\.federations\.opennebula\]' "$toml"; then
-        sed -i "/\[tool\.flwr\.federations\.opennebula\]/a address = \"${address}\"" "$toml"
-        success "Added address = \"$address\""
+    if [[ -f "$flwr_config" ]]; then
+        info "Patching SuperLink address in $flwr_config..."
+
+        if grep -q '\[superlink\.opennebula\]' "$flwr_config"; then
+            # Replace existing address under [superlink.opennebula]
+            sed -i '/\[superlink\.opennebula\]/,/^\[/{s|address = ".*"|address = "'"$address"'"|;}' "$flwr_config"
+            success "Updated address → $address"
+        else
+            # Add new [superlink.opennebula] section
+            printf '\n[superlink.opennebula]\naddress = "%s"\ninsecure = true\n' "$address" >> "$flwr_config"
+            success "Added [superlink.opennebula] → $address"
+        fi
+
+        # Ensure opennebula is the default federation
+        if grep -q '^default = ' "$flwr_config"; then
+            sed -i 's|^default = ".*"|default = "opennebula"|' "$flwr_config"
+        fi
     else
-        warn "Could not find [tool.flwr.federations.opennebula] in pyproject.toml"
-        hint "Add manually: address = \"$address\" under [tool.flwr.federations.opennebula]"
+        # First run — create the config file
+        info "Creating $flwr_config..."
+        mkdir -p "$(dirname "$flwr_config")"
+        cat > "$flwr_config" <<TOML
+[superlink]
+default = "opennebula"
+
+[superlink.opennebula]
+address = "$address"
+insecure = true
+
+[superlink.local-sim]
+options.num-supernodes = 2
+TOML
+        success "Created Flower config with address → $address"
     fi
 
     info "Federation config:"
-    sed -n '/\[tool\.flwr\.federations\.opennebula\]/,/^\[/p' "$toml" | head -10
+    grep -A3 '\[superlink\.opennebula\]' "$flwr_config" | head -5
 }
 
 # ── Stage 6: Optional local simulation ──────────────────────────────────────
@@ -551,7 +570,7 @@ run_on_cluster() {
         hint "1. Check SuperLink is reachable: nc -z ${SUPERLINK%%:*} ${SUPERLINK##*:}"
         hint "2. Check containers: ssh root@${SUPERLINK%%:*} docker ps"
         hint "3. Check SuperLink logs: ssh root@${SUPERLINK%%:*} docker logs flower-superlink"
-        hint "4. Verify address in pyproject.toml: grep address $DEMO_DIR/pyproject.toml"
+        hint "4. Verify address: grep -A2 'superlink.opennebula' ~/.flwr/config.toml"
         exit 1
     fi
 

@@ -1,6 +1,7 @@
 .venv/
+.flwr/
 __pycache__/
 *.egg-info/
 dist/
 build/
-.flwr/
+data/
