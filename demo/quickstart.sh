@@ -11,11 +11,9 @@ set -euo pipefail
 
 # ── Constants ────────────────────────────────────────────────────────────────
 SUPERLINK_PORT=9093
-ONEFLOW_STATE_RUNNING=2
-ONEFLOW_STATE_DEPLOYING=1
 CONNECTIVITY_TIMEOUT=5
 DEPLOY_WAIT_INTERVAL=10
-DEPLOY_WAIT_MAX=120
+DEPLOY_WAIT_MAX=180
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -43,9 +41,8 @@ warn()    { echo -e "${YELLOW}⚠${RESET} $*" >&2; }
 error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 die()     { error "$@"; exit 1; }
 stage()   { echo; echo -e "${BOLD}── Stage $1: $2 ──${RESET}"; }
+hint()    { echo -e "  ${DIM}$*${RESET}"; }
 
-# Ask a yes/no question. Returns 0 for yes, 1 for no.
-# In --auto mode, always returns 0 (yes).
 prompt_yn() {
     local prompt="$1" default="${2:-y}"
     if $AUTO; then return 0; fi
@@ -59,8 +56,6 @@ prompt_yn() {
     fi
 }
 
-# Ask user to pick from a list. Sets REPLY to the chosen value.
-# In --auto mode, picks the first option.
 prompt_choice() {
     local prompt="$1"; shift
     local options=("$@")
@@ -138,17 +133,22 @@ check_prerequisites() {
         pymajor="${pyver%%.*}"
         pyminor="${pyver#*.}"
         if (( pymajor < 3 || (pymajor == 3 && pyminor < 11) )); then
-            die "Python 3.11+ required (found $pyver)"
+            die "Python 3.11+ required (found $pyver). Install it with:
+  sudo apt install python3.11   # or
+  pyenv install 3.11"
         fi
         success "Python $pyver"
     else
-        die "python3 not found — install Python 3.11+"
+        die "python3 not found. Install it with:
+  sudo apt install python3"
     fi
 
     # jq
     if command -v jq &>/dev/null; then
         success "jq $(jq --version 2>/dev/null || echo 'available')"
     else
+        warn "jq not found. Install it with:"
+        hint "sudo apt install jq"
         missing+=(jq)
     fi
 
@@ -157,9 +157,18 @@ check_prerequisites() {
         if command -v oneflow &>/dev/null; then
             success "oneflow CLI"
         else
-            if [[ -z "$SERVICE_ID" ]]; then
-                warn "oneflow CLI not found — cluster auto-discovery unavailable"
-                warn "Use --superlink IP:PORT or --skip-cluster to continue"
+            warn "oneflow CLI not found — cluster auto-discovery unavailable."
+            echo
+            hint "You can still run training by providing the SuperLink address directly:"
+            hint "  bash demo/quickstart.sh --superlink <SUPERLINK_IP>:9093"
+            echo
+            hint "Or run a local simulation without any cluster:"
+            hint "  bash demo/quickstart.sh --skip-cluster"
+            echo
+            if ! $AUTO; then
+                prompt_yn "Continue without cluster discovery?" "n" || exit 1
+                SKIP_CLUSTER=true
+            else
                 missing+=(oneflow)
             fi
         fi
@@ -202,6 +211,14 @@ discover_cluster() {
         return
     fi
 
+    # If user provided --service-id, use it directly
+    if [[ -n "$SERVICE_ID" ]]; then
+        info "Using provided service ID: $SERVICE_ID"
+        wait_for_service_running "$SERVICE_ID"
+        extract_superlink_ip "$SERVICE_ID"
+        return
+    fi
+
     # Discover via oneflow
     discover_via_oneflow
 }
@@ -213,61 +230,121 @@ discover_via_oneflow() {
     services_json="$(oneflow list --json 2>/dev/null)" \
         || die "Failed to query OneFlow. Is the OpenNebula daemon running?"
 
-    # Find services with "Flower" or "flower" in the name
+    # oneflow list --json returns a flat array on OpenNebula 7.0+
     local service_ids
     mapfile -t service_ids < <(
         echo "$services_json" \
-        | jq -r '.DOCUMENT_POOL.DOCUMENT[]
-                  | select(.TEMPLATE.BODY.name | test("[Ff]lower"))
-                  | .ID' 2>/dev/null
+        | jq -r '.[] | select(.TEMPLATE.BODY.name | test("[Ff]lower"; "i"))
+                 | select(.TEMPLATE.BODY.state == 2)
+                 | .ID' 2>/dev/null
     )
 
-    if [[ ${#service_ids[@]} -eq 0 ]]; then
-        die "No Flower FL services found. Deploy a Flower service first, or use --superlink."
+    # Also check for non-running services if none found
+    if [[ ${#service_ids[@]} -eq 0 || ( ${#service_ids[@]} -eq 1 && -z "${service_ids[0]}" ) ]]; then
+        # Check if there are any Flower services at all (any state)
+        local all_flower_ids
+        mapfile -t all_flower_ids < <(
+            echo "$services_json" \
+            | jq -r '.[] | select(.TEMPLATE.BODY.name | test("[Ff]lower"; "i")) | .ID' 2>/dev/null
+        )
+
+        if [[ ${#all_flower_ids[@]} -eq 0 || ( ${#all_flower_ids[@]} -eq 1 && -z "${all_flower_ids[0]}" ) ]]; then
+            error "No Flower FL services found."
+            echo
+            echo -e "${BOLD}To deploy a Flower cluster:${RESET}"
+            echo
+            echo "  1. List available service templates:"
+            hint "oneflow-template list"
+            echo
+            echo "  2. Instantiate the Flower service template:"
+            hint "oneflow-template instantiate <TEMPLATE_ID>"
+            echo
+            echo "  3. Wait for RUNNING state, then re-run this script."
+            echo
+            echo -e "${BOLD}Or skip cluster discovery:${RESET}"
+            hint "bash demo/quickstart.sh --superlink <IP>:9093    # known SuperLink"
+            hint "bash demo/quickstart.sh --skip-cluster           # local sim only"
+            exit 1
+        else
+            # Services exist but none are RUNNING
+            local states
+            states="$(echo "$services_json" \
+                | jq -r '.[] | select(.TEMPLATE.BODY.name | test("[Ff]lower"; "i"))
+                         | "  ID \(.ID): state \(.TEMPLATE.BODY.state) (\(.TEMPLATE.BODY.log[-1].message // "unknown"))"' 2>/dev/null)"
+            warn "Found Flower services but none are in RUNNING state (2):"
+            echo "$states"
+            echo
+            hint "Wait for deployment to complete, or check with: oneflow show <ID>"
+            exit 1
+        fi
     fi
 
     # Pick a service
     local sid
     if [[ ${#service_ids[@]} -eq 1 ]]; then
         sid="${service_ids[0]}"
-        info "Found Flower service: ID $sid"
+        local sname
+        sname="$(echo "$services_json" | jq -r ".[] | select(.ID == \"$sid\") | .TEMPLATE.BODY.name")"
+        success "Found: $sname (ID $sid)"
     else
-        # Build display names
         local display_names=()
         for id in "${service_ids[@]}"; do
             local name
             name="$(echo "$services_json" \
-                | jq -r ".DOCUMENT_POOL.DOCUMENT[] | select(.ID == \"$id\") | .TEMPLATE.BODY.name")"
+                | jq -r ".[] | select(.ID == \"$id\") | .TEMPLATE.BODY.name")"
             display_names+=("$id — $name")
         done
         prompt_choice "Multiple Flower services found. Which one?" "${display_names[@]}"
         sid="${REPLY%% *}"
     fi
 
-    # Allow --service-id override
-    [[ -n "$SERVICE_ID" ]] && sid="$SERVICE_ID"
-
     info "Using service ID: $sid"
+    extract_superlink_ip "$sid"
+}
 
-    # Wait for RUNNING state
-    wait_for_service_running "$sid"
+extract_superlink_ip() {
+    local sid="$1"
 
-    # Extract SuperLink IP
     local show_json
-    show_json="$(oneflow show "$sid" --json)"
+    show_json="$(oneflow show "$sid" --json 2>/dev/null)" \
+        || die "Failed to query service $sid. Check with: oneflow show $sid"
 
-    local superlink_ip
-    superlink_ip="$(echo "$show_json" \
+    # Get the SuperLink VM ID from the service
+    local superlink_vm_id
+    superlink_vm_id="$(echo "$show_json" \
         | jq -r '.DOCUMENT.TEMPLATE.BODY.roles[]
                   | select(.name == "superlink")
-                  | .nodes[0].vm_info.VM.TEMPLATE.NIC[0].IP' 2>/dev/null)"
+                  | .nodes[0].deploy_id' 2>/dev/null)"
+
+    if [[ -z "$superlink_vm_id" || "$superlink_vm_id" == "null" ]]; then
+        error "Could not find SuperLink VM in service $sid."
+        hint "Check service status: oneflow show $sid"
+        exit 1
+    fi
+
+    info "SuperLink VM ID: $superlink_vm_id"
+
+    # Get the IP from the VM directly
+    local superlink_ip
+    superlink_ip="$(onevm show "$superlink_vm_id" --json 2>/dev/null \
+        | jq -r '.VM.TEMPLATE.NIC[0].IP // .VM.TEMPLATE.NIC.IP' 2>/dev/null)"
 
     if [[ -z "$superlink_ip" || "$superlink_ip" == "null" ]]; then
-        die "Could not extract SuperLink IP from service $sid"
+        error "Could not get IP for SuperLink VM $superlink_vm_id."
+        hint "Check VM: onevm show $superlink_vm_id"
+        exit 1
     fi
 
     SUPERLINK="${superlink_ip}:${SUPERLINK_PORT}"
     success "SuperLink: $SUPERLINK"
+
+    # Show cluster overview
+    local supernode_count
+    supernode_count="$(echo "$show_json" \
+        | jq -r '.DOCUMENT.TEMPLATE.BODY.roles[]
+                  | select(.name == "supernode")
+                  | .nodes | length' 2>/dev/null)"
+    info "Cluster: 1 SuperLink + ${supernode_count:-?} SuperNodes"
 
     check_superlink_reachable "$superlink_ip" "$SUPERLINK_PORT"
 }
@@ -281,20 +358,26 @@ wait_for_service_running() {
         state="$(oneflow show "$sid" --json \
             | jq -r '.DOCUMENT.TEMPLATE.BODY.state' 2>/dev/null)"
 
-        if [[ "$state" == "$ONEFLOW_STATE_RUNNING" ]]; then
+        if [[ "$state" == "2" ]]; then
             success "Service $sid is RUNNING"
             return
         fi
 
-        if [[ "$state" == "$ONEFLOW_STATE_DEPLOYING" ]]; then
+        # States that mean "still deploying" (1=DEPLOYING, 11=DEPLOYING_NETS, etc.)
+        if [[ "$state" =~ ^(1|11)$ ]]; then
             if (( elapsed >= DEPLOY_WAIT_MAX )); then
-                die "Service $sid still deploying after ${DEPLOY_WAIT_MAX}s — check OneFlow logs"
+                error "Service $sid still deploying after ${DEPLOY_WAIT_MAX}s."
+                hint "Check status:  oneflow show $sid"
+                hint "Check logs:    journalctl -u opennebula-flow --since '5 min ago'"
+                exit 1
             fi
             info "Service is deploying... waiting (${elapsed}s / ${DEPLOY_WAIT_MAX}s)"
             sleep "$DEPLOY_WAIT_INTERVAL"
             (( elapsed += DEPLOY_WAIT_INTERVAL ))
         else
-            die "Service $sid is in unexpected state: $state (expected $ONEFLOW_STATE_RUNNING)"
+            error "Service $sid is in state $state (expected 2=RUNNING)."
+            hint "Check status: oneflow show $sid"
+            exit 1
         fi
     done
 }
@@ -311,7 +394,9 @@ check_superlink_reachable() {
     if nc -z -w "$CONNECTIVITY_TIMEOUT" "$host" "$port" 2>/dev/null; then
         success "SuperLink is reachable"
     else
-        warn "Cannot reach ${host}:${port} — the cluster may still be starting, or a firewall is blocking access"
+        warn "Cannot reach ${host}:${port}"
+        hint "The cluster may still be starting containers (wait ~30s and retry)."
+        hint "Or check: ssh root@${host} docker ps"
         if ! $AUTO; then
             prompt_yn "Continue anyway?" "y" || exit 1
         fi
@@ -322,7 +407,6 @@ check_superlink_reachable() {
 select_framework() {
     stage 3 "Framework selection"
 
-    # Discover available demos by looking for directories with pyproject.toml
     local demos=()
     local demo_base="$SCRIPT_DIR"
 
@@ -331,13 +415,16 @@ select_framework() {
     done
 
     if [[ ${#demos[@]} -eq 0 ]]; then
-        die "No demo projects found in $demo_base/. Expected directories with pyproject.toml (e.g., pytorch/, tensorflow/, sklearn/)."
+        error "No demo projects found in $demo_base/."
+        hint "Expected directories with pyproject.toml (e.g., pytorch/, tensorflow/, sklearn/)."
+        hint "Make sure you cloned the full repo: git clone https://github.com/pablodelarco/flower-opennebula"
+        exit 1
     fi
 
     prompt_choice "Which demo would you like to run?" "${demos[@]}"
     DEMO_DIR="$demo_base/$REPLY"
 
-    success "Selected: $REPLY ($DEMO_DIR)"
+    success "Selected: $REPLY"
 }
 
 # ── Stage 4: Python environment setup ────────────────────────────────────────
@@ -347,7 +434,7 @@ setup_venv() {
     local venv_dir="$DEMO_DIR/.venv"
 
     if [[ -d "$venv_dir" ]]; then
-        info "Existing venv found at $venv_dir"
+        info "Existing venv found"
         if prompt_yn "Reuse existing venv?" "y"; then
             source "$venv_dir/bin/activate"
             success "Activated existing venv"
@@ -360,10 +447,14 @@ setup_venv() {
     source "$venv_dir/bin/activate"
     success "Created and activated venv"
 
-    info "Installing dependencies (this may take a minute)..."
-    pip install --upgrade pip --quiet
-    pip install -e "$DEMO_DIR" --quiet \
-        || die "pip install failed — check $DEMO_DIR/pyproject.toml"
+    info "Installing dependencies (this may take a few minutes)..."
+    pip install --upgrade pip --quiet 2>&1 | tail -1 || true
+    if ! pip install -e "$DEMO_DIR" --quiet 2>&1; then
+        error "pip install failed."
+        hint "Check $DEMO_DIR/pyproject.toml for dependency issues."
+        hint "Try manually: cd $DEMO_DIR && pip install -e ."
+        exit 1
+    fi
 
     success "Dependencies installed"
 }
@@ -389,20 +480,17 @@ configure_federation() {
 
     info "Patching SuperLink address in pyproject.toml..."
 
-    # Patch the address field under the opennebula federation
     if grep -q 'address = ".*:'"$SUPERLINK_PORT"'"' "$toml"; then
         sed -i "s|address = \".*:${SUPERLINK_PORT}\"|address = \"${address}\"|" "$toml"
         success "Updated address → $address"
     elif grep -q '\[tool\.flwr\.federations\.opennebula\]' "$toml"; then
-        # Section exists but no address line — add it after the section header
         sed -i "/\[tool\.flwr\.federations\.opennebula\]/a address = \"${address}\"" "$toml"
-        success "Added address = \"$address\" to [tool.flwr.federations.opennebula]"
+        success "Added address = \"$address\""
     else
         warn "Could not find [tool.flwr.federations.opennebula] in pyproject.toml"
-        warn "You may need to set the SuperLink address manually: $address"
+        hint "Add manually: address = \"$address\" under [tool.flwr.federations.opennebula]"
     fi
 
-    # Show the relevant section for confirmation
     info "Federation config:"
     sed -n '/\[tool\.flwr\.federations\.opennebula\]/,/^\[/p' "$toml" | head -10
 }
@@ -416,18 +504,19 @@ run_local_sim() {
         return
     fi
 
-    info "Running local simulation..."
-    echo -e "${DIM}"
+    info "Running: flwr run . local-sim"
+    echo
 
     (cd "$DEMO_DIR" && flwr run . local-sim)
     local rc=$?
 
-    echo -e "${RESET}"
-
+    echo
     if [[ $rc -ne 0 ]]; then
-        error "Local simulation failed (exit code $rc)"
+        error "Local simulation failed (exit code $rc)."
+        hint "Check the output above for errors."
+        hint "Common fixes: pip install -e . (missing deps), check client_app.py imports."
         if $SKIP_CLUSTER; then
-            die "Fix the errors above and try again"
+            exit 1
         fi
         if ! prompt_yn "Continue to cluster run anyway?" "n"; then
             exit 1
@@ -448,6 +537,7 @@ run_on_cluster() {
 
     info "Starting federated training on the cluster..."
     info "SuperLink: $SUPERLINK"
+    info "Running: flwr run . opennebula --stream"
     echo
 
     (cd "$DEMO_DIR" && flwr run . opennebula --stream)
@@ -455,7 +545,14 @@ run_on_cluster() {
 
     echo
     if [[ $rc -ne 0 ]]; then
-        die "Training run failed (exit code $rc). Check the output above for errors."
+        error "Training run failed (exit code $rc)."
+        echo
+        echo -e "${BOLD}Troubleshooting:${RESET}"
+        hint "1. Check SuperLink is reachable: nc -z ${SUPERLINK%%:*} ${SUPERLINK##*:}"
+        hint "2. Check containers: ssh root@${SUPERLINK%%:*} docker ps"
+        hint "3. Check SuperLink logs: ssh root@${SUPERLINK%%:*} docker logs flower-superlink"
+        hint "4. Verify address in pyproject.toml: grep address $DEMO_DIR/pyproject.toml"
+        exit 1
     fi
 
     success "Training run completed"
@@ -470,8 +567,11 @@ show_next_steps() {
         success "Local simulation completed successfully!"
         echo
         echo -e "${BOLD}Next steps:${RESET}"
-        echo "  • Deploy a Flower FL cluster via OneFlow"
-        echo "  • Re-run this script without --skip-cluster to train on the cluster"
+        echo "  1. Deploy a Flower FL cluster:"
+        hint "oneflow-template list                         # find the template"
+        hint "oneflow-template instantiate <TEMPLATE_ID>    # deploy"
+        echo "  2. Re-run this script to train on the cluster:"
+        hint "bash demo/quickstart.sh"
     else
         success "Federated training completed!"
         echo
@@ -480,11 +580,13 @@ show_next_steps() {
         echo "  Demo:      $(basename "$DEMO_DIR")"
         echo
         echo -e "${BOLD}Next steps:${RESET}"
-        echo "  • Customize your strategy: edit $(basename "$DEMO_DIR")/pyproject.toml"
-        echo "  • Use your own data: replace the dataset loader in the client code"
-        echo "  • Adjust rounds: flwr run . opennebula --run-config \"num-server-rounds=10\""
-        echo "  • Try a different strategy: --run-config \"strategy=FedProx\""
-        echo "  • Monitor training: check SuperLink logs on the cluster"
+        echo "  Change rounds or strategy:"
+        hint "flwr run . opennebula --run-config \"num-server-rounds=10\""
+        hint "flwr run . opennebula --run-config \"strategy=FedProx\""
+        echo "  Use your own data:"
+        hint "See the 'Bring your own data' section in README.md"
+        echo "  Scale the cluster:"
+        hint "oneflow scale <service-id> supernode 4"
     fi
     echo
 }
