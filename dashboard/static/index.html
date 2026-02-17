@@ -270,21 +270,39 @@
           <span id="kpi-round" class="text-sm font-semibold mono">--</span>
         </div>
       </div>
-      <button id="cp-new-btn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style="background:var(--accent)">
-        New Training
-      </button>
+      <div class="flex items-center gap-3">
+        <!-- Data upload inline -->
+        <div id="cp-drop-zone" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dashed border-[var(--border)] cursor-pointer hover:border-[var(--accent)] transition-colors">
+          <svg class="w-3.5 h-3.5 text-[var(--text-tertiary)] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span class="text-[11px] text-[var(--text-secondary)]">Upload Data</span>
+          <input id="cp-file-input" type="file" class="hidden">
+        </div>
+        <div id="cp-upload-progress" class="hidden flex items-center gap-2">
+          <span id="cp-upload-filename" class="text-[10px] text-[var(--text-secondary)] truncate max-w-[80px]"></span>
+          <div class="w-16 h-1 rounded-full bg-[var(--progress-track)] overflow-hidden">
+            <div id="cp-upload-bar" class="h-full rounded-full bg-[var(--accent)] transition-all duration-300" style="width:0%"></div>
+          </div>
+          <span id="cp-upload-pct" class="text-[10px] mono text-[var(--text-tertiary)]">0%</span>
+        </div>
+        <div id="cp-upload-status" class="hidden"></div>
+        <button id="cp-new-btn" class="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style="background:var(--accent)">
+          New Training
+        </button>
+      </div>
     </section>
 
     <!-- Control Panel + Topology side by side -->
     <section class="grid grid-cols-5 gap-6">
 
-    <!-- Left: Control Panel (3 cols) -->
-    <div class="col-span-3 space-y-4">
+    <!-- Left: Control Panel (2 cols) -->
+    <div class="col-span-2 space-y-4">
       <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Control Panel</h2>
-      <div class="grid grid-cols-3 gap-4">
+      <div>
 
-        <!-- Column 1-2: Training Config -->
-        <div class="col-span-2 card p-5 space-y-3">
+        <!-- Training Config -->
+        <div class="card p-5 space-y-3">
           <p class="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Training Config</p>
 
           <div>
@@ -353,43 +371,11 @@
           </div>
         </div>
 
-        <!-- Column 3: Data Upload (compact) -->
-        <div class="card p-4 flex flex-col justify-between">
-          <p class="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-2">Custom Data</p>
-
-          <div id="cp-drop-zone" class="flex items-center gap-3 p-3 rounded-lg border border-dashed border-[var(--border)] cursor-pointer hover:border-[var(--accent)] transition-colors">
-            <svg class="w-4 h-4 text-[var(--text-tertiary)] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            <div>
-              <p class="text-xs text-[var(--text-secondary)]">Drop file or click to browse</p>
-              <p class="text-[10px] text-[var(--text-tertiary)]">Max 500 MB</p>
-            </div>
-            <input id="cp-file-input" type="file" class="hidden">
-          </div>
-
-          <div id="cp-upload-progress" class="hidden mt-2">
-            <div class="flex items-center justify-between mb-1">
-              <span id="cp-upload-filename" class="text-[10px] text-[var(--text-secondary)] truncate"></span>
-              <span id="cp-upload-pct" class="text-[10px] mono text-[var(--text-tertiary)]">0%</span>
-            </div>
-            <div class="h-1 rounded-full bg-[var(--progress-track)] overflow-hidden">
-              <div id="cp-upload-bar" class="h-full rounded-full bg-[var(--accent)] transition-all duration-300" style="width:0%"></div>
-            </div>
-          </div>
-
-          <div id="cp-upload-status" class="hidden mt-2 space-y-1"></div>
-
-          <p class="text-[10px] text-[var(--text-tertiary)] mt-2">Default: CIFAR-10 auto-downloads</p>
-        </div>
-
-      </div>
-
       </div>
     </div>
 
-    <!-- Right: Topology (2 cols) -->
-    <div class="col-span-2">
+    <!-- Right: Topology (3 cols) -->
+    <div class="col-span-3">
       <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-4">Network Topology</h2>
       <div class="card p-4">
         <svg id="topology-canvas" viewBox="0 0 800 320" xmlns="http://www.w3.org/2000/svg">
