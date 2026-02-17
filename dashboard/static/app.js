@@ -449,7 +449,7 @@ async function loadFrameworks() {
     if (d['num-server-rounds']) document.getElementById('cp-rounds').value = d['num-server-rounds'];
     if (d['local-epochs']) document.getElementById('cp-epochs').value = d['local-epochs'];
     if (d['batch-size']) document.getElementById('cp-batch').value = d['batch-size'];
-    if (d['min-fit-clients']) document.getElementById('cp-min-clients').value = d['min-fit-clients'];
+    // min-fit-clients is determined by the number of OpenNebula worker nodes
 
   } catch (err) {
     console.error('loadFrameworks failed:', err);
@@ -489,8 +489,8 @@ async function startTraining() {
     strategy,
     local_epochs: parseInt(document.getElementById('cp-epochs').value) || 1,
     batch_size: parseInt(document.getElementById('cp-batch').value) || 32,
-    min_fit_clients: parseInt(document.getElementById('cp-min-clients').value) || 2,
-    min_available_clients: parseInt(document.getElementById('cp-min-clients').value) || 2,
+    min_fit_clients: 2,
+    min_available_clients: 2,
     extra_config,
   };
 
