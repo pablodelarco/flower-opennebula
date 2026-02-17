@@ -636,9 +636,18 @@ select_data() {
 run_local_sim() {
     stage 7 "Local simulation"
 
-    if ! prompt_yn "Run a local simulation first? (recommended to verify setup)" "y"; then
-        info "Skipping local simulation"
-        return
+    if ! $SKIP_CLUSTER; then
+        # Cluster is available — skip local sim by default, go straight to training
+        if ! prompt_yn "Run a local simulation first? (not needed with a cluster)" "n"; then
+            info "Skipping local simulation"
+            return
+        fi
+    else
+        # No cluster — local sim is the main event
+        if ! prompt_yn "Run a local simulation?" "y"; then
+            info "Skipping local simulation"
+            return
+        fi
     fi
 
     info "Running: flwr run . local-sim"
