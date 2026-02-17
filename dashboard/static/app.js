@@ -450,7 +450,9 @@ async function loadFrameworks() {
 
     checkFrameworkWarning();
   } catch (err) {
-    // Frameworks endpoint not available yet — keep defaults
+    console.error('loadFrameworks failed:', err);
+    document.getElementById('cp-framework').innerHTML =
+      '<option value="pytorch">pytorch</option><option value="tensorflow">tensorflow</option><option value="sklearn">sklearn</option>';
   }
 }
 
