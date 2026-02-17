@@ -188,6 +188,11 @@ def _switch_supernode_framework(
             f"--max-retries 0 --max-wait-time 0"
         )
         rc, out = _ssh(node.ip, docker_run, timeout=30)
+        if rc == 0:
+            # Install runtime deps missing from base images
+            _ssh(node.ip,
+                 f"docker exec {SUPERNODE_CONTAINER} pip install -q 'flwr-datasets[vision]'",
+                 timeout=120)
         results.append({
             "node": node.name, "ip": node.ip,
             "switched": True, "success": rc == 0,

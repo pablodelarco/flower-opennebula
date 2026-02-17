@@ -328,7 +328,7 @@ function renderModelPanel(model) {
     ${rows.map(([k, v]) => `
       <div class="flex justify-between items-baseline">
         <span class="text-xs text-[var(--text-tertiary)]">${k}</span>
-        <span class="text-sm font-medium text-right max-w-[60%] truncate">${v}</span>
+        <span class="text-sm font-medium text-right max-w-[65%]">${v}</span>
       </div>`).join('')}
   </div>`;
 }
