@@ -51,14 +51,11 @@ def client_fn(context: Context):
     train_partition = fds.load_partition(partition_id, "train")
     test_partition = fds.load_split("test")
 
-    train_partition.set_format("numpy")
-    test_partition.set_format("numpy")
-
     # Flatten 32×32×3 images to 3072-dim vectors for MLP
-    x_train = train_partition["img"].reshape(-1, 3072).astype(np.float32) / 255.0
-    y_train = train_partition["label"]
-    x_test = test_partition["img"].reshape(-1, 3072).astype(np.float32) / 255.0
-    y_test = test_partition["label"]
+    x_train = np.array(train_partition["img"], dtype=np.float32).reshape(-1, 3072) / 255.0
+    y_train = np.array(train_partition["label"])
+    x_test = np.array(test_partition["img"], dtype=np.float32).reshape(-1, 3072) / 255.0
+    y_test = np.array(test_partition["label"])
 
     model = create_model()
     init_model(model, n_features=3072, n_classes=10)
