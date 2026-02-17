@@ -3,6 +3,7 @@
 import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import log_loss, accuracy_score
+from sklearn.preprocessing import LabelBinarizer
 
 
 def create_model() -> MLPClassifier:
@@ -56,6 +57,8 @@ def init_model(model: MLPClassifier, n_features: int, n_classes: int) -> None:
     model.n_layers_ = 3
     model.n_iter_ = 0
     model.out_activation_ = "softmax"
+    model._label_binarizer = LabelBinarizer()
+    model._label_binarizer.fit(np.arange(n_classes))
 
 
 def train(model: MLPClassifier, x: np.ndarray, y: np.ndarray) -> None:
