@@ -480,10 +480,13 @@ async def get_cluster_state():
         run_info = RunInfo()
     else:
         run_info = collect_training_logs(superlink_ip, framework)
-        # If training is active but SuperLink still shows old completed
-        # data (new run hasn't registered yet), show running state
-        if training_active and run_info.status in ("completed", "idle", ""):
-            run_info = RunInfo(status="running")
+        if training_active:
+            if run_info.status in ("completed", "idle", ""):
+                # SuperLink hasn't registered the new run yet — show running
+                run_info = RunInfo(status="running")
+            else:
+                # Preserve partial round data, force running status
+                run_info.status = "running"
     connected = collect_connected_nodes(superlink_ip)
 
     state = ClusterState(

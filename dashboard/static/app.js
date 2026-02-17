@@ -9,6 +9,8 @@ let sseSource = null;
 let trainingActive = false;
 let logAutoScroll = true;
 let statusPollTimer = null;
+let sseCurrentRound = 0;
+let sseConfiguredRounds = 0;
 
 // =========================================================================
 // Toast Notifications
@@ -540,6 +542,8 @@ async function startTraining() {
 
     showToast('Training started');
     startBtn.textContent = origText;
+    sseCurrentRound = 0;
+    sseConfiguredRounds = body.num_rounds;
     setTrainingActive(true);
     connectSSE();
     startStatusPolling();
@@ -594,6 +598,10 @@ async function newTraining() {
     renderTopology(prevData.nodes, prevData.connected_supernodes, 'idle');
   }
 
+  // Reset SSE round tracking
+  sseCurrentRound = 0;
+  sseConfiguredRounds = 0;
+
   // Re-enable form and hide New Training button
   const startBtn = document.getElementById('cp-start-btn');
   startBtn.disabled = false;
@@ -634,7 +642,24 @@ function connectSSE() {
   sseSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      appendLogLine(data.line || '');
+      const line = data.line || '';
+      appendLogLine(line);
+      // Parse round progress in real-time
+      const roundMatch = line.match(/\[ROUND (\d+)\]/);
+      if (roundMatch) {
+        sseCurrentRound = parseInt(roundMatch[1]);
+        const label = sseConfiguredRounds > 0
+          ? `${sseCurrentRound}/${sseConfiguredRounds}`
+          : `${sseCurrentRound}`;
+        document.getElementById('kpi-round').textContent = label;
+        document.getElementById('kpi-status').textContent = 'Training';
+        document.getElementById('kpi-status').style.color = 'var(--orange)';
+      }
+      // Parse configured rounds
+      const cfgMatch = line.match(/num_rounds=(\d+)/);
+      if (cfgMatch) {
+        sseConfiguredRounds = parseInt(cfgMatch[1]);
+      }
     } catch {
       appendLogLine(event.data);
     }
