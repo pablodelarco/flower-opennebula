@@ -471,17 +471,22 @@ async def start_training(req: TrainingRequest):
     if _active_training and _active_training.process.poll() is None:
         raise HTTPException(status_code=409, detail="Training already in progress")
 
-    # Build --run-config string
+    # Build --run-config string (string values must be double-quoted for flwr)
+    def _cfg(k, v):
+        if isinstance(v, str):
+            return f'{k}="{v}"'
+        return f"{k}={v}"
+
     config_parts = [
-        f"num-server-rounds={req.num_rounds}",
-        f"local-epochs={req.local_epochs}",
-        f"batch-size={req.batch_size}",
-        f"strategy={req.strategy}",
-        f"min-fit-clients={req.min_fit_clients}",
-        f"min-available-clients={req.min_available_clients}",
+        _cfg("num-server-rounds", req.num_rounds),
+        _cfg("local-epochs", req.local_epochs),
+        _cfg("batch-size", req.batch_size),
+        _cfg("strategy", req.strategy),
+        _cfg("min-fit-clients", req.min_fit_clients),
+        _cfg("min-available-clients", req.min_available_clients),
     ]
     for k, v in req.extra_config.items():
-        config_parts.append(f"{k}={v}")
+        config_parts.append(_cfg(k, v))
     run_config_str = " ".join(config_parts)
 
     cmd = [str(FLWR_BIN), "run", ".", "opennebula", "--run-config", run_config_str]

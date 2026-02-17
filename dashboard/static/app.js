@@ -4,6 +4,7 @@
 let lossChart = null;
 let prevData = null;
 let clusterFramework = '';
+const FW_LABELS = { pytorch: 'PyTorch', tensorflow: 'TensorFlow', sklearn: 'scikit-learn' };
 let sseSource = null;
 let trainingActive = false;
 let logAutoScroll = true;
@@ -432,7 +433,7 @@ async function loadFrameworks() {
     // Populate framework dropdown
     const fwSelect = document.getElementById('cp-framework');
     fwSelect.innerHTML = data.frameworks.map(fw =>
-      `<option value="${fw}"${fw === clusterFramework ? ' selected' : ''}>${fw}</option>`
+      `<option value="${fw}"${fw === clusterFramework ? ' selected' : ''}>${FW_LABELS[fw] || fw}</option>`
     ).join('');
 
     // Populate strategy dropdown
@@ -452,7 +453,7 @@ async function loadFrameworks() {
   } catch (err) {
     console.error('loadFrameworks failed:', err);
     document.getElementById('cp-framework').innerHTML =
-      '<option value="pytorch">pytorch</option><option value="tensorflow">tensorflow</option><option value="sklearn">sklearn</option>';
+      '<option value="pytorch">PyTorch</option><option value="tensorflow">TensorFlow</option><option value="sklearn">scikit-learn</option>';
   }
 }
 
@@ -460,6 +461,7 @@ function checkFrameworkWarning() {
   const selected = document.getElementById('cp-framework').value;
   const warning = document.getElementById('cp-fw-warning');
   if (clusterFramework && selected && selected !== clusterFramework) {
+    document.getElementById('cp-fw-warning-name').textContent = FW_LABELS[clusterFramework] || clusterFramework;
     warning.classList.remove('hidden');
   } else {
     warning.classList.add('hidden');
