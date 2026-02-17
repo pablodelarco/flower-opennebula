@@ -504,14 +504,28 @@ setup_venv() {
     source "$venv_dir/bin/activate"
     success "Created and activated venv"
 
-    info "Installing dependencies (this may take a few minutes)..."
+    # Show what will be installed
+    local deps
+    deps="$(sed -n '/^dependencies/,/^\]/{ /"/{ s/.*"\(.*\)".*/\1/; p; } }' "$DEMO_DIR/pyproject.toml" \
+        | paste -sd', ' 2>/dev/null)" || true
+    info "Installing: ${deps:-dependencies from pyproject.toml}"
+
     pip install --upgrade pip --quiet 2>&1 | tail -1 || true
-    if ! pip install -e "$DEMO_DIR" --quiet 2>&1; then
+    local pip_log
+    pip_log="$(mktemp)"
+    if pip install -e "$DEMO_DIR" 2>&1 | tee "$pip_log" | grep -E "^(Collecting|Installing|Successfully)" ; then
+        :  # progress shown
+    fi
+    if ! grep -q "^Successfully installed" "$pip_log"; then
+        echo
+        grep -E "^(ERROR|error:)" "$pip_log" || true
         error "pip install failed."
         hint "Check $DEMO_DIR/pyproject.toml for dependency issues."
         hint "Try manually: cd $DEMO_DIR && pip install -e ."
+        rm -f "$pip_log"
         exit 1
     fi
+    rm -f "$pip_log"
 
     success "Dependencies installed"
 }
