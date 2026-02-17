@@ -62,7 +62,7 @@ opennebula_template:
   user_inputs:
     oneapp_flower_version: "O|text|Flower Docker image version tag||1.25.0"
     oneapp_fl_framework: "O|list|ML framework for training|pytorch,tensorflow,sklearn|pytorch"
-    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||NO"
+    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||YES"
     oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
     oneapp_fl_log_format: "O|list|Log output format|text,json|text"
     oneapp_fl_node_config: "O|text|Space-separated key=value node config||"

@@ -75,7 +75,7 @@ opennebula_template:
     oneapp_fl_min_fit_clients: "O|number|Minimum clients for training round||2"
     oneapp_fl_min_evaluate_clients: "O|number|Minimum clients for evaluation||2"
     oneapp_fl_min_available_clients: "O|number|Minimum available clients to start round||2"
-    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||NO"
+    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||YES"
     oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
     oneapp_fl_log_format: "O|list|Log output format|text,json|text"
     oneapp_fl_proximal_mu: "O|number-float|FedProx proximal term mu||1.0"

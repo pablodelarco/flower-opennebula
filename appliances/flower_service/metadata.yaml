@@ -1,0 +1,46 @@
+---
+:app:
+  :name: flower_superlink # name used to make the app with the makefile
+  :type: service # there are service (complex apps) and distro (base apps)
+  :os:
+    :type: linux # linux, freebsd or windows
+    :base: ubuntu2404min # distro where the app runs on
+  :hypervisor: KVM
+  :context: # which context params are used to control the app
+    :prefixed: true # params are prefixed with ONEAPP_
+    :params:
+      :ONEAPP_FL_NUM_ROUNDS: '3'
+      :ONEAPP_FL_STRATEGY: 'FedAvg'
+      :ONEAPP_FL_MIN_FIT_CLIENTS: '2'
+      :ONEAPP_FL_MIN_AVAILABLE_CLIENTS: '2'
+      :ONEAPP_FL_TLS_ENABLED: 'NO'
+      :ONEAPP_FL_LOG_LEVEL: 'INFO'
+      :ONEAPP_FL_FRAMEWORK: 'pytorch'
+
+:one:
+  # reference template for running the virtual appliance.
+  # Must be diskless, with ssh access and accessible by the frontend
+  :template: # how the VM template is expected to be on OpenNebula
+    NAME: base
+    TEMPLATE:
+      ARCH: x86_64
+      CONTEXT:
+        NETWORK: 'YES'
+        SSH_PUBLIC_KEY: "$USER[SSH_PUBLIC_KEY]"
+      CPU: '2'
+      CPU_MODEL:
+        MODEL: host-passthrough
+      GRAPHICS:
+        LISTEN: 0.0.0.0
+        TYPE: vnc
+      MEMORY: '4096'
+      NIC:
+        NETWORK: service
+      NIC_DEFAULT:
+        MODEL: virtio
+  :datastore_name: default # target datastore to import the one-apps produced image
+  :timeout: '90' # timeout for XMLRPC calls
+
+:infra:
+  :disk_format: qcow2 # oneapps built image disk format
+  :apps_path: /var/tmp # directory where one-apps exports the appliances to
