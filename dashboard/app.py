@@ -683,14 +683,15 @@ async def stream_training_log():
 
         # --- Phase 1: stream flwr run process output ---
         seen = 0
-        submitted = False
+        submitted_run_id = ""
         while _active_training:
             lines = list(_active_training.output_lines)
             if len(lines) > seen:
                 for line in lines[seen:]:
                     yield f"data: {json.dumps({'line': line})}\n\n"
-                    if "Successfully started run" in line:
-                        submitted = True
+                    m = re.search(r"Successfully started run (\d+)", line)
+                    if m:
+                        submitted_run_id = m.group(1)
                 seen = len(lines)
 
             if _active_training.process.poll() is not None:
@@ -698,24 +699,26 @@ async def stream_training_log():
                 lines = list(_active_training.output_lines)
                 for line in lines[seen:]:
                     yield f"data: {json.dumps({'line': line})}\n\n"
-                    if "Successfully started run" in line:
-                        submitted = True
+                    m = re.search(r"Successfully started run (\d+)", line)
+                    if m:
+                        submitted_run_id = m.group(1)
                 break
 
             await asyncio.sleep(0.5)
 
-        if not submitted:
+        if not submitted_run_id:
             # flwr run failed or wasn't a submission — done
             yield "event: complete\ndata: {}\n\n"
             return
 
-        # --- Phase 2: tail SuperLink logs for real training progress ---
+        # --- Phase 2: tail SuperLink logs for the submitted run ---
         _monitoring_run = True
         yield f"data: {json.dumps({'line': ''})}\n\n"
-        yield f"data: {json.dumps({'line': '--- Monitoring training on SuperLink ---'})}\n\n"
+        yield f"data: {json.dumps({'line': f'--- Monitoring run {submitted_run_id} on SuperLink ---'})}\n\n"
 
         sl_ip = _superlink_ip_cache
         seen_sl = 0
+        found_run = False
         while _monitoring_run:
             if not sl_ip:
                 await asyncio.sleep(3)
@@ -728,12 +731,26 @@ async def stream_training_log():
 
             sl_lines = out.split("\n")
 
-            # Scope to latest run
-            last_start = 0
-            for i, line in enumerate(sl_lines):
-                if re.search(r"Starting run \d+", line):
-                    last_start = i
-            scoped = sl_lines[last_start:]
+            # Find where our specific run starts in the logs
+            if not found_run:
+                run_start = -1
+                for i, line in enumerate(sl_lines):
+                    if f"Starting run {submitted_run_id}" in line:
+                        run_start = i
+                        found_run = True
+                        break
+                if not found_run:
+                    await asyncio.sleep(2)
+                    continue
+                scoped = sl_lines[run_start:]
+            else:
+                # Re-scope from same run on each poll
+                run_start = 0
+                for i, line in enumerate(sl_lines):
+                    if f"Starting run {submitted_run_id}" in line:
+                        run_start = i
+                        break
+                scoped = sl_lines[run_start:]
 
             if len(scoped) > seen_sl:
                 for line in scoped[seen_sl:]:
