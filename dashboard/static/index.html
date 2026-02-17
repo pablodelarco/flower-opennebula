@@ -426,7 +426,7 @@
     <div class="col-span-3">
       <h2 class="text-xs font-medium text-[var(--text-tertiary)] uppercase tracking-wider mb-2">Network Topology</h2>
       <div class="card p-2">
-        <svg id="topology-canvas" viewBox="0 0 800 320" xmlns="http://www.w3.org/2000/svg">
+        <svg id="topology-canvas" viewBox="50 30 700 290" xmlns="http://www.w3.org/2000/svg">
           <!-- Rendered by JS -->
         </svg>
       </div>
@@ -448,7 +448,9 @@
       <div class="col-span-3">
         <div class="card p-5 h-full">
           <p class="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">Loss Convergence</p>
-          <canvas id="loss-chart" height="180"></canvas>
+          <div style="position:relative;height:180px">
+            <canvas id="loss-chart"></canvas>
+          </div>
         </div>
       </div>
     </section>
