@@ -657,6 +657,7 @@ run_on_cluster() {
     stage 7 "Run training on cluster"
     info "Starting federated training on the cluster..."
     info "SuperLink: $SUPERLINK"
+    info "Dashboard: ${BOLD}http://${SUPERLINK%%:*}:8080${RESET}  (open now to monitor live)"
     info "Running: flwr run . --stream"
     echo
 
