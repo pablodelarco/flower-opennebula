@@ -147,9 +147,9 @@ function renderTopology(nodes, connectedCount, runStatus) {
   // Legend
   if (isTraining) {
     html += `
-      <g transform="translate(20,300)">
+      <g transform="translate(300,305)">
         <circle r="3" cx="5" cy="0" fill="${accent}" opacity="0.8"/><text x="14" y="4" font-size="9" fill="${textSecondary}" font-family="Inter,sans-serif">Global weights</text>
-        <circle r="3" cx="105" cy="0" fill="${green}" opacity="0.8"/><text x="114" y="4" font-size="9" fill="${textSecondary}" font-family="Inter,sans-serif">Local gradients</text>
+        <circle r="3" cx="115" cy="0" fill="${green}" opacity="0.8"/><text x="124" y="4" font-size="9" fill="${textSecondary}" font-family="Inter,sans-serif">Local gradients</text>
       </g>`;
   }
 
