@@ -27,6 +27,10 @@ DEMO_DIR=""
 CLUSTER_FRAMEWORK=""
 SUPERNODE_IPS=""
 SERVICE_SHOW_JSON=""
+# Detect this host's external IP (for dashboard URL)
+HOST_IP="$(echo "$SSH_CONNECTION" | awk '{print $3}' 2>/dev/null)" || true
+: "${HOST_IP:=$(hostname -I 2>/dev/null | awk '{print $1}')}"
+: "${HOST_IP:=localhost}"
 
 # ── Colors (disabled when not a terminal) ────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -657,7 +661,7 @@ run_on_cluster() {
     stage 7 "Run training on cluster"
     info "Starting federated training on the cluster..."
     info "SuperLink: $SUPERLINK"
-    info "Dashboard: ${BOLD}http://${SUPERLINK%%:*}:8080${RESET}  (open now to monitor live)"
+    info "Dashboard: ${BOLD}http://${HOST_IP}:8080${RESET}  (open now to monitor live)"
     info "Running: flwr run . --stream"
     echo
 
@@ -704,7 +708,7 @@ show_next_steps() {
         echo -e "${BOLD}Cluster info:${RESET}"
         echo "  SuperLink: $SUPERLINK"
         echo "  Demo:      $(basename "$DEMO_DIR")"
-        echo "  Dashboard: http://${SUPERLINK%%:*}:8080"
+        echo "  Dashboard: http://${HOST_IP}:8080"
         echo
         local demo_name
         demo_name="$(basename "$DEMO_DIR")"
@@ -712,7 +716,7 @@ show_next_steps() {
         echo -e "${BOLD}What's next:${RESET}"
         echo
         echo "  Monitor training in real time:"
-        hint "Open http://${SUPERLINK%%:*}:8080 in your browser"
+        hint "Open http://${HOST_IP}:8080 in your browser"
         echo
         echo "  Re-run with different settings (activate venv first):"
         hint "cd $DEMO_DIR && source .venv/bin/activate"
