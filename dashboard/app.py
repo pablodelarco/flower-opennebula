@@ -39,6 +39,7 @@ SUPERNODE_CONTAINER = "flower-supernode"
 
 DEMO_BASE = Path(__file__).parent.parent / "demo"
 FLWR_BIN = DEMO_BASE / ".venv" / "bin" / "flwr"
+SUPERNODE_IMAGE_TAG = "1.25.0"
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +145,53 @@ def _run(cmd: str, timeout: int = 10) -> tuple[int, str]:
 def _ssh(ip: str, cmd: str, timeout: int = 8) -> tuple[int, str]:
     """SSH to a VM and run a command."""
     return _run(f"ssh {SSH_OPTS} {SSH_USER}@{ip} {repr(cmd)}", timeout=timeout)
+
+
+# ---------------------------------------------------------------------------
+# SuperNode framework switching
+# ---------------------------------------------------------------------------
+def _switch_supernode_framework(
+    nodes: list[NodeInfo], framework: str, superlink_ip: str,
+) -> list[dict]:
+    """Stop/rm/run SuperNode containers with the requested framework image.
+
+    Only switches nodes whose current image doesn't already match.
+    Returns a per-node list of {node, ip, switched, success, message}.
+    """
+    image = f"flower-supernode-{framework}:{SUPERNODE_IMAGE_TAG}"
+    results = []
+
+    for node in nodes:
+        if node.role != "supernode" or node.status != "running" or not node.ip:
+            continue
+
+        # Check current image
+        if node.framework == framework:
+            results.append({
+                "node": node.name, "ip": node.ip,
+                "switched": False, "success": True, "message": "already correct",
+            })
+            continue
+
+        sl_addr = superlink_ip or node.superlink_address
+        docker_run = (
+            f"docker stop {SUPERNODE_CONTAINER} 2>/dev/null; "
+            f"docker rm {SUPERNODE_CONTAINER} 2>/dev/null; "
+            f"docker run -d --name {SUPERNODE_CONTAINER} --restart unless-stopped "
+            f"-v /opt/flower/data:/app/data:ro "
+            f"{image} "
+            f"--insecure --superlink {sl_addr}:9092 "
+            f"--isolation subprocess --node-config '\"\"' "
+            f"--max-retries 0 --max-wait-time 0"
+        )
+        rc, out = _ssh(node.ip, docker_run, timeout=30)
+        results.append({
+            "node": node.name, "ip": node.ip,
+            "switched": True, "success": rc == 0,
+            "message": "ok" if rc == 0 else out,
+        })
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -465,11 +513,42 @@ async def get_frameworks():
 
 @app.post("/api/training/start")
 async def start_training(req: TrainingRequest):
-    """Launch a Flower training run as a subprocess."""
-    global _active_training
+    """Launch a Flower training run as a subprocess.
+
+    If the requested framework differs from what the cluster is running,
+    the SuperNode containers are automatically restarted with the correct image.
+    """
+    global _active_training, _last_completed
 
     if _active_training and _active_training.process.poll() is None:
         raise HTTPException(status_code=409, detail="Training already in progress")
+
+    # Clear stale results from previous run
+    _last_completed = None
+
+    # --- Auto-switch SuperNode framework if needed ---
+    switch_results = []
+    nodes = collect_nodes()
+    for node in nodes:
+        collect_container_info(node)
+
+    superlink_ip = ""
+    cluster_framework = ""
+    for node in nodes:
+        if node.role == "superlink" and node.status == "running":
+            superlink_ip = node.ip
+        if node.role == "supernode" and node.framework:
+            cluster_framework = node.framework
+
+    needs_switch = cluster_framework and cluster_framework != req.framework
+    if needs_switch:
+        switch_results = _switch_supernode_framework(nodes, req.framework, superlink_ip)
+        failures = [r for r in switch_results if not r["success"]]
+        if failures:
+            detail = "; ".join(f"{r['node']}: {r['message']}" for r in failures)
+            raise HTTPException(status_code=500, detail=f"Framework switch failed: {detail}")
+        # Give containers time to register with SuperLink
+        time.sleep(5)
 
     # Build --run-config string (string values must be double-quoted for flwr)
     def _cfg(k, v):
@@ -510,7 +589,13 @@ async def start_training(req: TrainingRequest):
         output_lines=output_lines,
     )
 
-    return {"status": "started", "pid": proc.pid, "framework": req.framework}
+    return {
+        "status": "started",
+        "pid": proc.pid,
+        "framework": req.framework,
+        "switched": needs_switch,
+        "switch_results": switch_results,
+    }
 
 
 @app.get("/api/training/status")

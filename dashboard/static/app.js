@@ -449,22 +449,10 @@ async function loadFrameworks() {
     if (d['batch-size']) document.getElementById('cp-batch').value = d['batch-size'];
     if (d['min-fit-clients']) document.getElementById('cp-min-clients').value = d['min-fit-clients'];
 
-    checkFrameworkWarning();
   } catch (err) {
     console.error('loadFrameworks failed:', err);
     document.getElementById('cp-framework').innerHTML =
       '<option value="pytorch">PyTorch</option><option value="tensorflow">TensorFlow</option><option value="sklearn">scikit-learn</option>';
-  }
-}
-
-function checkFrameworkWarning() {
-  const selected = document.getElementById('cp-framework').value;
-  const warning = document.getElementById('cp-fw-warning');
-  if (clusterFramework && selected && selected !== clusterFramework) {
-    document.getElementById('cp-fw-warning-name').textContent = FW_LABELS[clusterFramework] || clusterFramework;
-    warning.classList.remove('hidden');
-  } else {
-    warning.classList.add('hidden');
   }
 }
 
@@ -504,6 +492,22 @@ async function startTraining() {
     extra_config,
   };
 
+  const startBtn = document.getElementById('cp-start-btn');
+  const needsSwitch = clusterFramework && clusterFramework !== framework;
+
+  // Show loading state on button
+  const origText = startBtn.textContent;
+  startBtn.disabled = true;
+  startBtn.style.opacity = '0.5';
+  startBtn.style.cursor = 'not-allowed';
+
+  if (needsSwitch) {
+    startBtn.textContent = 'Switching...';
+    showToast(`Switching SuperNodes to ${FW_LABELS[framework] || framework}...`);
+  } else {
+    startBtn.textContent = 'Starting...';
+  }
+
   try {
     const res = await fetch('/api/training/start', {
       method: 'POST',
@@ -513,20 +517,38 @@ async function startTraining() {
 
     if (res.status === 409) {
       showToast('Training is already running', 'error');
+      startBtn.textContent = origText;
+      startBtn.disabled = false;
+      startBtn.style.opacity = '1';
+      startBtn.style.cursor = 'pointer';
       return;
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       showToast(err.detail || 'Failed to start training', 'error');
+      startBtn.textContent = origText;
+      startBtn.disabled = false;
+      startBtn.style.opacity = '1';
+      startBtn.style.cursor = 'pointer';
       return;
     }
 
+    const result = await res.json();
+    if (result.switched) {
+      clusterFramework = framework;
+    }
+
     showToast('Training started');
+    startBtn.textContent = origText;
     setTrainingActive(true);
     connectSSE();
     startStatusPolling();
   } catch (err) {
     showToast('Connection error: ' + err.message, 'error');
+    startBtn.textContent = origText;
+    startBtn.disabled = false;
+    startBtn.style.opacity = '1';
+    startBtn.style.cursor = 'pointer';
   }
 }
 
@@ -547,21 +569,48 @@ async function stopTraining() {
   }
 }
 
+function newTraining() {
+  // Clear log
+  const log = document.getElementById('cp-log');
+  log.textContent = 'Waiting for training to start...';
+
+  // Reset KPI bar to idle
+  document.getElementById('kpi-status').textContent = 'Idle';
+  document.getElementById('kpi-status').style.color = 'var(--text-primary)';
+  document.getElementById('kpi-round').textContent = '--';
+
+  // Re-enable form and hide New Training button
+  const startBtn = document.getElementById('cp-start-btn');
+  startBtn.disabled = false;
+  startBtn.style.opacity = '1';
+  startBtn.style.cursor = 'pointer';
+  document.getElementById('cp-new-btn').classList.add('hidden');
+  document.getElementById('cp-stop-btn').classList.add('hidden');
+
+  trainingActive = false;
+}
+
 function setTrainingActive(active) {
   trainingActive = active;
   const startBtn = document.getElementById('cp-start-btn');
   const stopBtn = document.getElementById('cp-stop-btn');
+  const newBtn = document.getElementById('cp-new-btn');
 
   if (active) {
     startBtn.disabled = true;
     startBtn.style.opacity = '0.5';
     startBtn.style.cursor = 'not-allowed';
     stopBtn.classList.remove('hidden');
+    newBtn.classList.add('hidden');
   } else {
     startBtn.disabled = false;
     startBtn.style.opacity = '1';
     startBtn.style.cursor = 'pointer';
     stopBtn.classList.add('hidden');
+    // Show "New Training" if there's log content (old results visible)
+    const log = document.getElementById('cp-log');
+    const hasResults = log.children.length > 0 || (log.textContent && log.textContent !== 'Waiting for training to start...');
+    newBtn.classList.toggle('hidden', !hasResults);
   }
 }
 
@@ -800,10 +849,10 @@ initTheme();
 
 document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 document.getElementById('refresh-btn').addEventListener('click', handleRefreshClick);
-document.getElementById('cp-framework').addEventListener('change', checkFrameworkWarning);
 document.getElementById('cp-strategy').addEventListener('change', handleStrategyChange);
 document.getElementById('cp-start-btn').addEventListener('click', startTraining);
 document.getElementById('cp-stop-btn').addEventListener('click', stopTraining);
+document.getElementById('cp-new-btn').addEventListener('click', newTraining);
 document.getElementById('cp-log-clear').addEventListener('click', clearLog);
 
 setupLogScroll();
