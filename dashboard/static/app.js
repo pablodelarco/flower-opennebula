@@ -373,11 +373,6 @@ async function refresh() {
     renderRunInfo(run);
     renderModelPanel(run.model_info);
 
-    // Show "New Training" when stale results are visible and nothing is running
-    if (!trainingActive && (st === 'completed' || st === 'failed' || run.num_rounds_completed > 0)) {
-      document.getElementById('cp-new-btn').classList.remove('hidden');
-    }
-
   } catch (err) {
     document.getElementById('cluster-status').innerHTML = `
       <span class="w-1.5 h-1.5 rounded-full bg-[var(--red)]"></span>
@@ -601,7 +596,6 @@ async function newTraining() {
   startBtn.disabled = false;
   startBtn.style.opacity = '1';
   startBtn.style.cursor = 'pointer';
-  document.getElementById('cp-new-btn').classList.add('hidden');
   document.getElementById('cp-stop-btn').classList.add('hidden');
 
   trainingActive = false;
@@ -611,23 +605,16 @@ function setTrainingActive(active) {
   trainingActive = active;
   const startBtn = document.getElementById('cp-start-btn');
   const stopBtn = document.getElementById('cp-stop-btn');
-  const newBtn = document.getElementById('cp-new-btn');
-
   if (active) {
     startBtn.disabled = true;
     startBtn.style.opacity = '0.5';
     startBtn.style.cursor = 'not-allowed';
     stopBtn.classList.remove('hidden');
-    newBtn.classList.add('hidden');
   } else {
     startBtn.disabled = false;
     startBtn.style.opacity = '1';
     startBtn.style.cursor = 'pointer';
     stopBtn.classList.add('hidden');
-    // Show "New Training" if there's log content (old results visible)
-    const log = document.getElementById('cp-log');
-    const hasResults = log.children.length > 0 || (log.textContent && log.textContent !== 'Waiting for training to start...');
-    newBtn.classList.toggle('hidden', !hasResults);
   }
 }
 
