@@ -24,6 +24,9 @@ SKIP_CLUSTER=false
 SERVICE_ID=""
 SUPERLINK=""
 DEMO_DIR=""
+CLUSTER_FRAMEWORK=""
+SUPERNODE_IPS=""
+SERVICE_SHOW_JSON=""
 
 # ── Colors (disabled when not a terminal) ────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -308,6 +311,7 @@ extract_superlink_ip() {
     local show_json
     show_json="$(oneflow show "$sid" --json 2>/dev/null)" \
         || die "Failed to query service $sid. Check with: oneflow show $sid"
+    SERVICE_SHOW_JSON="$show_json"
 
     # Get the SuperLink VM ID from the service
     local superlink_vm_id
@@ -338,13 +342,35 @@ extract_superlink_ip() {
     SUPERLINK="${superlink_ip}:${SUPERLINK_PORT}"
     success "SuperLink: $SUPERLINK"
 
-    # Show cluster overview
-    local supernode_count
-    supernode_count="$(echo "$show_json" \
+    # Extract framework from cluster template
+    CLUSTER_FRAMEWORK="$(echo "$show_json" \
         | jq -r '.DOCUMENT.TEMPLATE.BODY.roles[]
                   | select(.name == "supernode")
-                  | .nodes | length' 2>/dev/null)"
-    info "Cluster: 1 SuperLink + ${supernode_count:-?} SuperNodes"
+                  | .vm_template_contents' 2>/dev/null \
+        | grep -oP 'ONEAPP_FL_FRAMEWORK\s*=\s*"\$?(\K[^"]+)' | head -1)" || true
+    if [[ -n "$CLUSTER_FRAMEWORK" ]]; then
+        info "Cluster framework: $CLUSTER_FRAMEWORK"
+    fi
+
+    # Extract SuperNode IPs
+    local sn_vm_ids
+    mapfile -t sn_vm_ids < <(echo "$show_json" \
+        | jq -r '.DOCUMENT.TEMPLATE.BODY.roles[]
+                  | select(.name == "supernode")
+                  | .nodes[].deploy_id' 2>/dev/null)
+
+    local ips=()
+    for vmid in "${sn_vm_ids[@]}"; do
+        [[ -z "$vmid" || "$vmid" == "null" ]] && continue
+        local ip
+        ip="$(onevm show "$vmid" --json 2>/dev/null \
+            | jq -r '.VM.TEMPLATE.NIC[0].IP // .VM.TEMPLATE.NIC.IP' 2>/dev/null)" || true
+        [[ -n "$ip" && "$ip" != "null" ]] && ips+=("$ip")
+    done
+    SUPERNODE_IPS="${ips[*]}"
+
+    # Show cluster overview
+    info "Cluster: 1 SuperLink + ${#ips[@]} SuperNodes"
 
     check_superlink_reachable "$superlink_ip" "$SUPERLINK_PORT"
 }
@@ -421,9 +447,40 @@ select_framework() {
         exit 1
     fi
 
-    prompt_choice "Which demo would you like to run?" "${demos[@]}"
-    DEMO_DIR="$demo_base/$REPLY"
+    # Auto-detect from cluster if available
+    if [[ -n "$CLUSTER_FRAMEWORK" ]]; then
+        local detected="$CLUSTER_FRAMEWORK"
+        # Check if a matching demo exists
+        local match=""
+        for d in "${demos[@]}"; do
+            if [[ "$d" == "$detected" ]]; then
+                match="$d"
+                break
+            fi
+        done
 
+        if [[ -n "$match" ]]; then
+            info "Cluster is configured for ${BOLD}${match}${RESET}"
+            if $AUTO; then
+                REPLY="$match"
+                info "Selected: $REPLY (auto-detected from cluster)"
+            else
+                prompt_choice "Which demo would you like to run? (cluster uses $match)" "${demos[@]}"
+                if [[ "$REPLY" != "$match" ]]; then
+                    warn "You selected '$REPLY' but the cluster SuperNodes have '$match' containers."
+                    warn "Training will fail unless you redeploy with the matching framework."
+                    prompt_yn "Continue anyway?" "n" || exit 1
+                fi
+            fi
+        else
+            warn "Cluster framework '$detected' has no matching demo in $demo_base/"
+            prompt_choice "Which demo would you like to run?" "${demos[@]}"
+        fi
+    else
+        prompt_choice "Which demo would you like to run?" "${demos[@]}"
+    fi
+
+    DEMO_DIR="$demo_base/$REPLY"
     success "Selected: $REPLY"
 }
 
@@ -514,9 +571,56 @@ TOML
     grep -A3 '\[superlink\.opennebula\]' "$flwr_config" | head -5
 }
 
-# ── Stage 6: Optional local simulation ──────────────────────────────────────
+# ── Stage 6: Data selection ──────────────────────────────────────────────────
+select_data() {
+    stage 6 "Data selection"
+
+    if $SKIP_CLUSTER || $AUTO; then
+        info "Using CIFAR-10 test dataset (auto-downloads ~170MB per node)"
+        return
+    fi
+
+    echo -e "${CYAN}?${RESET} What data would you like to train on?"
+    echo "  1) CIFAR-10 test dataset (auto-downloads ~170MB per node)"
+    echo "  2) Your own data (expects files in /opt/flower/data/ on each SuperNode)"
+
+    local choice
+    while true; do
+        read -rp "  Enter number [1-2]: " choice
+        case "$choice" in
+            1) info "Using CIFAR-10 test dataset"; return ;;
+            2) break ;;
+            *) warn "Invalid choice. Try again." ;;
+        esac
+    done
+
+    # "Your own data" path
+    echo
+    info "Pre-stage your data on each SuperNode before training."
+    echo
+    echo -e "${BOLD}Upload data to each SuperNode:${RESET}"
+
+    if [[ -n "$SUPERNODE_IPS" ]]; then
+        local i=1
+        for ip in $SUPERNODE_IPS; do
+            hint "scp -r ./my_data/ root@${ip}:/opt/flower/data/    # SuperNode $i"
+            (( i++ ))
+        done
+    else
+        hint "scp -r ./my_data/ root@<supernode-ip>:/opt/flower/data/"
+    fi
+
+    echo
+    info "Data is mounted read-only into the container at /app/data"
+    info "Edit $(basename "$DEMO_DIR")/flower_demo/client_app.py to load from /app/data"
+    echo
+
+    prompt_yn "Data is staged and client_app.py is updated?" "n" || die "Stage your data first, then re-run."
+}
+
+# ── Stage 7: Optional local simulation ──────────────────────────────────────
 run_local_sim() {
-    stage 6 "Local simulation"
+    stage 7 "Local simulation"
 
     if ! prompt_yn "Run a local simulation first? (recommended to verify setup)" "y"; then
         info "Skipping local simulation"
@@ -545,9 +649,9 @@ run_local_sim() {
     fi
 }
 
-# ── Stage 7: Run training on cluster ────────────────────────────────────────
+# ── Stage 8: Run training on cluster ────────────────────────────────────────
 run_on_cluster() {
-    stage 7 "Run training on cluster"
+    stage 8 "Run training on cluster"
 
     if $SKIP_CLUSTER; then
         info "Skipping cluster run (--skip-cluster)"
@@ -578,9 +682,9 @@ run_on_cluster() {
     success "Training run completed"
 }
 
-# ── Stage 8: Next steps ─────────────────────────────────────────────────────
+# ── Stage 9: Next steps ─────────────────────────────────────────────────────
 show_next_steps() {
-    stage 8 "Done"
+    stage 9 "Done"
 
     echo
     if $SKIP_CLUSTER; then
@@ -599,14 +703,26 @@ show_next_steps() {
         echo "  SuperLink: $SUPERLINK"
         echo "  Demo:      $(basename "$DEMO_DIR")"
         echo
-        echo -e "${BOLD}Next steps:${RESET}"
-        echo "  Change rounds or strategy:"
-        hint "flwr run . --run-config \"num-server-rounds=10\""
-        hint "flwr run . --run-config \"strategy=FedProx\""
-        echo "  Use your own data:"
-        hint "See the 'Bring your own data' section in README.md"
+        echo -e "${BOLD}What's next:${RESET}"
+        echo
+        echo "  Change strategy:"
+        hint "flwr run . opennebula --run-config \"strategy=FedProx\""
+        echo
+        echo "  Change rounds:"
+        hint "flwr run . opennebula --run-config \"num-server-rounds=10\""
+        echo
         echo "  Scale the cluster:"
         hint "oneflow scale <service-id> supernode 4"
+        echo
+        echo "  Bring your own data:"
+        if [[ -n "$SUPERNODE_IPS" ]]; then
+            for ip in $SUPERNODE_IPS; do
+                hint "scp -r ./my_data/ root@${ip}:/opt/flower/data/"
+            done
+        else
+            hint "scp -r ./my_data/ root@<supernode-ip>:/opt/flower/data/"
+        fi
+        hint "Then edit $(basename "$DEMO_DIR")/flower_demo/client_app.py to load from /app/data"
     fi
     echo
 }
@@ -617,14 +733,15 @@ main() {
     echo -e "${DIM}From deployed cluster to running training in minutes${RESET}"
 
     parse_args "$@"
-    check_prerequisites
-    discover_cluster
-    select_framework
-    setup_venv
-    configure_federation
-    run_local_sim
-    run_on_cluster
-    show_next_steps
+    check_prerequisites      # Stage 1
+    discover_cluster         # Stage 2
+    select_framework         # Stage 3
+    setup_venv               # Stage 4
+    configure_federation     # Stage 5
+    select_data              # Stage 6
+    run_local_sim            # Stage 7
+    run_on_cluster           # Stage 8
+    show_next_steps          # Stage 9
 }
 
 main "$@"

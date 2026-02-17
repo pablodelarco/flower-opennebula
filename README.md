@@ -170,10 +170,16 @@ Animated SVG cluster topology, per-round metrics, node health, dark/light mode.
 <details>
 <summary><strong>Customization</strong></summary>
 
-- **TLS** — `ONEAPP_FL_TLS_ENABLED=YES`. Auto-generates self-signed CA, or bring your own.
+- **TLS** — `ONEAPP_FL_TLS_ENABLED=YES` (default). Auto-generates self-signed CA, or bring your own.
 - **GPU passthrough** — `ONEAPP_FL_GPU_ENABLED=YES` on SuperNodes with PCI-passthrough.
 - **Scaling** — `oneflow scale <service-id> supernode 5`. New nodes join automatically.
 - **Edge** — Lightweight SuperNodes (<2 GB) on intermittent WAN.
+
+**Runtime overrides** — change rounds or strategy without redeploying:
+
+```bash
+flwr run . opennebula --run-config "num-server-rounds=10 strategy=FedProx"
+```
 
 **Aggregation strategies** — swap in `server_app.py` (no client-side changes):
 
@@ -181,6 +187,19 @@ Animated SVG cluster topology, per-round metrics, node health, dark/light mode.
 |---|---|---|---|
 | **Best for** | IID data | Non-IID data | Large-scale |
 | **Extra params** | None | `proximal_mu` | `eta`, `tau`, `beta_1`, `beta_2` |
+
+</details>
+
+<details>
+<summary><strong>Production checklist</strong></summary>
+
+- [ ] TLS enabled (default since v1.25.0, or set `ONEAPP_FL_TLS_ENABLED=YES`)
+- [ ] Operator-provided certificates (replace auto-generated self-signed)
+- [ ] Checkpointing enabled (`ONEAPP_FL_CHECKPOINT_ENABLED=YES`)
+- [ ] Training data pre-staged on each SuperNode (`/opt/flower/data/`)
+- [ ] Smoke test: `flwr run . opennebula --run-config "num-server-rounds=1"`
+- [ ] Monitoring: Prometheus at SuperLink `:9090/metrics`
+- [ ] Appropriate `MIN_AVAILABLE_CLIENTS` for your node count
 
 </details>
 

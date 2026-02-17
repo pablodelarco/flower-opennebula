@@ -25,7 +25,7 @@ template_body:
     ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
     ONEAPP_FL_STRATEGY: 'O|list|Model aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg'
     ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum SuperNodes required to start training||2'
-    ONEAPP_FL_TLS_ENABLED: 'O|boolean|Encrypt communication between SuperLink and SuperNodes||NO'
+    ONEAPP_FL_TLS_ENABLED: 'O|boolean|Encrypt communication between SuperLink and SuperNodes||YES'
     ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU acceleration for model training||NO'
 
   networks:
