@@ -9,16 +9,22 @@ import asyncio
 import json
 import os
 import re
+import signal
 import subprocess
+import tempfile
+import threading
 import time
+import tomllib
+from collections import deque
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field as PydField
 
 app = FastAPI(title="Flower FL Dashboard")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -30,6 +36,43 @@ SSH_USER = os.environ.get("FL_SSH_USER", "root")
 SSH_OPTS = "-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes"
 SUPERLINK_CONTAINER = "flower-superlink"
 SUPERNODE_CONTAINER = "flower-supernode"
+
+DEMO_BASE = Path(__file__).parent.parent / "demo"
+FLWR_BIN = DEMO_BASE / ".venv" / "bin" / "flwr"
+
+
+# ---------------------------------------------------------------------------
+# Training control state
+# ---------------------------------------------------------------------------
+@dataclass
+class ActiveTraining:
+    process: subprocess.Popen
+    framework: str
+    config: dict
+    started_at: float
+    output_lines: deque  # maxlen=500
+
+
+_active_training: Optional[ActiveTraining] = None
+_last_completed: Optional[dict] = None
+
+
+class TrainingRequest(BaseModel):
+    framework: str = PydField(..., pattern=r"^(pytorch|tensorflow|sklearn)$")
+    num_rounds: int = PydField(3, ge=1, le=100)
+    strategy: str = PydField("FedAvg")
+    local_epochs: int = PydField(1, ge=1, le=50)
+    batch_size: int = PydField(32, ge=1, le=512)
+    min_fit_clients: int = PydField(2, ge=1)
+    min_available_clients: int = PydField(2, ge=1)
+    extra_config: dict = PydField(default_factory=dict)
+
+
+def _reader_thread(proc, lines_deque):
+    """Read subprocess stdout line by line into a deque."""
+    for line in iter(proc.stdout.readline, ''):
+        lines_deque.append(line.rstrip('\n'))
+    proc.stdout.close()
 
 
 # ---------------------------------------------------------------------------
@@ -381,3 +424,214 @@ async def index():
     """Serve the dashboard."""
     html_path = Path(__file__).parent / "static" / "index.html"
     return HTMLResponse(html_path.read_text())
+
+
+# ---------------------------------------------------------------------------
+# Training control endpoints
+# ---------------------------------------------------------------------------
+@app.get("/api/frameworks")
+async def get_frameworks():
+    """Scan demo dir for available frameworks, parse defaults from pyproject.toml."""
+    frameworks = []
+    defaults = {}
+
+    for subdir in sorted(DEMO_BASE.iterdir()):
+        pyproject = subdir / "pyproject.toml"
+        if not subdir.is_dir() or not pyproject.exists():
+            continue
+        frameworks.append(subdir.name)
+        if not defaults:
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+            defaults = data.get("tool", {}).get("flwr", {}).get("app", {}).get("config", {})
+
+    # Detect cluster framework from running nodes
+    cluster_framework = ""
+    nodes = collect_nodes()
+    for node in nodes:
+        if node.role == "supernode" and node.status == "running":
+            collect_container_info(node)
+            if node.framework:
+                cluster_framework = node.framework
+                break
+
+    return {
+        "frameworks": frameworks,
+        "cluster_framework": cluster_framework,
+        "strategies": ["FedAvg", "FedProx", "FedAdam"],
+        "defaults": defaults,
+    }
+
+
+@app.post("/api/training/start")
+async def start_training(req: TrainingRequest):
+    """Launch a Flower training run as a subprocess."""
+    global _active_training
+
+    if _active_training and _active_training.process.poll() is None:
+        raise HTTPException(status_code=409, detail="Training already in progress")
+
+    # Build --run-config string
+    config_parts = [
+        f"num-server-rounds={req.num_rounds}",
+        f"local-epochs={req.local_epochs}",
+        f"batch-size={req.batch_size}",
+        f"strategy={req.strategy}",
+        f"min-fit-clients={req.min_fit_clients}",
+        f"min-available-clients={req.min_available_clients}",
+    ]
+    for k, v in req.extra_config.items():
+        config_parts.append(f"{k}={v}")
+    run_config_str = " ".join(config_parts)
+
+    cmd = [str(FLWR_BIN), "run", ".", "opennebula", "--run-config", run_config_str]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=str(DEMO_BASE / req.framework),
+    )
+
+    output_lines = deque(maxlen=500)
+    t = threading.Thread(target=_reader_thread, args=(proc, output_lines), daemon=True)
+    t.start()
+
+    _active_training = ActiveTraining(
+        process=proc,
+        framework=req.framework,
+        config=req.model_dump(),
+        started_at=time.time(),
+        output_lines=output_lines,
+    )
+
+    return {"status": "started", "pid": proc.pid, "framework": req.framework}
+
+
+@app.get("/api/training/status")
+async def get_training_status():
+    """Return current training status."""
+    global _active_training, _last_completed
+
+    if _active_training and _active_training.process.poll() is None:
+        return {
+            "active": True,
+            "framework": _active_training.framework,
+            "config": _active_training.config,
+            "elapsed_s": round(time.time() - _active_training.started_at, 1),
+            "lines": list(_active_training.output_lines)[-20:],
+        }
+
+    # Check if process just finished
+    if _active_training and _active_training.process.poll() is not None:
+        _last_completed = {
+            "framework": _active_training.framework,
+            "config": _active_training.config,
+            "duration_s": round(time.time() - _active_training.started_at, 1),
+            "exit_code": _active_training.process.returncode,
+            "last_lines": list(_active_training.output_lines)[-20:],
+        }
+        _active_training = None
+
+    return {
+        "active": False,
+        "last_completed": _last_completed,
+    }
+
+
+@app.get("/api/training/log")
+async def stream_training_log():
+    """SSE endpoint to tail training output."""
+    async def event_generator():
+        seen = 0
+        while True:
+            if not _active_training:
+                yield "event: complete\ndata: {}\n\n"
+                return
+
+            lines = list(_active_training.output_lines)
+            if len(lines) > seen:
+                for line in lines[seen:]:
+                    yield f"data: {json.dumps({'line': line})}\n\n"
+                seen = len(lines)
+
+            if _active_training.process.poll() is not None:
+                # Flush remaining lines
+                lines = list(_active_training.output_lines)
+                if len(lines) > seen:
+                    for line in lines[seen:]:
+                        yield f"data: {json.dumps({'line': line})}\n\n"
+                yield "event: complete\ndata: {}\n\n"
+                return
+
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/training/stop")
+async def stop_training():
+    """Stop the active training run."""
+    global _active_training, _last_completed
+
+    if not _active_training or _active_training.process.poll() is not None:
+        raise HTTPException(status_code=404, detail="No active training to stop")
+
+    proc = _active_training.process
+    proc.send_signal(signal.SIGTERM)
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=2)
+
+    _last_completed = {
+        "framework": _active_training.framework,
+        "config": _active_training.config,
+        "duration_s": round(time.time() - _active_training.started_at, 1),
+        "exit_code": proc.returncode,
+        "last_lines": list(_active_training.output_lines)[-20:],
+    }
+    _active_training = None
+
+    return {"status": "stopped"}
+
+
+@app.post("/api/upload")
+async def upload_dataset(file: UploadFile = File(...)):
+    """Upload a file and SCP it to all supernodes."""
+    MAX_SIZE = 500 * 1024 * 1024  # 500 MB
+
+    # Save to tempfile
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}")
+    try:
+        size = 0
+        while chunk := await file.read(1024 * 1024):
+            size += len(chunk)
+            if size > MAX_SIZE:
+                os.unlink(tmp.name)
+                raise HTTPException(status_code=413, detail="File exceeds 500MB limit")
+            tmp.write(chunk)
+        tmp.close()
+
+        # SCP to each supernode
+        nodes = collect_nodes()
+        results = []
+        for node in nodes:
+            if node.role != "supernode" or node.status != "running":
+                continue
+            rc, out = _run(
+                f"scp {SSH_OPTS} {tmp.name} {SSH_USER}@{node.ip}:/opt/flower/data/{file.filename}",
+                timeout=60,
+            )
+            results.append({
+                "node": node.name,
+                "ip": node.ip,
+                "success": rc == 0,
+                "message": out if rc != 0 else "ok",
+            })
+
+        return {"filename": file.filename, "size_bytes": size, "nodes": results}
+    finally:
+        if os.path.exists(tmp.name):
+            os.unlink(tmp.name)
