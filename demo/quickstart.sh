@@ -465,7 +465,7 @@ select_framework() {
                 REPLY="$match"
                 info "Selected: $REPLY (auto-detected from cluster)"
             else
-                prompt_choice "Which demo would you like to run? (cluster uses $match)" "${demos[@]}"
+                prompt_choice "Which ML framework would you like to use? (cluster uses $match)" "${demos[@]}"
                 if [[ "$REPLY" != "$match" ]]; then
                     warn "You selected '$REPLY' but the cluster SuperNodes have '$match' containers."
                     warn "Training will fail unless you redeploy with the matching framework."
@@ -474,10 +474,10 @@ select_framework() {
             fi
         else
             warn "Cluster framework '$detected' has no matching demo in $demo_base/"
-            prompt_choice "Which demo would you like to run?" "${demos[@]}"
+            prompt_choice "Which ML framework would you like to use?" "${demos[@]}"
         fi
     else
-        prompt_choice "Which demo would you like to run?" "${demos[@]}"
+        prompt_choice "Which ML framework would you like to use?" "${demos[@]}"
     fi
 
     DEMO_DIR="$demo_base/$REPLY"
