@@ -661,31 +661,30 @@ run_on_cluster() {
     stage 7 "Run training on cluster"
     info "Starting federated training on the cluster..."
     info "SuperLink: $SUPERLINK"
-    info "Dashboard: ${BOLD}http://${HOST_IP}:8080${RESET}  (open now to monitor live)"
-    info "Running: flwr run . --stream"
     echo
 
-    # Capture output to detect silent failures (flwr run may exit 0 on connection errors)
-    local run_log
-    run_log="$(mktemp)"
-    (cd "$DEMO_DIR" && flwr run . --stream) 2>&1 | tee "$run_log"
-    local rc=${PIPESTATUS[0]}
+    # Submit the run (returns immediately after uploading the FAB)
+    local run_output
+    run_output="$(cd "$DEMO_DIR" && flwr run . 2>&1)"
+    local rc=$?
 
+    echo "$run_output"
     echo
-    if [[ $rc -ne 0 ]] || grep -qi "connection.*unavailable\|connection refused\|error.*superlink" "$run_log"; then
-        error "Training run failed."
+
+    if [[ $rc -ne 0 ]] || echo "$run_output" | grep -qi "connection.*unavailable\|connection refused\|error.*superlink"; then
+        error "Failed to submit training run."
         echo
         echo -e "${BOLD}Troubleshooting:${RESET}"
         hint "1. Check SuperLink is reachable: nc -z ${SUPERLINK%%:*} ${SUPERLINK##*:}"
         hint "2. Check containers: ssh root@${SUPERLINK%%:*} docker ps"
         hint "3. Check SuperLink logs: ssh root@${SUPERLINK%%:*} docker logs flower-superlink"
         hint "4. Verify address: grep -A2 'superlink.opennebula' ~/.flwr/config.toml"
-        rm -f "$run_log"
         exit 1
     fi
-    rm -f "$run_log"
 
-    success "Training run completed"
+    success "Training submitted to cluster"
+    echo
+    info "Monitor progress: ${BOLD}http://${HOST_IP}:8080${RESET}"
 }
 
 # ── Stage 8: Next steps ─────────────────────────────────────────────────────
