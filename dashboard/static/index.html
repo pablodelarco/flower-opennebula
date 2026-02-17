@@ -247,23 +247,28 @@
 
   <main class="max-w-6xl mx-auto px-6 py-8 space-y-8">
 
-    <!-- KPI Row -->
-    <section class="grid grid-cols-4 gap-4">
-      <div class="card px-5 py-4">
-        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Nodes</p>
-        <p id="kpi-nodes" class="text-3xl font-semibold mt-0.5 tracking-tight">--</p>
-      </div>
-      <div class="card px-5 py-4">
-        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Connected</p>
-        <p id="kpi-connected" class="text-3xl font-semibold mt-0.5 tracking-tight text-[var(--accent)]">--</p>
-      </div>
-      <div class="card px-5 py-4">
-        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Status</p>
-        <p id="kpi-status" class="text-3xl font-semibold mt-0.5 tracking-tight">--</p>
-      </div>
-      <div class="card px-5 py-4">
-        <p class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Round</p>
-        <p id="kpi-round" class="text-3xl font-semibold mt-0.5 tracking-tight">--</p>
+    <!-- Status Bar -->
+    <section class="card px-5 py-2.5 flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Nodes</span>
+          <span id="kpi-nodes" class="text-sm font-semibold mono">--</span>
+        </div>
+        <div class="w-px h-4 bg-[var(--border)]"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Connected</span>
+          <span id="kpi-connected" class="text-sm font-semibold mono text-[var(--accent)]">--</span>
+        </div>
+        <div class="w-px h-4 bg-[var(--border)]"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Status</span>
+          <span id="kpi-status" class="text-sm font-semibold">--</span>
+        </div>
+        <div class="w-px h-4 bg-[var(--border)]"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-medium text-[var(--text-tertiary)] uppercase tracking-wider">Round</span>
+          <span id="kpi-round" class="text-sm font-semibold mono">--</span>
+        </div>
       </div>
     </section>
 
@@ -438,6 +443,6 @@
     </div>
   </footer>
 
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>
