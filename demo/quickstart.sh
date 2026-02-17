@@ -660,21 +660,25 @@ run_on_cluster() {
     info "Running: flwr run . --stream"
     echo
 
-    # Use default federation (set to "opennebula" in ~/.flwr/config.toml)
-    (cd "$DEMO_DIR" && flwr run . --stream)
-    local rc=$?
+    # Capture output to detect silent failures (flwr run may exit 0 on connection errors)
+    local run_log
+    run_log="$(mktemp)"
+    (cd "$DEMO_DIR" && flwr run . --stream) 2>&1 | tee "$run_log"
+    local rc=${PIPESTATUS[0]}
 
     echo
-    if [[ $rc -ne 0 ]]; then
-        error "Training run failed (exit code $rc)."
+    if [[ $rc -ne 0 ]] || grep -qi "connection.*unavailable\|connection refused\|error.*superlink" "$run_log"; then
+        error "Training run failed."
         echo
         echo -e "${BOLD}Troubleshooting:${RESET}"
         hint "1. Check SuperLink is reachable: nc -z ${SUPERLINK%%:*} ${SUPERLINK##*:}"
         hint "2. Check containers: ssh root@${SUPERLINK%%:*} docker ps"
         hint "3. Check SuperLink logs: ssh root@${SUPERLINK%%:*} docker logs flower-superlink"
         hint "4. Verify address: grep -A2 'superlink.opennebula' ~/.flwr/config.toml"
+        rm -f "$run_log"
         exit 1
     fi
+    rm -f "$run_log"
 
     success "Training run completed"
 }
@@ -699,8 +703,12 @@ show_next_steps() {
         echo -e "${BOLD}Cluster info:${RESET}"
         echo "  SuperLink: $SUPERLINK"
         echo "  Demo:      $(basename "$DEMO_DIR")"
+        echo "  Dashboard: http://${SUPERLINK%%:*}:8080"
         echo
         echo -e "${BOLD}What's next:${RESET}"
+        echo
+        echo "  Monitor training in real time:"
+        hint "Open http://${SUPERLINK%%:*}:8080 in your browser"
         echo
         echo "  Change strategy:"
         hint "flwr run . opennebula --run-config \"strategy=FedProx\""
