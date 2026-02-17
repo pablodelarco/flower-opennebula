@@ -304,21 +304,21 @@ def collect_container_info(node: NodeInfo) -> NodeInfo:
 
 MODEL_INFO = {
     "pytorch": {
-        "architecture": "SimpleCNN (Conv2d -> Conv2d -> FC -> FC)",
+        "architecture": "Conv2d(3\u219232,5\u00d75) \u2192 MaxPool \u2192 Conv2d(32\u219264,5\u00d75) \u2192 MaxPool \u2192 FC(2304\u2192512) \u2192 FC(512\u219210)",
         "parameters": "~878K",
         "framework": "PyTorch 2.6.0",
         "dataset": "CIFAR-10",
         "strategy": "FedAvg",
     },
     "tensorflow": {
-        "architecture": "Sequential CNN (Conv2D -> Conv2D -> Dense -> Dense)",
+        "architecture": "Conv2D(32,5\u00d75) \u2192 MaxPool \u2192 Conv2D(64,5\u00d75) \u2192 MaxPool \u2192 Dense(512) \u2192 Dense(10)",
         "parameters": "~880K",
         "framework": "TensorFlow 2.18.1",
         "dataset": "CIFAR-10",
         "strategy": "FedAvg",
     },
     "sklearn": {
-        "architecture": "MLPClassifier (3072 -> 512 -> 10)",
+        "architecture": "MLPClassifier: Input(3072) \u2192 Hidden(512) \u2192 Output(10)",
         "parameters": "~1.6M",
         "framework": "scikit-learn 1.4+",
         "dataset": "CIFAR-10 (flattened)",
