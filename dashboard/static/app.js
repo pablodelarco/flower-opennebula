@@ -584,12 +584,15 @@ async function newTraining() {
   document.getElementById('kpi-status').style.color = 'var(--text-primary)';
   document.getElementById('kpi-round').textContent = '--';
 
-  // Clear data panels
+  // Clear data panels and stop topology animation
   if (lossChart) { lossChart.destroy(); lossChart = null; }
   document.getElementById('loss-chart').getContext('2d').clearRect(0, 0, 9999, 9999);
   renderRoundsTable([]);
   renderRunInfo({});
   renderModelPanel({});
+  if (prevData) {
+    renderTopology(prevData.nodes, prevData.connected_supernodes, 'idle');
+  }
 
   // Re-enable form and hide New Training button
   const startBtn = document.getElementById('cp-start-btn');
