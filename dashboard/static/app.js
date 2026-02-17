@@ -282,27 +282,23 @@ function renderRunInfo(run) {
   const pct = run.num_rounds_configured > 0 ? Math.round((run.num_rounds_completed / run.num_rounds_configured) * 100) : 0;
 
   el.innerHTML = `
-    <div class="grid grid-cols-2 gap-6">
-      <div>
-        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Run ID</p>
-        <p class="mono text-sm truncate">${run.run_id}</p>
-      </div>
-      <div>
-        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Status</p>
+    <div class="space-y-3">
+      <div class="flex items-center justify-between">
         <p class="text-sm font-semibold" style="color:${sc}">${(run.status || 'idle').toUpperCase()}</p>
+        <span class="text-xs mono text-[var(--text-secondary)]">${run.total_duration_s > 0 ? `${(run.total_duration_s / 60).toFixed(1)} min` : ''}</span>
       </div>
       <div>
-        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Progress</p>
-        <div class="flex items-center gap-3">
-          <div class="flex-1 h-1.5 rounded-full bg-[#f2f2f7] overflow-hidden">
-            <div class="h-full rounded-full bg-[var(--accent)] transition-all duration-700" style="width:${pct}%"></div>
-          </div>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider">Progress</span>
           <span class="text-xs mono text-[var(--text-secondary)]">${run.num_rounds_completed}/${run.num_rounds_configured}</span>
+        </div>
+        <div class="h-1.5 rounded-full bg-[var(--progress-track)] overflow-hidden">
+          <div class="h-full rounded-full bg-[var(--accent)] transition-all duration-700" style="width:${pct}%"></div>
         </div>
       </div>
       <div>
-        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Duration</p>
-        <p class="text-sm mono">${run.total_duration_s > 0 ? `${(run.total_duration_s / 60).toFixed(1)} min` : '--'}</p>
+        <p class="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Run ID</p>
+        <p class="mono text-xs truncate">${run.run_id}</p>
       </div>
     </div>`;
 }
