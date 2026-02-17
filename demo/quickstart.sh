@@ -632,55 +632,29 @@ select_data() {
     prompt_yn "Data is staged and client_app.py is updated?" "n" || die "Stage your data first, then re-run."
 }
 
-# ── Stage 7: Optional local simulation ──────────────────────────────────────
-run_local_sim() {
-    stage 7 "Local simulation"
-
-    if ! $SKIP_CLUSTER; then
-        # Cluster is available — skip local sim by default, go straight to training
-        if ! prompt_yn "Run a local simulation first? (not needed with a cluster)" "n"; then
-            info "Skipping local simulation"
-            return
-        fi
-    else
-        # No cluster — local sim is the main event
-        if ! prompt_yn "Run a local simulation?" "y"; then
-            info "Skipping local simulation"
-            return
-        fi
-    fi
-
-    info "Running: flwr run . local-sim"
-    echo
-
-    (cd "$DEMO_DIR" && flwr run . local-sim)
-    local rc=$?
-
-    echo
-    if [[ $rc -ne 0 ]]; then
-        error "Local simulation failed (exit code $rc)."
-        hint "Check the output above for errors."
-        hint "Common fixes: pip install -e . (missing deps), check client_app.py imports."
-        if $SKIP_CLUSTER; then
-            exit 1
-        fi
-        if ! prompt_yn "Continue to cluster run anyway?" "n"; then
-            exit 1
-        fi
-    else
-        success "Local simulation completed successfully"
-    fi
-}
-
-# ── Stage 8: Run training on cluster ────────────────────────────────────────
+# ── Stage 7: Run training ────────────────────────────────────────────────────
 run_on_cluster() {
-    stage 8 "Run training on cluster"
-
     if $SKIP_CLUSTER; then
-        info "Skipping cluster run (--skip-cluster)"
+        stage 7 "Run training (local simulation)"
+        info "No cluster — running local simulation with 2 virtual SuperNodes"
+        info "Running: flwr run . local-sim"
+        echo
+
+        (cd "$DEMO_DIR" && flwr run . local-sim)
+        local rc=$?
+
+        echo
+        if [[ $rc -ne 0 ]]; then
+            error "Local simulation failed (exit code $rc)."
+            hint "Check the output above for errors."
+            hint "Common fixes: pip install -e . (missing deps), check client_app.py imports."
+            exit 1
+        fi
+        success "Local simulation completed successfully"
         return
     fi
 
+    stage 7 "Run training on cluster"
     info "Starting federated training on the cluster..."
     info "SuperLink: $SUPERLINK"
     info "Running: flwr run . --stream"
@@ -705,9 +679,9 @@ run_on_cluster() {
     success "Training run completed"
 }
 
-# ── Stage 9: Next steps ─────────────────────────────────────────────────────
+# ── Stage 8: Next steps ─────────────────────────────────────────────────────
 show_next_steps() {
-    stage 9 "Done"
+    stage 8 "Done"
 
     echo
     if $SKIP_CLUSTER; then
@@ -762,9 +736,8 @@ main() {
     setup_venv               # Stage 4
     configure_federation     # Stage 5
     select_data              # Stage 6
-    run_local_sim            # Stage 7
-    run_on_cluster           # Stage 8
-    show_next_steps          # Stage 9
+    run_on_cluster           # Stage 7
+    show_next_steps          # Stage 8
 }
 
 main "$@"
