@@ -3,7 +3,6 @@
 import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import log_loss, accuracy_score
-from sklearn.preprocessing import LabelBinarizer
 
 
 def create_model() -> MLPClassifier:
@@ -39,12 +38,19 @@ def set_weights(model: MLPClassifier, params: list[np.ndarray]) -> None:
 
 
 def init_model(model: MLPClassifier, n_features: int, n_classes: int) -> None:
-    """Initialize model weights so get_weights works before first partial_fit.
+    """Initialize model internals so get_weights/predict work before real training.
 
-    sklearn's MLPClassifier only creates coefs_/intercepts_ after fit() is
-    called, so we initialize them manually for Flower compatibility.
+    sklearn's MLPClassifier creates many internal attributes only after fit().
+    Rather than manually setting each one (fragile across sklearn versions),
+    we do a single partial_fit on tiny dummy data to let sklearn initialize
+    everything, then overwrite with small random weights.
     """
     rng = np.random.default_rng(42)
+    x_dummy = rng.standard_normal((n_classes, n_features)).astype(np.float32)
+    y_dummy = np.arange(n_classes)
+    model.partial_fit(x_dummy, y_dummy, classes=y_dummy)
+
+    # Overwrite with small random weights (the dummy fit produces arbitrary ones)
     model.coefs_ = [
         rng.standard_normal((n_features, 512)).astype(np.float32) * 0.01,
         rng.standard_normal((512, n_classes)).astype(np.float32) * 0.01,
@@ -53,12 +59,6 @@ def init_model(model: MLPClassifier, n_features: int, n_classes: int) -> None:
         np.zeros(512, dtype=np.float32),
         np.zeros(n_classes, dtype=np.float32),
     ]
-    model.classes_ = np.arange(n_classes)
-    model.n_layers_ = 3
-    model.n_iter_ = 0
-    model.out_activation_ = "softmax"
-    model._label_binarizer = LabelBinarizer()
-    model._label_binarizer.fit(np.arange(n_classes))
 
 
 def train(model: MLPClassifier, x: np.ndarray, y: np.ndarray) -> None:
