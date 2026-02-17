@@ -373,6 +373,11 @@ async function refresh() {
     renderRunInfo(run);
     renderModelPanel(run.model_info);
 
+    // Show "New Training" when stale results are visible and nothing is running
+    if (!trainingActive && (st === 'completed' || st === 'failed' || run.num_rounds_completed > 0)) {
+      document.getElementById('cp-new-btn').classList.remove('hidden');
+    }
+
   } catch (err) {
     document.getElementById('cluster-status').innerHTML = `
       <span class="w-1.5 h-1.5 rounded-full bg-[var(--red)]"></span>
@@ -578,6 +583,13 @@ function newTraining() {
   document.getElementById('kpi-status').textContent = 'Idle';
   document.getElementById('kpi-status').style.color = 'var(--text-primary)';
   document.getElementById('kpi-round').textContent = '--';
+
+  // Clear data panels
+  if (lossChart) { lossChart.destroy(); lossChart = null; }
+  document.getElementById('loss-chart').getContext('2d').clearRect(0, 0, 9999, 9999);
+  renderRoundsTable([]);
+  renderRunInfo({});
+  renderModelPanel({});
 
   // Re-enable form and hide New Training button
   const startBtn = document.getElementById('cp-start-btn');
