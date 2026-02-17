@@ -182,7 +182,7 @@ def _switch_supernode_framework(
             f"-v /opt/flower/data:/app/data:ro "
             f"{image} "
             f"--insecure --superlink {sl_addr}:9092 "
-            f"--isolation subprocess --node-config '\"\"' "
+            f"--isolation subprocess "
             f"--max-retries 0 --max-wait-time 0"
         )
         rc, out = _ssh(node.ip, docker_run, timeout=30)
@@ -321,7 +321,11 @@ MODEL_INFO = {
 
 
 def collect_training_logs(superlink_ip: str, framework: str = "") -> RunInfo:
-    """Parse SuperLink logs for training metrics."""
+    """Parse SuperLink logs for training metrics.
+
+    Only parses logs from the LATEST run (from the last "Starting run"
+    line onwards) so previous runs don't bleed through.
+    """
     run_info = RunInfo()
 
     if not superlink_ip:
@@ -331,7 +335,14 @@ def collect_training_logs(superlink_ip: str, framework: str = "") -> RunInfo:
     if rc != 0:
         return run_info
 
-    lines = out.split("\n")
+    all_lines = out.split("\n")
+
+    # Scope to the latest run only
+    last_start_idx = 0
+    for i, line in enumerate(all_lines):
+        if re.search(r"Starting run \d+", line):
+            last_start_idx = i
+    lines = all_lines[last_start_idx:]
 
     # Extract run ID
     for line in lines:
@@ -409,7 +420,7 @@ def collect_training_logs(superlink_ip: str, framework: str = "") -> RunInfo:
 
     # Count connected SuperNodes from Fleet API messages
     node_ids = set()
-    for line in lines[-200:]:  # Last 200 lines
+    for line in all_lines[-200:]:  # Last 200 lines from full log
         m = re.search(r"node_id=(\d+)", line)
         if m:
             node_ids.add(m.group(1))
@@ -455,10 +466,16 @@ async def get_cluster_state():
         if node.role == "supernode" and node.framework:
             framework = node.framework
 
-    if _training_reset:
+    training_running = _active_training and _active_training.process.poll() is None
+
+    if _training_reset and not training_running:
         run_info = RunInfo()
     else:
         run_info = collect_training_logs(superlink_ip, framework)
+        # If our training process is active but SuperLink still shows old
+        # completed data (new run hasn't registered yet), show running state
+        if training_running and run_info.status in ("completed", "idle", ""):
+            run_info = RunInfo(status="running")
     connected = collect_connected_nodes(superlink_ip)
 
     state = ClusterState(
