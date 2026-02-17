@@ -574,7 +574,12 @@ async function stopTraining() {
   }
 }
 
-function newTraining() {
+async function newTraining() {
+  // Tell backend to suppress stale log data
+  try {
+    await fetch('/api/training/reset', { method: 'POST' });
+  } catch { /* best-effort */ }
+
   // Clear log
   const log = document.getElementById('cp-log');
   log.textContent = 'Waiting for training to start...';

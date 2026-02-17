@@ -56,6 +56,7 @@ class ActiveTraining:
 
 _active_training: Optional[ActiveTraining] = None
 _last_completed: Optional[dict] = None
+_training_reset: bool = False
 
 
 class TrainingRequest(BaseModel):
@@ -454,7 +455,10 @@ async def get_cluster_state():
         if node.role == "supernode" and node.framework:
             framework = node.framework
 
-    run_info = collect_training_logs(superlink_ip, framework)
+    if _training_reset:
+        run_info = RunInfo()
+    else:
+        run_info = collect_training_logs(superlink_ip, framework)
     connected = collect_connected_nodes(superlink_ip)
 
     state = ClusterState(
@@ -518,13 +522,14 @@ async def start_training(req: TrainingRequest):
     If the requested framework differs from what the cluster is running,
     the SuperNode containers are automatically restarted with the correct image.
     """
-    global _active_training, _last_completed
+    global _active_training, _last_completed, _training_reset
 
     if _active_training and _active_training.process.poll() is None:
         raise HTTPException(status_code=409, detail="Training already in progress")
 
     # Clear stale results from previous run
     _last_completed = None
+    _training_reset = False
 
     # --- Auto-switch SuperNode framework if needed ---
     switch_results = []
@@ -685,6 +690,16 @@ async def stop_training():
     _active_training = None
 
     return {"status": "stopped"}
+
+
+@app.post("/api/training/reset")
+async def reset_training():
+    """Clear stale training results so the dashboard shows a clean slate."""
+    global _last_completed, _training_reset
+
+    _last_completed = None
+    _training_reset = True
+    return {"status": "reset"}
 
 
 @app.post("/api/upload")
