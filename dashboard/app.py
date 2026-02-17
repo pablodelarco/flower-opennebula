@@ -57,6 +57,8 @@ class ActiveTraining:
 _active_training: Optional[ActiveTraining] = None
 _last_completed: Optional[dict] = None
 _training_reset: bool = False
+_monitoring_run: bool = False  # True after flwr run submits job; training runs on SuperLink
+_superlink_ip_cache: str = ""
 
 
 class TrainingRequest(BaseModel):
@@ -466,15 +468,16 @@ async def get_cluster_state():
         if node.role == "supernode" and node.framework:
             framework = node.framework
 
-    training_running = _active_training and _active_training.process.poll() is None
+    process_running = _active_training and _active_training.process.poll() is None
+    training_active = process_running or _monitoring_run
 
-    if _training_reset and not training_running:
+    if _training_reset and not training_active:
         run_info = RunInfo()
     else:
         run_info = collect_training_logs(superlink_ip, framework)
-        # If our training process is active but SuperLink still shows old
-        # completed data (new run hasn't registered yet), show running state
-        if training_running and run_info.status in ("completed", "idle", ""):
+        # If training is active but SuperLink still shows old completed
+        # data (new run hasn't registered yet), show running state
+        if training_active and run_info.status in ("completed", "idle", ""):
             run_info = RunInfo(status="running")
     connected = collect_connected_nodes(superlink_ip)
 
@@ -539,14 +542,17 @@ async def start_training(req: TrainingRequest):
     If the requested framework differs from what the cluster is running,
     the SuperNode containers are automatically restarted with the correct image.
     """
-    global _active_training, _last_completed, _training_reset
+    global _active_training, _last_completed, _training_reset, _monitoring_run, _superlink_ip_cache
 
     if _active_training and _active_training.process.poll() is None:
         raise HTTPException(status_code=409, detail="Training already in progress")
+    if _monitoring_run:
+        raise HTTPException(status_code=409, detail="Training already in progress on the cluster")
 
     # Clear stale results from previous run
     _last_completed = None
     _training_reset = False
+    _monitoring_run = False
 
     # --- Auto-switch SuperNode framework if needed ---
     switch_results = []
@@ -561,6 +567,8 @@ async def start_training(req: TrainingRequest):
             superlink_ip = node.ip
         if node.role == "supernode" and node.framework:
             cluster_framework = node.framework
+
+    _superlink_ip_cache = superlink_ip
 
     needs_switch = cluster_framework and cluster_framework != req.framework
     if needs_switch:
@@ -625,25 +633,36 @@ async def get_training_status():
     """Return current training status."""
     global _active_training, _last_completed
 
+    # flwr run process still running
     if _active_training and _active_training.process.poll() is None:
         return {
             "active": True,
+            "phase": "submitting",
             "framework": _active_training.framework,
             "config": _active_training.config,
             "elapsed_s": round(time.time() - _active_training.started_at, 1),
             "lines": list(_active_training.output_lines)[-20:],
         }
 
-    # Check if process just finished
+    # flwr run process finished — clean up reference but don't set _last_completed
+    # if monitoring continues (the SSE handler sets _monitoring_run)
     if _active_training and _active_training.process.poll() is not None:
-        _last_completed = {
-            "framework": _active_training.framework,
-            "config": _active_training.config,
-            "duration_s": round(time.time() - _active_training.started_at, 1),
-            "exit_code": _active_training.process.returncode,
-            "last_lines": list(_active_training.output_lines)[-20:],
-        }
+        if not _monitoring_run:
+            _last_completed = {
+                "framework": _active_training.framework,
+                "config": _active_training.config,
+                "duration_s": round(time.time() - _active_training.started_at, 1),
+                "exit_code": _active_training.process.returncode,
+                "last_lines": list(_active_training.output_lines)[-20:],
+            }
         _active_training = None
+
+    # Training running on SuperLink (flwr run already exited)
+    if _monitoring_run:
+        return {
+            "active": True,
+            "phase": "training",
+        }
 
     return {
         "active": False,
@@ -653,30 +672,84 @@ async def get_training_status():
 
 @app.get("/api/training/log")
 async def stream_training_log():
-    """SSE endpoint to tail training output."""
-    async def event_generator():
-        seen = 0
-        while True:
-            if not _active_training:
-                yield "event: complete\ndata: {}\n\n"
-                return
+    """SSE endpoint to tail training output.
 
+    Phase 1: streams flwr run process stdout.
+    Phase 2: after flwr run exits successfully (job submitted), switches
+    to tailing SuperLink docker logs until "Run finished" is detected.
+    """
+    async def event_generator():
+        global _monitoring_run
+
+        # --- Phase 1: stream flwr run process output ---
+        seen = 0
+        submitted = False
+        while _active_training:
             lines = list(_active_training.output_lines)
             if len(lines) > seen:
                 for line in lines[seen:]:
                     yield f"data: {json.dumps({'line': line})}\n\n"
+                    if "Successfully started run" in line:
+                        submitted = True
                 seen = len(lines)
 
             if _active_training.process.poll() is not None:
-                # Flush remaining lines
+                # Flush remaining
                 lines = list(_active_training.output_lines)
-                if len(lines) > seen:
-                    for line in lines[seen:]:
-                        yield f"data: {json.dumps({'line': line})}\n\n"
-                yield "event: complete\ndata: {}\n\n"
-                return
+                for line in lines[seen:]:
+                    yield f"data: {json.dumps({'line': line})}\n\n"
+                    if "Successfully started run" in line:
+                        submitted = True
+                break
 
             await asyncio.sleep(0.5)
+
+        if not submitted:
+            # flwr run failed or wasn't a submission — done
+            yield "event: complete\ndata: {}\n\n"
+            return
+
+        # --- Phase 2: tail SuperLink logs for real training progress ---
+        _monitoring_run = True
+        yield f"data: {json.dumps({'line': ''})}\n\n"
+        yield f"data: {json.dumps({'line': '--- Monitoring training on SuperLink ---'})}\n\n"
+
+        sl_ip = _superlink_ip_cache
+        seen_sl = 0
+        while _monitoring_run:
+            if not sl_ip:
+                await asyncio.sleep(3)
+                continue
+
+            rc, out = _ssh(sl_ip, f"docker logs {SUPERLINK_CONTAINER} 2>&1", timeout=10)
+            if rc != 0:
+                await asyncio.sleep(3)
+                continue
+
+            sl_lines = out.split("\n")
+
+            # Scope to latest run
+            last_start = 0
+            for i, line in enumerate(sl_lines):
+                if re.search(r"Starting run \d+", line):
+                    last_start = i
+            scoped = sl_lines[last_start:]
+
+            if len(scoped) > seen_sl:
+                for line in scoped[seen_sl:]:
+                    yield f"data: {json.dumps({'line': line})}\n\n"
+                seen_sl = len(scoped)
+
+                # Check for completion
+                for line in scoped:
+                    if "Run finished" in line:
+                        _monitoring_run = False
+                        yield "event: complete\ndata: {}\n\n"
+                        return
+
+            await asyncio.sleep(2)
+
+        yield "event: complete\ndata: {}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -684,38 +757,44 @@ async def stream_training_log():
 @app.post("/api/training/stop")
 async def stop_training():
     """Stop the active training run."""
-    global _active_training, _last_completed
+    global _active_training, _last_completed, _monitoring_run
 
-    if not _active_training or _active_training.process.poll() is not None:
-        raise HTTPException(status_code=404, detail="No active training to stop")
+    if _active_training and _active_training.process.poll() is None:
+        proc = _active_training.process
+        proc.send_signal(signal.SIGTERM)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=2)
 
-    proc = _active_training.process
-    proc.send_signal(signal.SIGTERM)
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=2)
+        _last_completed = {
+            "framework": _active_training.framework,
+            "config": _active_training.config,
+            "duration_s": round(time.time() - _active_training.started_at, 1),
+            "exit_code": proc.returncode,
+            "last_lines": list(_active_training.output_lines)[-20:],
+        }
+        _active_training = None
+        _monitoring_run = False
+        return {"status": "stopped"}
 
-    _last_completed = {
-        "framework": _active_training.framework,
-        "config": _active_training.config,
-        "duration_s": round(time.time() - _active_training.started_at, 1),
-        "exit_code": proc.returncode,
-        "last_lines": list(_active_training.output_lines)[-20:],
-    }
-    _active_training = None
+    if _monitoring_run:
+        _monitoring_run = False
+        _active_training = None
+        return {"status": "stopped"}
 
-    return {"status": "stopped"}
+    raise HTTPException(status_code=404, detail="No active training to stop")
 
 
 @app.post("/api/training/reset")
 async def reset_training():
     """Clear stale training results so the dashboard shows a clean slate."""
-    global _last_completed, _training_reset
+    global _last_completed, _training_reset, _monitoring_run
 
     _last_completed = None
     _training_reset = True
+    _monitoring_run = False
     return {"status": "reset"}
 
 
