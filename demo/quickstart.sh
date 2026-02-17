@@ -705,15 +705,17 @@ show_next_steps() {
         echo "  Demo:      $(basename "$DEMO_DIR")"
         echo "  Dashboard: http://${SUPERLINK%%:*}:8080"
         echo
+        local demo_name
+        demo_name="$(basename "$DEMO_DIR")"
+
         echo -e "${BOLD}What's next:${RESET}"
         echo
         echo "  Monitor training in real time:"
         hint "Open http://${SUPERLINK%%:*}:8080 in your browser"
         echo
-        echo "  Change strategy:"
+        echo "  Re-run with different settings (activate venv first):"
+        hint "cd $DEMO_DIR && source .venv/bin/activate"
         hint "flwr run . opennebula --run-config \"strategy=FedProx\""
-        echo
-        echo "  Change rounds:"
         hint "flwr run . opennebula --run-config \"num-server-rounds=10\""
         echo
         echo "  Scale the cluster:"
@@ -727,7 +729,7 @@ show_next_steps() {
         else
             hint "scp -r ./my_data/ root@<supernode-ip>:/opt/flower/data/"
         fi
-        hint "Then edit $(basename "$DEMO_DIR")/flower_demo/client_app.py to load from /app/data"
+        hint "Then edit ${demo_name}/flower_demo/client_app.py to load from /app/data"
     fi
     echo
 }
