@@ -59,7 +59,7 @@ ONE_SERVICE_RECONFIGURABLE=true
 ONE_SERVICE_PARAMS=(
     # Phase 1: Base architecture
     'ONEAPP_FLOWER_VERSION'            'configure' 'Flower Docker image version tag'                            '1.25.0'
-    'ONEAPP_FL_FRAMEWORK'              'configure' 'ML framework (pytorch|tensorflow|sklearn)'                  'pytorch'
+    'ONEAPP_FL_FRAMEWORK'              'configure' 'ML framework (pytorch|tensorflow|sklearn|llm)'              'pytorch'
     'ONEAPP_FL_SUPERLINK_ADDRESS'      'configure' 'SuperLink Fleet API address (host:port)'                    ''
     'ONEAPP_FL_NODE_CONFIG'            'configure' 'Space-separated key=value node config'                      ''
     'ONEAPP_FL_MAX_RETRIES'            'configure' 'Max reconnection attempts (0=unlimited)'                    '0'
@@ -204,6 +204,7 @@ service_configure()
         pytorch)    IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
         tensorflow) IMAGE_TAG="flower-supernode-tensorflow:${VERSION}" ;;
         sklearn)    IMAGE_TAG="flower-supernode-sklearn:${VERSION}" ;;
+        llm)        IMAGE_TAG="flower-supernode-llm:${VERSION}" ;;
         *)          IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
     esac
     msg info "Using ML framework image: ${IMAGE_TAG}"
@@ -286,6 +287,7 @@ service_bootstrap()
             pytorch)    IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
             tensorflow) IMAGE_TAG="flower-supernode-tensorflow:${VERSION}" ;;
             sklearn)    IMAGE_TAG="flower-supernode-sklearn:${VERSION}" ;;
+            llm)        IMAGE_TAG="flower-supernode-llm:${VERSION}" ;;
             *)          IMAGE_TAG="flower-supernode-pytorch:${VERSION}" ;;
         esac
     fi
@@ -343,7 +345,7 @@ service_help()
     msg info ""
     msg info "Context variables:"
     msg info "  ONEAPP_FLOWER_VERSION            Flower version (default: 1.25.0)"
-    msg info "  ONEAPP_FL_FRAMEWORK              ML framework: pytorch, tensorflow, sklearn (default: pytorch)"
+    msg info "  ONEAPP_FL_FRAMEWORK              ML framework: pytorch, tensorflow, sklearn, llm (default: pytorch)"
     msg info "  ONEAPP_FL_SUPERLINK_ADDRESS      Static SuperLink address (host:port)"
     msg info "  ONEAPP_FL_NODE_CONFIG            key=value pairs for ClientApp"
     msg info "  ONEAPP_FL_GPU_ENABLED            Enable GPU passthrough (YES/NO)"
@@ -433,6 +435,24 @@ RUN pip install --no-cache-dir \
 ENTRYPOINT ["flower-supernode"]
 DOCKERFILE
 
+    # LLM (LoRA) image
+    msg info "Building flower-supernode-llm:${VER}"
+    docker build -t "flower-supernode-llm:${VER}" - <<'DOCKERFILE'
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir \
+    'numpy==1.26.4' \
+    'flwr[simulation]==1.25.0' \
+    'torch==2.5.1+cpu' \
+    --extra-index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir \
+    'transformers>=4.48.0' 'peft>=0.6.2' 'trl>=0.8.1' \
+    'sentencepiece' 'flwr-datasets' 'datasets'
+RUN python -c "from transformers import AutoModelForCausalLM, AutoTokenizer; AutoModelForCausalLM.from_pretrained('Qwen/Qwen2-0.5B-Instruct'); AutoTokenizer.from_pretrained('Qwen/Qwen2-0.5B-Instruct')"
+ENTRYPOINT ["flower-supernode"]
+DOCKERFILE
+
     msg info "Framework images built successfully"
     docker images | grep flower-supernode
 }
@@ -473,8 +493,8 @@ validate_config()
 
     # FL_FRAMEWORK: enum
     case "${ONEAPP_FL_FRAMEWORK}" in
-        pytorch|tensorflow|sklearn) ;;
-        *) msg error "Invalid ONEAPP_FL_FRAMEWORK: '${ONEAPP_FL_FRAMEWORK}'. Must be pytorch, tensorflow, or sklearn"
+        pytorch|tensorflow|sklearn|llm) ;;
+        *) msg error "Invalid ONEAPP_FL_FRAMEWORK: '${ONEAPP_FL_FRAMEWORK}'. Must be pytorch, tensorflow, sklearn, or llm"
            errors=$((errors + 1)) ;;
     esac
 

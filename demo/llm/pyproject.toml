@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flower-demo-llm"
+version = "1.0.0"
+description = "Federated LLM fine-tuning with LoRA on Flower FL and OpenNebula"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = [
+    "flwr[simulation]~=1.25.0",
+    "torch>=2.5.0",
+    "transformers>=4.48.0",
+    "peft>=0.6.2",
+    "trl>=0.8.1",
+    "sentencepiece",
+    "flwr-datasets",
+    "datasets",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["flower_demo"]
+
+[tool.flwr.app]
+publisher = "flower-opennebula"
+
+[tool.flwr.app.components]
+serverapp = "flower_demo.server_app:app"
+clientapp = "flower_demo.client_app:app"
+
+[tool.flwr.app.config]
+num-server-rounds = 3
+learning-rate = 5e-5
+lora-rank = 16
+lora-alpha = 32
+max-steps = 10
+seq-length = 512
+batch-size = 4
+strategy = "FedAvg"
+min-fit-clients = 2
+min-available-clients = 2
+
+[tool.flwr.federations]
+default = "opennebula"
+
+[tool.flwr.federations.opennebula]
+address = "127.0.0.1:9093"
+insecure = true
+
+[tool.flwr.federations.local-sim]
+options.num-supernodes = 2

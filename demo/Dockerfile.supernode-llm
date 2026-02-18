@@ -1,0 +1,42 @@
+# LLM-enabled SuperNode image for Flower FL demo (LoRA fine-tuning).
+#
+# The upstream flwr/supernode:1.25.0 is Alpine-based (musl libc), which is
+# incompatible with PyTorch's manylinux wheels. We build from a glibc-based
+# Python image and install both flwr and LLM libraries.
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user matching upstream UID convention
+RUN groupadd -g 49999 app && useradd -u 49999 -g app -m app
+
+USER app
+ENV PATH="/home/app/.local/bin:${PATH}"
+
+# Pin NumPy 1.x — NumPy 2.x wheels require x86_v2 (SSE4) which KVM VMs may lack
+RUN pip install --no-cache-dir --user "numpy==1.26.4"
+
+# Install Flower SuperNode + PyTorch CPU
+RUN pip install --no-cache-dir --user \
+    "flwr[simulation]==1.25.0" \
+    torch==2.6.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.org/simple/
+
+# Install LLM libraries
+RUN pip install --no-cache-dir --user \
+    "transformers>=4.48.0" \
+    "peft>=0.6.2" \
+    "trl>=0.8.1" \
+    "sentencepiece" \
+    "flwr-datasets" \
+    "datasets"
+
+# Pre-download Qwen2-0.5B-Instruct model (avoids runtime download latency)
+RUN python -c "\
+from transformers import AutoModelForCausalLM, AutoTokenizer; \
+AutoModelForCausalLM.from_pretrained('Qwen/Qwen2-0.5B-Instruct'); \
+AutoTokenizer.from_pretrained('Qwen/Qwen2-0.5B-Instruct')"
+
+ENTRYPOINT ["flower-supernode"]

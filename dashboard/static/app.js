@@ -4,7 +4,7 @@
 let lossChart = null;
 let prevData = null;
 let clusterFramework = '';
-const FW_LABELS = { pytorch: 'PyTorch', tensorflow: 'TensorFlow', sklearn: 'scikit-learn' };
+const FW_LABELS = { pytorch: 'PyTorch', tensorflow: 'TensorFlow', sklearn: 'scikit-learn', llm: 'LLM (LoRA)' };
 let sseSource = null;
 let trainingActive = false;
 let logAutoScroll = true;
@@ -119,8 +119,8 @@ function renderTopology(nodes, connectedCount, runStatus) {
   }
 
   // Worker nodes
-  const fwColors = { pytorch: '#ee4c2c', tensorflow: '#ff6f00', sklearn: '#f89939' };
-  const fwLabels = { pytorch: 'PyTorch', tensorflow: 'TensorFlow', sklearn: 'sklearn' };
+  const fwColors = { pytorch: '#ee4c2c', tensorflow: '#ff6f00', sklearn: '#f89939', llm: '#7c3aed' };
+  const fwLabels = { pytorch: 'PyTorch', tensorflow: 'TensorFlow', sklearn: 'sklearn', llm: 'LLM (LoRA)' };
   workers.forEach((w, i) => {
     const wx = workerStartX + i * workerSpacing;
     const wRunning = w.container_status === 'running';
@@ -433,6 +433,8 @@ async function loadFrameworks() {
     fwSelect.innerHTML = data.frameworks.map(fw =>
       `<option value="${fw}"${fw === clusterFramework ? ' selected' : ''}>${FW_LABELS[fw] || fw}</option>`
     ).join('');
+    fwSelect.addEventListener('change', handleFrameworkChange);
+    handleFrameworkChange();
 
     // Populate strategy dropdown
     const stSelect = document.getElementById('cp-strategy');
@@ -450,7 +452,20 @@ async function loadFrameworks() {
   } catch (err) {
     console.error('loadFrameworks failed:', err);
     document.getElementById('cp-framework').innerHTML =
-      '<option value="pytorch">PyTorch</option><option value="tensorflow">TensorFlow</option><option value="sklearn">scikit-learn</option>';
+      '<option value="pytorch">PyTorch</option><option value="tensorflow">TensorFlow</option><option value="sklearn">scikit-learn</option><option value="llm">LLM (LoRA)</option>';
+  }
+}
+
+function handleFrameworkChange() {
+  const fw = document.getElementById('cp-framework').value;
+  const llmParams = document.getElementById('cp-llm-params');
+  const epochsGroup = document.getElementById('cp-epochs-group');
+  if (fw === 'llm') {
+    llmParams.classList.remove('hidden');
+    epochsGroup.classList.add('hidden');
+  } else {
+    llmParams.classList.add('hidden');
+    epochsGroup.classList.remove('hidden');
   }
 }
 
@@ -489,6 +504,13 @@ async function startTraining() {
     min_available_clients: 2,
     extra_config,
   };
+
+  if (framework === 'llm') {
+    body.learning_rate = parseFloat(document.getElementById('cp-learning-rate').value) || 5e-5;
+    body.lora_rank = parseInt(document.getElementById('cp-lora-rank').value) || 16;
+    body.max_steps = parseInt(document.getElementById('cp-max-steps').value) || 10;
+    body.seq_length = parseInt(document.getElementById('cp-seq-length').value) || 512;
+  }
 
   const startBtn = document.getElementById('cp-start-btn');
   const needsSwitch = clusterFramework && clusterFramework !== framework;

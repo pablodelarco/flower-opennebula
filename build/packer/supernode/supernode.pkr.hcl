@@ -34,7 +34,7 @@ source "qemu" "supernode" {
 
   cpus      = 2
   memory    = 4096
-  disk_size = "20G"
+  disk_size = "30G"
 
   iso_url      = "${var.input_dir}/ubuntu2404.qcow2"
   iso_checksum = "none"
@@ -155,12 +155,18 @@ build {
     destination = "/tmp/Dockerfile.supernode-sklearn"
   }
 
+  provisioner "file" {
+    source      = "../../../demo/Dockerfile.supernode-llm"
+    destination = "/tmp/Dockerfile.supernode-llm"
+  }
+
   provisioner "shell" {
     inline = [
       "systemctl start docker",
       "docker build -t flower-supernode-pytorch:1.25.0 -f /tmp/Dockerfile.supernode-pytorch /tmp",
       "docker build -t flower-supernode-tensorflow:1.25.0 -f /tmp/Dockerfile.supernode-tensorflow /tmp",
       "docker build -t flower-supernode-sklearn:1.25.0 -f /tmp/Dockerfile.supernode-sklearn /tmp",
+      "docker build -t flower-supernode-llm:1.25.0 -f /tmp/Dockerfile.supernode-llm /tmp",
       "docker image prune -f",
       "rm -f /tmp/Dockerfile.supernode-*",
       "systemctl stop docker",

@@ -21,7 +21,7 @@ template_body:
   # These 5 fields appear on the main instantiation form.
   # Every other setting uses sensible defaults inside the appliance.
   user_inputs:
-    ONEAPP_FL_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn|pytorch'
+    ONEAPP_FL_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn,llm|pytorch'
     ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
     ONEAPP_FL_STRATEGY: 'O|list|Model aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg'
     ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum SuperNodes required to start training||2'

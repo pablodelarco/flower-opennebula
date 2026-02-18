@@ -62,7 +62,7 @@ _superlink_ip_cache: str = ""
 
 
 class TrainingRequest(BaseModel):
-    framework: str = PydField(..., pattern=r"^(pytorch|tensorflow|sklearn)$")
+    framework: str = PydField(..., pattern=r"^(pytorch|tensorflow|sklearn|llm)$")
     num_rounds: int = PydField(3, ge=1, le=100)
     strategy: str = PydField("FedAvg")
     local_epochs: int = PydField(1, ge=1, le=50)
@@ -70,6 +70,10 @@ class TrainingRequest(BaseModel):
     min_fit_clients: int = PydField(2, ge=1)
     min_available_clients: int = PydField(2, ge=1)
     extra_config: dict = PydField(default_factory=dict)
+    learning_rate: float = PydField(5e-5, ge=1e-6, le=1e-2)
+    lora_rank: int = PydField(16, ge=4, le=64)
+    max_steps: int = PydField(10, ge=1, le=100)
+    seq_length: int = PydField(512, ge=64, le=2048)
 
 
 def _reader_thread(proc, lines_deque):
@@ -188,8 +192,8 @@ def _switch_supernode_framework(
             f"--max-retries 0 --max-wait-time 0"
         )
         rc, out = _ssh(node.ip, docker_run, timeout=30)
-        if rc == 0:
-            # Install runtime deps missing from base images
+        if rc == 0 and framework != "llm":
+            # Install runtime deps missing from base images (LLM image has all deps)
             _ssh(node.ip,
                  f"docker exec {SUPERNODE_CONTAINER} pip install -q 'flwr-datasets[vision]'",
                  timeout=120)
@@ -292,7 +296,7 @@ def collect_container_info(node: NodeInfo) -> NodeInfo:
             node.flower_version = parts[2].split(":")[-1] if ":" in parts[2] else parts[2]
             # Detect framework from Docker image name
             image_name = parts[2].lower()
-            for fw in ("pytorch", "tensorflow", "sklearn"):
+            for fw in ("pytorch", "tensorflow", "sklearn", "llm"):
                 if fw in image_name:
                     node.framework = fw
                     break
@@ -322,6 +326,13 @@ MODEL_INFO = {
         "parameters": "~1.6M",
         "framework": "scikit-learn 1.4+",
         "dataset": "CIFAR-10 (flattened)",
+        "strategy": "FedAvg",
+    },
+    "llm": {
+        "architecture": "Qwen2-0.5B-Instruct + LoRA (q_proj, v_proj)",
+        "parameters": "~1.3M trainable / 494M total",
+        "framework": "PyTorch + PEFT + TRL",
+        "dataset": "Alpaca-GPT4",
         "strategy": "FedAvg",
     },
 }
@@ -594,14 +605,28 @@ async def start_training(req: TrainingRequest):
             return f'{k}="{v}"'
         return f"{k}={v}"
 
-    config_parts = [
-        _cfg("num-server-rounds", req.num_rounds),
-        _cfg("local-epochs", req.local_epochs),
-        _cfg("batch-size", req.batch_size),
-        _cfg("strategy", req.strategy),
-        _cfg("min-fit-clients", req.min_fit_clients),
-        _cfg("min-available-clients", req.min_available_clients),
-    ]
+    if req.framework == "llm":
+        config_parts = [
+            _cfg("num-server-rounds", req.num_rounds),
+            _cfg("learning-rate", req.learning_rate),
+            _cfg("lora-rank", req.lora_rank),
+            _cfg("lora-alpha", req.lora_rank * 2),
+            _cfg("max-steps", req.max_steps),
+            _cfg("seq-length", req.seq_length),
+            _cfg("batch-size", req.batch_size),
+            _cfg("strategy", req.strategy),
+            _cfg("min-fit-clients", req.min_fit_clients),
+            _cfg("min-available-clients", req.min_available_clients),
+        ]
+    else:
+        config_parts = [
+            _cfg("num-server-rounds", req.num_rounds),
+            _cfg("local-epochs", req.local_epochs),
+            _cfg("batch-size", req.batch_size),
+            _cfg("strategy", req.strategy),
+            _cfg("min-fit-clients", req.min_fit_clients),
+            _cfg("min-available-clients", req.min_available_clients),
+        ]
     for k, v in req.extra_config.items():
         config_parts.append(_cfg(k, v))
     run_config_str = " ".join(config_parts)

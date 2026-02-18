@@ -398,7 +398,7 @@
               <label class="cp-label" for="cp-rounds">Rounds <span class="info-tip" data-tooltip="Number of server-client communication rounds for the training run">i</span></label>
               <input id="cp-rounds" type="number" class="cp-input" value="3" min="1" max="100">
             </div>
-            <div>
+            <div id="cp-epochs-group">
               <label class="cp-label" for="cp-epochs">Local Epochs <span class="info-tip" data-tooltip="Training passes over local data per round on each worker">i</span></label>
               <input id="cp-epochs" type="number" class="cp-input" value="1" min="1" max="50">
             </div>
@@ -407,6 +407,27 @@
           <div>
             <label class="cp-label" for="cp-batch">Batch Size <span class="info-tip" data-tooltip="Number of samples per training step on each worker">i</span></label>
             <input id="cp-batch" type="number" class="cp-input" value="32" min="1" max="512">
+          </div>
+
+          <div id="cp-llm-params" class="hidden space-y-3">
+            <div>
+              <label class="cp-label" for="cp-learning-rate">Learning Rate <span class="info-tip" data-tooltip="Peak learning rate for cosine-annealed LoRA fine-tuning">i</span></label>
+              <input id="cp-learning-rate" type="number" class="cp-input" value="0.00005" step="0.00001" min="0.000001" max="0.01">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="cp-label" for="cp-lora-rank">LoRA Rank <span class="info-tip" data-tooltip="Rank of the low-rank adaptation matrices — higher = more capacity but slower">i</span></label>
+                <input id="cp-lora-rank" type="number" class="cp-input" value="16" min="4" max="64">
+              </div>
+              <div>
+                <label class="cp-label" for="cp-max-steps">Max Steps <span class="info-tip" data-tooltip="Training steps per round on each worker — replaces local epochs for LLM">i</span></label>
+                <input id="cp-max-steps" type="number" class="cp-input" value="10" min="1" max="100">
+              </div>
+            </div>
+            <div>
+              <label class="cp-label" for="cp-seq-length">Sequence Length <span class="info-tip" data-tooltip="Maximum token length for training samples — longer sequences use more memory">i</span></label>
+              <input id="cp-seq-length" type="number" class="cp-input" value="512" min="64" max="2048">
+            </div>
           </div>
 
           <div class="flex gap-2 pt-1">
