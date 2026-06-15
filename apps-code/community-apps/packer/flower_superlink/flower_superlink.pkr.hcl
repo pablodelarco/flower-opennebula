@@ -1,12 +1,16 @@
 source "null" "null" { communicator = "none" }
 
-# Generate the cloud-init ISO for Packer provisioning
+# Generate the one-context CONTEXT iso for Packer provisioning. The one-apps
+# Ubuntu base image is contextualized via OpenNebula one-context (a CONTEXT
+# labelled iso), not cloud-init.
 build {
   sources = ["source.null.null"]
 
   provisioner "shell-local" {
     inline = [
-      "cloud-localds ${var.input_dir}/${var.appliance_name}-cloud-init.iso ${var.input_dir}/cloud-init.yml",
+      "mkdir -p ${var.input_dir}/context",
+      "${var.input_dir}/gen_context > ${var.input_dir}/context/context.sh",
+      "mkisofs -o ${var.input_dir}/${var.appliance_name}-context.iso -V CONTEXT -J -R ${var.input_dir}/context",
     ]
   }
 }
@@ -17,7 +21,7 @@ source "qemu" "flower_superlink" {
   memory      = 4096
   accelerator = "kvm"
 
-  iso_url      = "../one-apps/export/ubuntu2404min.qcow2"
+  iso_url      = "../one-apps/export/ubuntu2404.qcow2"
   iso_checksum = "none"
 
   headless = var.headless
@@ -34,9 +38,10 @@ source "qemu" "flower_superlink" {
 
   qemuargs = [["-serial", "stdio"],
     ["-cpu", "host"],
-    ["-cdrom", "${var.input_dir}/${var.appliance_name}-cloud-init.iso"],
+    ["-cdrom", "${var.input_dir}/${var.appliance_name}-context.iso"],
     ["-netdev", "user,id=net0,hostfwd=tcp::{{ .SSHHostPort }}-:22"],
-    ["-device", "virtio-net-pci,netdev=net0"]
+    # MAC addr needs to match ETH0_MAC from the context iso
+    ["-device", "virtio-net-pci,netdev=net0,mac=00:11:22:33:44:55"]
   ]
   ssh_username     = "root"
   ssh_password     = "opennebula"

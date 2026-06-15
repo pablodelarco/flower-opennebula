@@ -13,8 +13,9 @@ ONE_SERVICE_BUILD=$(date +%s)
 ONE_SERVICE_SHORT_DESCRIPTION='Flower SuperLink FL coordinator (Docker-in-VM)'
 ONE_SERVICE_DESCRIPTION='Flower federated learning SuperLink appliance. Runs the
 flower-superlink gRPC coordinator inside a Docker container managed by systemd.
-Supports zero-config deployment, optional TLS, strategy selection, model
-checkpointing, and Prometheus metrics export.'
+TLS is enabled by default, the Control API is bound to localhost, and a
+default-deny firewall blocks outbound SMTP. The aggregation strategy and round
+count come from the Flower App Bundle submitted with flwr run.'
 ONE_SERVICE_RECONFIGURABLE=true
 
 # --------------------------------------------------------------------------
@@ -25,80 +26,30 @@ ONE_SERVICE_RECONFIGURABLE=true
 # every VM boot / reconfigure cycle.
 # --------------------------------------------------------------------------
 ONE_SERVICE_PARAMS=(
-    # --- Core configuration (Phase 1) ---
+    # --- Core configuration ---
+    # NOTE on FL training behaviour: the aggregation strategy, number of rounds,
+    # client minimums and checkpointing are properties of the Flower App Bundle
+    # (FAB) that you submit at run time with `flwr run --run-config ...`, NOT of
+    # the SuperLink process. The stock flwr/superlink image ignores any such
+    # environment variables, so they are deliberately NOT exposed here to avoid
+    # advertising knobs that have no effect. See README "Running training".
     'ONEAPP_FLOWER_VERSION'           'configure' 'Flower Docker image version tag'                        '1.25.0'
-    'ONEAPP_FL_NUM_ROUNDS'            'configure' 'Number of federated learning rounds'                    '3'
-    'ONEAPP_FL_STRATEGY'              'configure' 'Aggregation strategy (FedAvg|FedProx|FedAdam|Krum|Bulyan|FedTrimmedAvg)' 'FedAvg'
-    'ONEAPP_FL_MIN_FIT_CLIENTS'       'configure' 'Minimum clients for training round'                     '2'
-    'ONEAPP_FL_MIN_EVALUATE_CLIENTS'  'configure' 'Minimum clients for evaluation'                         '2'
-    'ONEAPP_FL_MIN_AVAILABLE_CLIENTS' 'configure' 'Minimum available clients to start'                     '2'
-    'ONEAPP_FL_FLEET_API_ADDRESS'     'configure' 'Fleet API listen address (host:port)'                   '0.0.0.0:9092'
-    'ONEAPP_FL_CONTROL_API_ADDRESS'   'configure' 'Control API listen address (host:port)'                 '0.0.0.0:9093'
     'ONEAPP_FL_ISOLATION'             'configure' 'App execution isolation mode (subprocess|process)'      'subprocess'
     'ONEAPP_FL_DATABASE'              'configure' 'Database path for state persistence'                    'state/state.db'
     'ONEAPP_FL_LOG_LEVEL'             'configure' 'Log verbosity (DEBUG|INFO|WARNING|ERROR)'               'INFO'
 
-    # --- Strategy parameters (Phase 5) ---
-    'ONEAPP_FL_PROXIMAL_MU'           'configure' 'FedProx proximal term (mu)'                             '1.0'
-    'ONEAPP_FL_SERVER_LR'             'configure' 'Server-side learning rate (FedAdam)'                    '0.1'
-    'ONEAPP_FL_CLIENT_LR'             'configure' 'Client-side learning rate (FedAdam)'                    '0.1'
-    'ONEAPP_FL_NUM_MALICIOUS'         'configure' 'Expected malicious clients (Krum/Bulyan)'               '0'
-    'ONEAPP_FL_TRIM_BETA'             'configure' 'Trim fraction per tail (FedTrimmedAvg)'                 '0.2'
-
-    # --- Checkpointing (Phase 5) ---
-    'ONEAPP_FL_CHECKPOINT_ENABLED'    'configure' 'Enable model checkpointing (YES|NO)'                    'NO'
-    'ONEAPP_FL_CHECKPOINT_INTERVAL'   'configure' 'Save checkpoint every N rounds'                         '5'
-    'ONEAPP_FL_CHECKPOINT_PATH'       'configure' 'Checkpoint directory (container path)'                  '/app/checkpoints'
-
-    # --- gRPC keepalive (Phase 7) ---
-    'ONEAPP_FL_GRPC_KEEPALIVE_TIME'    'configure' 'gRPC keepalive interval in seconds'                    '60'
-    'ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT' 'configure' 'gRPC keepalive ACK timeout in seconds'                 '20'
-
-    # --- TLS configuration (Phase 2) ---
-    'ONEAPP_FL_TLS_ENABLED'           'configure' 'Enable TLS encryption (YES|NO)'                         'NO'
-    'ONEAPP_FL_SSL_CA_CERTFILE'       'configure' 'Operator CA certificate (base64-encoded PEM)'           ''
-    'ONEAPP_FL_SSL_CERTFILE'          'configure' 'Operator server certificate (base64-encoded PEM)'       ''
-    'ONEAPP_FL_SSL_KEYFILE'           'configure' 'Operator server private key (base64-encoded PEM)'       ''
-    'ONEAPP_FL_CERT_EXTRA_SAN'        'configure' 'Additional SAN entries for auto-generated cert'         ''
-
-    # --- Monitoring (Phase 8) ---
-    'ONEAPP_FL_METRICS_ENABLED'       'configure' 'Enable Prometheus metrics exporter (YES|NO)'            'NO'
-    'ONEAPP_FL_METRICS_PORT'          'configure' 'Prometheus metrics exporter port'                        '9101'
-    'ONEAPP_FL_LOG_FORMAT'            'configure' 'Log output format (text|json)'                           'text'
+    # --- TLS configuration (secure by default) ---
+    'ONEAPP_FL_TLS_ENABLED'           'configure' 'Enable TLS encryption (YES|NO)'                         'YES'
 )
 
 # --------------------------------------------------------------------------
 # Default value assignments
 # --------------------------------------------------------------------------
 ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.25.0}"
-ONEAPP_FL_NUM_ROUNDS="${ONEAPP_FL_NUM_ROUNDS:-3}"
-ONEAPP_FL_STRATEGY="${ONEAPP_FL_STRATEGY:-FedAvg}"
-ONEAPP_FL_MIN_FIT_CLIENTS="${ONEAPP_FL_MIN_FIT_CLIENTS:-2}"
-ONEAPP_FL_MIN_EVALUATE_CLIENTS="${ONEAPP_FL_MIN_EVALUATE_CLIENTS:-2}"
-ONEAPP_FL_MIN_AVAILABLE_CLIENTS="${ONEAPP_FL_MIN_AVAILABLE_CLIENTS:-2}"
-ONEAPP_FL_FLEET_API_ADDRESS="${ONEAPP_FL_FLEET_API_ADDRESS:-0.0.0.0:9092}"
-ONEAPP_FL_CONTROL_API_ADDRESS="${ONEAPP_FL_CONTROL_API_ADDRESS:-0.0.0.0:9093}"
 ONEAPP_FL_ISOLATION="${ONEAPP_FL_ISOLATION:-subprocess}"
 ONEAPP_FL_DATABASE="${ONEAPP_FL_DATABASE:-state/state.db}"
 ONEAPP_FL_LOG_LEVEL="${ONEAPP_FL_LOG_LEVEL:-INFO}"
-ONEAPP_FL_PROXIMAL_MU="${ONEAPP_FL_PROXIMAL_MU:-1.0}"
-ONEAPP_FL_SERVER_LR="${ONEAPP_FL_SERVER_LR:-0.1}"
-ONEAPP_FL_CLIENT_LR="${ONEAPP_FL_CLIENT_LR:-0.1}"
-ONEAPP_FL_NUM_MALICIOUS="${ONEAPP_FL_NUM_MALICIOUS:-0}"
-ONEAPP_FL_TRIM_BETA="${ONEAPP_FL_TRIM_BETA:-0.2}"
-ONEAPP_FL_CHECKPOINT_ENABLED="${ONEAPP_FL_CHECKPOINT_ENABLED:-NO}"
-ONEAPP_FL_CHECKPOINT_INTERVAL="${ONEAPP_FL_CHECKPOINT_INTERVAL:-5}"
-ONEAPP_FL_CHECKPOINT_PATH="${ONEAPP_FL_CHECKPOINT_PATH:-/app/checkpoints}"
-ONEAPP_FL_GRPC_KEEPALIVE_TIME="${ONEAPP_FL_GRPC_KEEPALIVE_TIME:-60}"
-ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT="${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT:-20}"
-ONEAPP_FL_TLS_ENABLED="${ONEAPP_FL_TLS_ENABLED:-NO}"
-ONEAPP_FL_SSL_CA_CERTFILE="${ONEAPP_FL_SSL_CA_CERTFILE:-}"
-ONEAPP_FL_SSL_CERTFILE="${ONEAPP_FL_SSL_CERTFILE:-}"
-ONEAPP_FL_SSL_KEYFILE="${ONEAPP_FL_SSL_KEYFILE:-}"
-ONEAPP_FL_CERT_EXTRA_SAN="${ONEAPP_FL_CERT_EXTRA_SAN:-}"
-ONEAPP_FL_METRICS_ENABLED="${ONEAPP_FL_METRICS_ENABLED:-NO}"
-ONEAPP_FL_METRICS_PORT="${ONEAPP_FL_METRICS_PORT:-9101}"
-ONEAPP_FL_LOG_FORMAT="${ONEAPP_FL_LOG_FORMAT:-text}"
+ONEAPP_FL_TLS_ENABLED="${ONEAPP_FL_TLS_ENABLED:-YES}"
 
 # --------------------------------------------------------------------------
 # Constants
@@ -126,10 +77,13 @@ service_install() {
     msg info "Pulling flwr/superlink:${ONEAPP_FLOWER_VERSION}"
     docker pull "flwr/superlink:${ONEAPP_FLOWER_VERSION}"
 
-    # 3. Install OpenSSL (for TLS generation) and jq (for JSON parsing)
+    # 3. Install OpenSSL (TLS generation), jq (JSON parsing), netcat (health
+    #    checks) and the firewall stack (ufw + iptables) used by the boot-time
+    #    hardening in service_configure. Rules are re-applied on every boot, so
+    #    iptables-persistent is intentionally not required.
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq openssl jq netcat-openbsd >/dev/null
+    apt-get install -y -qq openssl jq netcat-openbsd ufw iptables >/dev/null
 
     # 4. Create directory structure
     mkdir -p "${FLOWER_SCRIPTS_DIR}" \
@@ -170,13 +124,8 @@ service_configure() {
 
     # 3. Handle TLS certificates
     if [ "${ONEAPP_FL_TLS_ENABLED}" = "YES" ]; then
-        if [ -n "${ONEAPP_FL_SSL_CA_CERTFILE}" ]; then
-            msg info "TLS enabled -- decoding operator-provided certificates"
-            decode_operator_certs
-        else
-            msg info "TLS enabled -- auto-generating CA and server certificates"
-            generate_tls_certs
-        fi
+        msg info "TLS enabled -- auto-generating CA and server certificates"
+        generate_tls_certs
     else
         msg info "TLS disabled -- using insecure mode"
     fi
@@ -187,19 +136,22 @@ service_configure() {
     # 5. Generate systemd unit file
     generate_systemd_unit
 
-    # 6. Generate Prometheus config if metrics enabled
-    if [ "${ONEAPP_FL_METRICS_ENABLED}" = "YES" ]; then
-        msg info "Metrics enabled -- port ${ONEAPP_FL_METRICS_PORT} will be exposed"
-    fi
+    # 6. Harden the host firewall (default-deny inbound, restrict the FL ports
+    #    to the private network, block outbound SMTP). Re-applied every boot
+    #    because ONE_SERVICE_RECONFIGURABLE=true. This is the load-bearing
+    #    control that prevents the appliance from being conscripted into spam.
+    harden_firewall
 
     # 7. Write service report
+    local _vm_ip
+    _vm_ip=$(get_primary_ip)
     local _report=""
     _report+="Flower SuperLink ${ONEAPP_FLOWER_VERSION}\n"
-    _report+="Strategy: ${ONEAPP_FL_STRATEGY}\n"
-    _report+="Rounds: ${ONEAPP_FL_NUM_ROUNDS}\n"
-    _report+="Fleet API: ${ONEAPP_FL_FLEET_API_ADDRESS}\n"
+    _report+="Fleet API (SuperNodes): ${_vm_ip}:9092\n"
+    _report+="Control API: 127.0.0.1:9093 (operator only -- reach via 'ssh -L 9093:localhost:9093 root@${_vm_ip}')\n"
     _report+="TLS: ${ONEAPP_FL_TLS_ENABLED}\n"
-    _report+="Metrics: ${ONEAPP_FL_METRICS_ENABLED}\n"
+    _report+="Firewall: default-deny inbound, FL ports restricted to ${FL_PRIVATE_CIDR:-private subnet}, outbound SMTP blocked\n"
+    _report+="Submit training: push a Flower App Bundle with 'flwr run' against the Control API\n"
     if [ -n "${ONE_SERVICE_REPORT:-}" ]; then
         echo -e "${_report}" > "${ONE_SERVICE_REPORT}"
     fi
@@ -260,16 +212,17 @@ inside a Docker container managed by systemd.
 
 Key configuration variables (set via OpenNebula context):
   ONEAPP_FLOWER_VERSION           Flower image tag (default: 1.25.0)
-  ONEAPP_FL_STRATEGY              Aggregation strategy (default: FedAvg)
-  ONEAPP_FL_NUM_ROUNDS            Training rounds (default: 3)
-  ONEAPP_FL_TLS_ENABLED           Enable TLS (default: NO)
-  ONEAPP_FL_METRICS_ENABLED       Enable Prometheus metrics (default: NO)
+  ONEAPP_FL_TLS_ENABLED           Enable TLS (default: YES)
+  ONEAPP_FL_ISOLATION             App isolation: subprocess|process (default: subprocess)
 
-Ports:
-  9091  ServerAppIo (internal)
-  9092  Fleet API (SuperNode connections)
-  9093  Control API (CLI management)
-  9101  Prometheus metrics (optional)
+The aggregation strategy, number of rounds and client minimums are NOT set
+here: they are properties of the Flower App Bundle you submit at run time with
+'flwr run --run-config ...'. The stock SuperLink image ignores such variables.
+
+Ports (none are published on 0.0.0.0):
+  9091  ServerAppIo  (container-internal only, not published)
+  9092  Fleet API    (bound to the private NIC; SuperNode connections)
+  9093  Control API  (bound to 127.0.0.1; reach via SSH tunnel, executes code)
 
 Service management:
   systemctl status  flower-superlink
@@ -338,47 +291,7 @@ install_docker() {
 validate_config() {
     local _errors=0
 
-    # Positive integer checks
-    local _var _val
-    for _var in ONEAPP_FL_NUM_ROUNDS ONEAPP_FL_MIN_FIT_CLIENTS \
-                ONEAPP_FL_MIN_EVALUATE_CLIENTS ONEAPP_FL_MIN_AVAILABLE_CLIENTS \
-                ONEAPP_FL_CHECKPOINT_INTERVAL ONEAPP_FL_GRPC_KEEPALIVE_TIME \
-                ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT; do
-        _val="${!_var}"
-        if ! [[ "${_val}" =~ ^[1-9][0-9]*$ ]]; then
-            msg error "${_var}='${_val}' -- must be a positive integer"
-            _errors=$((_errors + 1))
-        fi
-    done
-
-    # Non-negative integer checks
-    for _var in ONEAPP_FL_NUM_MALICIOUS; do
-        _val="${!_var}"
-        if ! [[ "${_val}" =~ ^[0-9]+$ ]]; then
-            msg error "${_var}='${_val}' -- must be a non-negative integer"
-            _errors=$((_errors + 1))
-        fi
-    done
-
-    # Metrics port check
-    if ! [[ "${ONEAPP_FL_METRICS_PORT}" =~ ^[0-9]+$ ]] \
-       || [ "${ONEAPP_FL_METRICS_PORT}" -lt 1024 ] \
-       || [ "${ONEAPP_FL_METRICS_PORT}" -gt 65535 ]; then
-        msg error "ONEAPP_FL_METRICS_PORT='${ONEAPP_FL_METRICS_PORT}' -- must be 1024-65535"
-        _errors=$((_errors + 1))
-    fi
-    if [[ "${ONEAPP_FL_METRICS_PORT}" =~ ^(9091|9092|9093)$ ]]; then
-        msg error "ONEAPP_FL_METRICS_PORT='${ONEAPP_FL_METRICS_PORT}' -- conflicts with Flower ports"
-        _errors=$((_errors + 1))
-    fi
-
     # Enum checks
-    case "${ONEAPP_FL_STRATEGY}" in
-        FedAvg|FedProx|FedAdam|Krum|Bulyan|FedTrimmedAvg) ;;
-        *) msg error "ONEAPP_FL_STRATEGY='${ONEAPP_FL_STRATEGY}' -- invalid strategy"
-           _errors=$((_errors + 1)) ;;
-    esac
-
     case "${ONEAPP_FL_ISOLATION}" in
         subprocess|process) ;;
         *) msg error "ONEAPP_FL_ISOLATION='${ONEAPP_FL_ISOLATION}' -- must be subprocess or process"
@@ -391,54 +304,11 @@ validate_config() {
            _errors=$((_errors + 1)) ;;
     esac
 
-    case "${ONEAPP_FL_LOG_FORMAT}" in
-        text|json) ;;
-        *) msg error "ONEAPP_FL_LOG_FORMAT='${ONEAPP_FL_LOG_FORMAT}' -- must be text or json"
-           _errors=$((_errors + 1)) ;;
-    esac
-
     case "${ONEAPP_FL_TLS_ENABLED}" in
         YES|NO) ;;
         *) msg error "ONEAPP_FL_TLS_ENABLED='${ONEAPP_FL_TLS_ENABLED}' -- must be YES or NO"
            _errors=$((_errors + 1)) ;;
     esac
-
-    case "${ONEAPP_FL_CHECKPOINT_ENABLED}" in
-        YES|NO) ;;
-        *) msg error "ONEAPP_FL_CHECKPOINT_ENABLED='${ONEAPP_FL_CHECKPOINT_ENABLED}' -- must be YES or NO"
-           _errors=$((_errors + 1)) ;;
-    esac
-
-    case "${ONEAPP_FL_METRICS_ENABLED}" in
-        YES|NO) ;;
-        *) msg error "ONEAPP_FL_METRICS_ENABLED='${ONEAPP_FL_METRICS_ENABLED}' -- must be YES or NO"
-           _errors=$((_errors + 1)) ;;
-    esac
-
-    # host:port format checks
-    for _var in ONEAPP_FL_FLEET_API_ADDRESS ONEAPP_FL_CONTROL_API_ADDRESS; do
-        _val="${!_var}"
-        if ! [[ "${_val}" =~ ^[^:]+:[0-9]+$ ]]; then
-            msg error "${_var}='${_val}' -- must be in host:port format"
-            _errors=$((_errors + 1))
-        fi
-    done
-
-    # gRPC keepalive sanity: timeout must be less than interval
-    if [ "${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}" -ge "${ONEAPP_FL_GRPC_KEEPALIVE_TIME}" ] 2>/dev/null; then
-        msg warning "ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT (${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}) >= ONEAPP_FL_GRPC_KEEPALIVE_TIME (${ONEAPP_FL_GRPC_KEEPALIVE_TIME})"
-    fi
-    if [ "${ONEAPP_FL_GRPC_KEEPALIVE_TIME}" -lt 10 ] 2>/dev/null; then
-        msg warning "ONEAPP_FL_GRPC_KEEPALIVE_TIME=${ONEAPP_FL_GRPC_KEEPALIVE_TIME} -- very low keepalive interval"
-    fi
-
-    # TLS: operator certs all-or-none rule
-    if [ "${ONEAPP_FL_TLS_ENABLED}" = "YES" ] && [ -n "${ONEAPP_FL_SSL_CA_CERTFILE}" ]; then
-        if [ -z "${ONEAPP_FL_SSL_CERTFILE}" ] || [ -z "${ONEAPP_FL_SSL_KEYFILE}" ]; then
-            msg error "Operator TLS: FL_SSL_CA_CERTFILE is set but FL_SSL_CERTFILE or FL_SSL_KEYFILE is missing (all-or-none rule)"
-            _errors=$((_errors + 1))
-        fi
-    fi
 
     # Abort on any validation error
     if [ "${_errors}" -gt 0 ]; then
@@ -454,36 +324,28 @@ validate_config() {
 # ==========================================================================
 generate_tls_certs() {
     local _vm_ip
-    _vm_ip=$(hostname -I | awk '{print $1}')
-    msg info "Generating TLS certificates for VM IP ${_vm_ip}"
+    _vm_ip=$(get_primary_ip)
 
-    # Build SAN entries: base + optional extras from ONEAPP_FL_CERT_EXTRA_SAN
-    local _extra_san=""
-    local _san_idx=4
-    if [ -n "${ONEAPP_FL_CERT_EXTRA_SAN}" ]; then
-        local IFS=','
-        for _entry in ${ONEAPP_FL_CERT_EXTRA_SAN}; do
-            _entry=$(echo "${_entry}" | xargs)  # trim whitespace
-            if [[ "${_entry}" =~ ^IP: ]]; then
-                _extra_san+="IP.${_san_idx} = ${_entry#IP:}\n"
-            elif [[ "${_entry}" =~ ^DNS: ]]; then
-                _extra_san+="DNS.${_san_idx} = ${_entry#DNS:}\n"
-            else
-                msg warning "Ignoring invalid SAN entry: ${_entry} (must be IP:<addr> or DNS:<name>)"
-                continue
-            fi
-            _san_idx=$((_san_idx + 1))
-        done
+    # Persistence: ONE_SERVICE_RECONFIGURABLE=true re-runs configure on every
+    # boot. Regenerating the CA each boot would break SuperNodes that already
+    # pinned the previous CA, so reuse existing certs when they are still valid
+    # and cover the current VM IP.
+    if [ -f "${FLOWER_CERT_DIR}/ca.crt" ] && [ -f "${FLOWER_CERT_DIR}/server.pem" ] \
+       && [ -f "${FLOWER_CERT_DIR}/server.key" ] \
+       && openssl verify -CAfile "${FLOWER_CERT_DIR}/ca.crt" "${FLOWER_CERT_DIR}/server.pem" >/dev/null 2>&1 \
+       && openssl x509 -in "${FLOWER_CERT_DIR}/server.pem" -noout -checkend 86400 >/dev/null 2>&1 \
+       && openssl x509 -in "${FLOWER_CERT_DIR}/server.pem" -noout -text 2>/dev/null | grep -qF "${_vm_ip}"; then
+        msg info "Reusing existing valid TLS certificates (cover ${_vm_ip})"
+        return 0
     fi
+
+    msg info "Generating TLS certificates for VM IP ${_vm_ip}"
 
     local _san_block
     _san_block="DNS.1 = localhost
 IP.1 = 127.0.0.1
 IP.2 = ::1
 IP.3 = ${_vm_ip}"
-    if [ -n "${_extra_san}" ]; then
-        _san_block+=$'\n'"$(echo -e "${_extra_san}")"
-    fi
 
     # Step 1: CA private key
     openssl genrsa -out "${FLOWER_CERT_DIR}/ca.key" 4096 2>/dev/null
@@ -567,77 +429,16 @@ EOF
 }
 
 # ==========================================================================
-#  HELPER: decode_operator_certs  (decode base64 operator-provided certs)
-# ==========================================================================
-decode_operator_certs() {
-    # Decode PEM files from base64 context variables
-    echo "${ONEAPP_FL_SSL_CA_CERTFILE}" | base64 -d > "${FLOWER_CERT_DIR}/ca.crt"
-    msg info "CA certificate decoded from ONEAPP_FL_SSL_CA_CERTFILE"
-
-    echo "${ONEAPP_FL_SSL_CERTFILE}" | base64 -d > "${FLOWER_CERT_DIR}/server.pem"
-    msg info "Server certificate decoded from ONEAPP_FL_SSL_CERTFILE"
-
-    echo "${ONEAPP_FL_SSL_KEYFILE}" | base64 -d > "${FLOWER_CERT_DIR}/server.key"
-    msg info "Server private key decoded from ONEAPP_FL_SSL_KEYFILE"
-
-    # Set ownership and permissions
-    chown "${FLOWER_UID}:${FLOWER_GID}" \
-        "${FLOWER_CERT_DIR}/ca.crt" \
-        "${FLOWER_CERT_DIR}/server.pem" \
-        "${FLOWER_CERT_DIR}/server.key"
-    chmod 0644 "${FLOWER_CERT_DIR}/ca.crt"
-    chmod 0644 "${FLOWER_CERT_DIR}/server.pem"
-    chmod 0600 "${FLOWER_CERT_DIR}/server.key"
-
-    # Validate decoded certificates
-    openssl x509 -in "${FLOWER_CERT_DIR}/ca.crt" -noout 2>/dev/null || {
-        msg error "ONEAPP_FL_SSL_CA_CERTFILE does not contain a valid PEM certificate"
-        exit 1
-    }
-    openssl x509 -in "${FLOWER_CERT_DIR}/server.pem" -noout 2>/dev/null || {
-        msg error "ONEAPP_FL_SSL_CERTFILE does not contain a valid PEM certificate"
-        exit 1
-    }
-    openssl rsa -in "${FLOWER_CERT_DIR}/server.key" -check -noout 2>/dev/null || {
-        msg error "ONEAPP_FL_SSL_KEYFILE does not contain a valid PEM private key"
-        exit 1
-    }
-
-    # Verify chain: server cert was signed by the provided CA
-    if openssl verify -CAfile "${FLOWER_CERT_DIR}/ca.crt" \
-            "${FLOWER_CERT_DIR}/server.pem" >/dev/null 2>&1; then
-        msg info "Operator certificate chain verified successfully"
-    else
-        msg error "Server certificate is not signed by the provided CA certificate"
-        exit 1
-    fi
-}
-
-# ==========================================================================
 #  HELPER: generate_superlink_env  (write Docker env file)
 # ==========================================================================
 generate_superlink_env() {
+    # Only FLWR_LOG_LEVEL is read by the stock flwr/superlink container. The
+    # former FL_STRATEGY/FL_NUM_ROUNDS/FL_MIN_*/FL_CHECKPOINT_* variables were
+    # never consumed by the image (those are Flower App Bundle run-config values
+    # chosen at `flwr run` time), so they are intentionally not written here.
     cat > "${FLOWER_ENV_FILE}" <<EOF
 # Flower SuperLink environment -- generated at $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 FLWR_LOG_LEVEL=${ONEAPP_FL_LOG_LEVEL}
-FL_NUM_ROUNDS=${ONEAPP_FL_NUM_ROUNDS}
-FL_STRATEGY=${ONEAPP_FL_STRATEGY}
-FL_MIN_FIT_CLIENTS=${ONEAPP_FL_MIN_FIT_CLIENTS}
-FL_MIN_EVALUATE_CLIENTS=${ONEAPP_FL_MIN_EVALUATE_CLIENTS}
-FL_MIN_AVAILABLE_CLIENTS=${ONEAPP_FL_MIN_AVAILABLE_CLIENTS}
-FL_PROXIMAL_MU=${ONEAPP_FL_PROXIMAL_MU}
-FL_SERVER_LR=${ONEAPP_FL_SERVER_LR}
-FL_CLIENT_LR=${ONEAPP_FL_CLIENT_LR}
-FL_NUM_MALICIOUS=${ONEAPP_FL_NUM_MALICIOUS}
-FL_TRIM_BETA=${ONEAPP_FL_TRIM_BETA}
-FL_CHECKPOINT_ENABLED=${ONEAPP_FL_CHECKPOINT_ENABLED}
-FL_CHECKPOINT_INTERVAL=${ONEAPP_FL_CHECKPOINT_INTERVAL}
-FL_CHECKPOINT_PATH=${ONEAPP_FL_CHECKPOINT_PATH}
-FL_GRPC_KEEPALIVE_TIME=${ONEAPP_FL_GRPC_KEEPALIVE_TIME}
-FL_GRPC_KEEPALIVE_TIMEOUT=${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}
-FL_METRICS_ENABLED=${ONEAPP_FL_METRICS_ENABLED}
-FL_METRICS_PORT=${ONEAPP_FL_METRICS_PORT}
-FL_LOG_FORMAT=${ONEAPP_FL_LOG_FORMAT}
 EOF
     chmod 0640 "${FLOWER_ENV_FILE}"
     msg info "Environment file written to ${FLOWER_ENV_FILE}"
@@ -660,34 +461,32 @@ generate_systemd_unit() {
         _tls_flower_flags="--insecure"
     fi
 
-    # Build metrics port mapping
-    local _metrics_port_flag=""
-    if [ "${ONEAPP_FL_METRICS_ENABLED}" = "YES" ]; then
-        _metrics_port_flag="-p ${ONEAPP_FL_METRICS_PORT}:${ONEAPP_FL_METRICS_PORT}"
-    fi
-
-    # Build checkpoint volume mount
-    local _ckpt_docker_flags=""
-    if [ "${ONEAPP_FL_CHECKPOINT_ENABLED}" = "YES" ]; then
-        local _host_ckpt_dir="${FLOWER_BASE_DIR}/checkpoints"
-        mkdir -p "${_host_ckpt_dir}"
-        chown "${FLOWER_UID}:${FLOWER_GID}" "${_host_ckpt_dir}"
-        _ckpt_docker_flags="-v ${_host_ckpt_dir}:${ONEAPP_FL_CHECKPOINT_PATH}"
-    fi
+    # Port publishing. SECURITY: never publish on 0.0.0.0.
+    #   9091 ServerAppIo  -- container-internal only, NOT published
+    #   9092 Fleet API    -- bound to the private NIC so SuperNodes (same FL
+    #                        network) can reach it; the firewall additionally
+    #                        restricts it to the FL subnet
+    #   9093 Control API  -- bound to 127.0.0.1 ONLY; executes submitted code,
+    #                        so operators reach it through an SSH tunnel
+    local _vm_ip
+    _vm_ip=$(get_primary_ip)
+    # Fail closed: if the primary IP cannot be determined, bind to loopback
+    # rather than risk an unintended 0.0.0.0 bind. The firewall is a backstop.
+    [ -z "${_vm_ip}" ] && _vm_ip="127.0.0.1"
 
     # Build ExecStart command as an array to avoid empty-line continuation bugs
     local _exec_parts=()
     _exec_parts+=("/usr/bin/docker run --name flower-superlink")
     _exec_parts+=("  --env-file ${FLOWER_ENV_FILE}")
-    _exec_parts+=("  -p 9091:9091 -p 9092:9092 -p 9093:9093")
-    [ -n "${_metrics_port_flag}" ]  && _exec_parts+=("  ${_metrics_port_flag}")
+    _exec_parts+=("  -p ${_vm_ip}:9092:9092 -p 127.0.0.1:9093:9093")
     _exec_parts+=("  -v ${FLOWER_STATE_DIR}:/app/state")
     [ -n "${_tls_docker_flags}" ]   && _exec_parts+=("  ${_tls_docker_flags}")
-    [ -n "${_ckpt_docker_flags}" ]  && _exec_parts+=("  ${_ckpt_docker_flags}")
     _exec_parts+=("  flwr/superlink:${ONEAPP_FLOWER_VERSION}")
     _exec_parts+=("  ${_tls_flower_flags}")
     _exec_parts+=("  --isolation ${ONEAPP_FL_ISOLATION}")
-    _exec_parts+=("  --fleet-api-address ${ONEAPP_FL_FLEET_API_ADDRESS}")
+    # Pin the in-container Fleet API bind to 9092 so the host publish
+    # (9092:9092) maps correctly.
+    _exec_parts+=("  --fleet-api-address 0.0.0.0:9092")
     _exec_parts+=("  --database ${ONEAPP_FL_DATABASE}")
 
     # Join with backslash-newline continuations
@@ -742,20 +541,27 @@ wait_for_docker() {
 #  HELPER: wait_for_superlink  (poll gRPC port, 120s timeout)
 # ==========================================================================
 wait_for_superlink() {
-    local _port
-    _port=$(echo "${ONEAPP_FL_FLEET_API_ADDRESS}" | cut -d: -f2)
+    local _port _host
+    _port="9092"
+    # The Fleet API is published on the private NIC (not localhost), so probe
+    # there.
+    _host=$(get_primary_ip)
     local _timeout=120
     local _elapsed=0
 
-    msg info "Waiting for SuperLink Fleet API on port ${_port} (timeout: ${_timeout}s)"
-    while ! nc -z localhost "${_port}" 2>/dev/null; do
+    msg info "Waiting for SuperLink Fleet API on ${_host}:${_port} (timeout: ${_timeout}s)"
+    while ! nc -z "${_host}" "${_port}" 2>/dev/null; do
         sleep 2
         _elapsed=$((_elapsed + 2))
         if [ "${_elapsed}" -ge "${_timeout}" ]; then
-            msg error "SuperLink health check timed out after ${_timeout}s"
-            # Attempt to publish failure state
+            # Non-fatal: do NOT abort the boot. Aborting would stop the
+            # one-apps framework from writing the ready MOTD and would block the
+            # OneFlow ready_status_gate, leaving the VM unreachable for debugging.
+            # Report the degraded state and let the service stay up so systemd
+            # (Restart=on-failure) and the operator can recover.
+            msg warning "SuperLink Fleet API not listening after ${_timeout}s -- continuing; check 'journalctl -u flower-superlink'"
             publish_to_onegate "NO" "health_check_timeout" || true
-            exit 1
+            return 0
         fi
     done
     msg info "SuperLink Fleet API is listening (${_elapsed}s)"
@@ -768,7 +574,7 @@ publish_to_onegate() {
     local _ready="${1:-YES}"
     local _error="${2:-}"
     local _vm_ip
-    _vm_ip=$(hostname -I | awk '{print $1}')
+    _vm_ip=$(get_primary_ip)
 
     # Check onegate CLI is available
     if ! command -v onegate >/dev/null 2>&1; then
@@ -777,9 +583,7 @@ publish_to_onegate() {
     fi
 
     # Publish each attribute individually via onegate CLI (reliable encoding)
-    local _fl_port="${ONEAPP_FL_FLEET_API_ADDRESS##*:}"
-    _fl_port="${_fl_port:-9092}"
-    local _fl_endpoint="${_vm_ip}:${_fl_port}"
+    local _fl_endpoint="${_vm_ip}:9092"
     local _failed=0
 
     onegate vm update --data "FL_READY=${_ready}" 2>/dev/null || _failed=1
@@ -806,4 +610,92 @@ publish_to_onegate() {
     else
         msg warning "OneGate publication failed -- SuperNodes must use static FL_SUPERLINK_ADDRESS"
     fi
+}
+
+# ==========================================================================
+#  HELPER: get_primary_ip  (first non-loopback IPv4 address)
+# ==========================================================================
+get_primary_ip() {
+    local _ip
+    _ip=$(ip -o -f inet route show to default 2>/dev/null | awk '{print $5; exit}')
+    if [ -n "${_ip}" ]; then
+        ip -o -f inet addr show dev "${_ip}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
+        return 0
+    fi
+    hostname -I 2>/dev/null | awk '{print $1}'
+}
+
+# ==========================================================================
+#  HELPER: get_primary_cidr  (connected subnet of the primary interface)
+# ==========================================================================
+get_primary_cidr() {
+    # Anchor to the default-route interface. Taking the first link-scope route
+    # is unsafe once Docker is up: docker0's 172.17.0.0/16 can sort ahead of the
+    # real FL subnet, which would scope the firewall to the wrong network.
+    local _if _cidr
+    _if=$(ip -o -f inet route show to default 2>/dev/null | awk '{print $5; exit}')
+    [ -n "${_if}" ] && _cidr=$(ip -o -f inet route show scope link dev "${_if}" 2>/dev/null | awk '{print $1; exit}')
+    echo "${_cidr}"
+}
+
+# ==========================================================================
+#  HELPER: harden_firewall  (default-deny inbound + FL-port scoping + SMTP
+#  egress block). Idempotent; re-applied on every configure/boot. This is the
+#  control that prevents the appliance from being abused as a spam relay even
+#  if a workload is compromised. All commands are best-effort so a firewall
+#  hiccup never aborts the boot.
+# ==========================================================================
+harden_firewall() {
+    msg info "Hardening host firewall (default-deny inbound, SMTP egress block)"
+
+    FL_PRIVATE_CIDR=$(get_primary_cidr)
+    [ -z "${FL_PRIVATE_CIDR}" ] && FL_PRIVATE_CIDR="$(get_primary_ip)/24"
+    local _ext_if
+    _ext_if=$(ip -o -f inet route show to default 2>/dev/null | awk '{print $5; exit}')
+
+    # --- Host-level inbound policy via UFW (covers host services, e.g. SSH) ---
+    if command -v ufw >/dev/null 2>&1; then
+        ufw --force reset      >/dev/null 2>&1 || true
+        ufw default deny incoming  >/dev/null 2>&1 || true
+        ufw default allow outgoing >/dev/null 2>&1 || true
+        ufw allow 22/tcp comment 'SSH' >/dev/null 2>&1 || true
+        ufw logging low        >/dev/null 2>&1 || true
+        ufw --force enable     >/dev/null 2>&1 || true
+    fi
+
+    # --- Container-published ports bypass UFW (Docker DNATs before INPUT), so
+    #     they must be filtered in the DOCKER-USER chain. Restrict the Flower
+    #     ports to the FL private subnet; everything else is dropped. ---
+    if command -v iptables >/dev/null 2>&1; then
+        iptables -L DOCKER-USER >/dev/null 2>&1 || iptables -N DOCKER-USER 2>/dev/null || true
+
+        # Block all outbound SMTP (the direct spam vector) for both host and
+        # container traffic. The appliance never sends mail.
+        iptables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+            || iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        iptables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+            || iptables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+
+        # Restrict the published Flower ports to the FL private subnet, but only
+        # for traffic arriving on the EXTERNAL interface. The -i match is
+        # essential: with Docker's userland-proxy, loopback/bridge-sourced
+        # traffic (e.g. the 127.0.0.1-published Control API reached over an SSH
+        # tunnel) appears with a non-FL source and would otherwise be dropped.
+        if [ -n "${_ext_if}" ]; then
+            iptables -C DOCKER-USER -i "${_ext_if}" ! -s "${FL_PRIVATE_CIDR}" -p tcp -m multiport --dports 9091,9092,9093,9101,9400 -j DROP 2>/dev/null \
+                || iptables -I DOCKER-USER -i "${_ext_if}" ! -s "${FL_PRIVATE_CIDR}" -p tcp -m multiport --dports 9091,9092,9093,9101,9400 -j DROP 2>/dev/null || true
+        fi
+    fi
+
+    if command -v ip6tables >/dev/null 2>&1; then
+        ip6tables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+            || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+    fi
+
+    # Persist so the rules survive a reboot even before configure re-runs.
+    if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save >/dev/null 2>&1 || true
+    fi
+
+    msg info "Firewall hardened (FL ports limited to ${FL_PRIVATE_CIDR}, SMTP egress blocked)"
 }

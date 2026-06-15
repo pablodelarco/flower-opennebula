@@ -14,10 +14,13 @@ description: |-
   only model weights are transmitted.
 
   **Features:**
-  - 6 aggregation strategies: FedAvg, FedProx, FedAdam, Krum, Bulyan, FedTrimmedAvg
-  - 3 ML frameworks pre-baked: PyTorch 2.6.0, TensorFlow 2.18.1, scikit-learn
-  - Automatic service discovery via OneGate
-  - Optional TLS encryption, model checkpointing, GPU passthrough
+  - Run any Flower strategy and round count from the App Bundle you submit
+    with `flwr run` (FedAvg, FedProx, FedAdam and more are defined in your code)
+  - PyTorch pre-baked; TensorFlow and scikit-learn built automatically on first
+    boot when selected
+  - Automatic SuperLink discovery via OneGate
+  - Secure by default: TLS between SuperLink and SuperNodes, a default-deny host
+    firewall, and outbound SMTP blocked so a node can never be used to relay spam
   - Auto-scaling from 2 to 10 SuperNodes
 
   Requires
@@ -40,7 +43,7 @@ os-id: Ubuntu
 os-release: '24.04 LTS'
 os-arch: x86_64
 hypervisor: KVM
-opennebula_version: 6.8, 6.10, 7.0
+opennebula_version: 6.8, 6.10, 7.0, 7.2
 type: 'SERVICE_TEMPLATE'
 roles:
   superlink: 'Flower SuperLink 1.25.0'
@@ -52,11 +55,7 @@ opennebula_template:
   shutdown_action: shutdown
   custom_attrs:
     ONEAPP_FL_FRAMEWORK: 'O|list|Machine learning framework|pytorch,tensorflow,sklearn|pytorch'
-    ONEAPP_FL_NUM_ROUNDS: 'O|number|Number of federated training rounds||3'
-    ONEAPP_FL_STRATEGY: 'O|list|Model aggregation strategy|FedAvg,FedProx,FedAdam,Krum,Bulyan,FedTrimmedAvg|FedAvg'
-    ONEAPP_FL_MIN_AVAILABLE_CLIENTS: 'O|number|Minimum SuperNodes required to start training||2'
     ONEAPP_FL_TLS_ENABLED: 'O|boolean|Encrypt communication between SuperLink and SuperNodes||YES'
-    ONEAPP_FL_GPU_ENABLED: 'O|boolean|Enable GPU acceleration for model training||NO'
   networks:
     Private: 'M|network|Private network for FL cluster| |id::'
   roles:
@@ -67,10 +66,6 @@ opennebula_template:
     cooldown: 60
     vm_template_contents: |
       NIC = [ NETWORK_ID = "$Private" ]
-      ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
-      ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS"
-      ONEAPP_FL_STRATEGY = "$ONEAPP_FL_STRATEGY"
-      ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
       ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
   - name: supernode
     parents:
@@ -82,10 +77,6 @@ opennebula_template:
     vm_template_contents: |
       NIC = [ NETWORK_ID = "$Private" ]
       ONEAPP_FL_FRAMEWORK = "$ONEAPP_FL_FRAMEWORK"
-      ONEAPP_FL_NUM_ROUNDS = "$ONEAPP_FL_NUM_ROUNDS"
-      ONEAPP_FL_STRATEGY = "$ONEAPP_FL_STRATEGY"
-      ONEAPP_FL_MIN_AVAILABLE_CLIENTS = "$ONEAPP_FL_MIN_AVAILABLE_CLIENTS"
       ONEAPP_FL_TLS_ENABLED = "$ONEAPP_FL_TLS_ENABLED"
-      ONEAPP_FL_GPU_ENABLED = "$ONEAPP_FL_GPU_ENABLED"
 logo: flower.png
 images: []

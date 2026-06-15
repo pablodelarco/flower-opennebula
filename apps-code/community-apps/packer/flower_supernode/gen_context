@@ -1,0 +1,45 @@
+#!/bin/bash
+set -eux -o pipefail
+
+SCRIPT=$(cat <<'MAINEND'
+# Try with gawk first, fallback if not available
+if command -v gawk &> /dev/null; then
+    gawk -i inplace -f- /etc/ssh/sshd_config <<'SSHEOF'
+BEGIN { update = "PasswordAuthentication yes" }
+/^[#\s]*PasswordAuthentication\s/ { $0 = update; found = 1 }
+{ print }
+ENDFILE { if (!found) print update }
+SSHEOF
+
+    gawk -i inplace -f- /etc/ssh/sshd_config <<'SSHEOF'
+BEGIN { update = "PermitRootLogin yes" }
+/^[#\s]*PermitRootLogin\s/ { $0 = update; found = 1 }
+{ print }
+ENDFILE { if (!found) print update }
+SSHEOF
+else
+    # Fallback: remove cloudimg settings that disable password auth
+    rm -rf /etc/ssh/sshd_config.d/*-cloudimg-settings.conf 2>/dev/null || true
+    # Ensure PermitRootLogin and PasswordAuthentication are enabled
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    # Add if not present
+    grep -q "^PermitRootLogin" /etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+    grep -q "^PasswordAuthentication" /etc/ssh/sshd_config || echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+fi
+
+systemctl reload sshd || systemctl reload ssh || true
+
+echo "nameserver 1.1.1.1" > /etc/resolv.conf
+MAINEND
+)
+
+cat<<CTXEOF
+ETH0_METHOD='dhcp'
+NETWORK='YES'
+SET_HOSTNAME='flower-supernode'
+PASSWORD='opennebula'
+ETH0_MAC='00:11:22:33:44:55'
+NETCFG_TYPE='nm'
+START_SCRIPT_BASE64="$(echo "$SCRIPT" | base64 -w0)"
+CTXEOF

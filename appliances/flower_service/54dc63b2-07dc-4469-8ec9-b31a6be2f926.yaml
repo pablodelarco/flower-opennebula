@@ -6,15 +6,15 @@ description: |-
   OS disk image for the [Flower](https://flower.ai/) SuperNode appliance
   (federated learning client).
 
-  Ubuntu 24.04 LTS with Docker CE and three pre-built ML framework containers:
-  PyTorch 2.6.0, TensorFlow 2.18.1, and scikit-learn. Set
-  `ONEAPP_FL_FRAMEWORK` at deployment time to select which framework boots.
-  SuperNodes auto-discover the SuperLink coordinator via OneGate.
+  Ubuntu 24.04 LTS with Docker CE and a pre-built PyTorch 2.5.1 (CPU) training
+  container. TensorFlow 2.18.1 and scikit-learn are built automatically on
+  first boot when selected via `ONEAPP_FL_FRAMEWORK`, keeping the base image
+  small. SuperNodes auto-discover the SuperLink coordinator via OneGate.
 
   Part of the **Flower Federated Learning** appliance set.
   Imported automatically when you export the
   [Service Flower FL 1.25.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
-short_description: Flower SuperNode appliance OS disk (Ubuntu 24.04 + Docker + PyTorch/TF/sklearn)
+short_description: Flower SuperNode appliance OS disk (Ubuntu 24.04 + Docker + PyTorch, TF/sklearn on demand)
 tags:
 - flower
 - federated-learning
@@ -27,7 +27,7 @@ os-id: Ubuntu
 os-release: '24.04 LTS'
 os-arch: x86_64
 hypervisor: KVM
-opennebula_version: 6.8, 6.10, 7.0
+opennebula_version: 6.8, 6.10, 7.0, 7.2
 logo: flower.png
 images:
 - name: flower_supernode_os
@@ -35,7 +35,7 @@ images:
   type: OS
   dev_prefix: vd
   driver: qcow2
-  size: 21474836480
+  size: 12884901888
   checksum:
     md5: 'fc80b3e51a9c441492ce209db1ab47e4'
     sha256: '2a1c4224e47dd73d8bb74dde844539208834eb64042428e9f5c7ea7e6c35189e'

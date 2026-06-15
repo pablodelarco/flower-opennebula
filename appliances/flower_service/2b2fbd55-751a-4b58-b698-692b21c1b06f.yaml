@@ -6,11 +6,13 @@ description: |-
   OS disk image for the [Flower](https://flower.ai/) SuperLink appliance
   (federated learning coordinator).
 
-  Ubuntu 24.04 LTS with Docker CE and `flwr/superlink:1.25.0` container
-  pre-pulled. At boot, OpenNebula contextualization configures the SuperLink
-  from CONTEXT variables -- number of rounds, aggregation strategy, TLS, and
-  more. The SuperLink publishes its endpoint to OneGate so SuperNodes
-  discover it automatically.
+  Ubuntu 24.04 LTS with Docker CE and the `flwr/superlink:1.25.0` container
+  pre-pulled. At boot, OpenNebula contextualization configures the SuperLink:
+  TLS is enabled by default, the Control API is bound to localhost, and a
+  default-deny firewall blocks outbound SMTP. The SuperLink publishes its
+  endpoint to OneGate so SuperNodes discover it automatically. The aggregation
+  strategy and round count come from the Flower App Bundle you submit at run
+  time with flwr run.
 
   Part of the **Flower Federated Learning** appliance set.
   Imported automatically when you export the
@@ -28,7 +30,7 @@ os-id: Ubuntu
 os-release: '24.04 LTS'
 os-arch: x86_64
 hypervisor: KVM
-opennebula_version: 6.8, 6.10, 7.0
+opennebula_version: 6.8, 6.10, 7.0, 7.2
 logo: flower.png
 images:
 - name: flower_superlink_os

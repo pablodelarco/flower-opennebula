@@ -2,15 +2,12 @@
 
 # Flower SuperNode appliance lifecycle script for the one-apps framework.
 # Implements APPL-02: SuperNode marketplace appliance with Docker-in-VM
-# architecture, OneGate dynamic discovery, TLS trust, GPU passthrough,
-# and DCGM monitoring sidecar.
+# architecture, OneGate dynamic discovery, and TLS trust.
 #
 # Spec references:
 #   spec/02-supernode-appliance.md  -- boot sequence, discovery, health check
 #   spec/03-contextualization-reference.md -- variable definitions
 #   spec/05-supernode-tls-trust.md  -- CA cert retrieval
-#   spec/10-gpu-passthrough.md      -- GPU detection and fallback
-#   spec/13-monitoring-observability.md -- DCGM exporter sidecar
 
 ### Flower SuperNode Configuration ############################################
 
@@ -20,7 +17,6 @@ FLOWER_CONFIG_DIR="${FLOWER_DIR}/config"
 FLOWER_CERTS_DIR="${FLOWER_DIR}/certs"
 FLOWER_DATA_DIR="${FLOWER_DIR}/data"
 FLOWER_CONTAINER="flower-supernode"
-DCGM_CONTAINER="dcgm-exporter"
 PREBAKED_VERSION="1.25.0"
 ONE_SERVICE_SETUP_DIR="/opt/one-appliance"
 
@@ -40,9 +36,6 @@ Features:
 - Zero-config deployment via OneGate dynamic SuperLink discovery
 - Static SuperLink address override for cross-site federation
 - TLS trust with automatic CA certificate retrieval from OneGate
-- GPU passthrough with graceful CPU fallback
-- DCGM GPU metrics exporter sidecar (optional)
-- Exponential backoff discovery for edge deployments
 
 After deploying, check /etc/one-appliance/status for boot progress.
 Logs are in /var/log/one-appliance/.
@@ -66,21 +59,8 @@ ONE_SERVICE_PARAMS=(
     'ONEAPP_FL_MAX_WAIT_TIME'          'configure' 'Max wait time for connection in seconds (0=unlimited)'      '0'
     'ONEAPP_FL_ISOLATION'              'configure' 'App execution isolation mode (subprocess|process)'          'subprocess'
     'ONEAPP_FL_LOG_LEVEL'              'configure' 'Log verbosity (DEBUG|INFO|WARNING|ERROR)'                   'INFO'
-    # Phase 2: TLS
-    'ONEAPP_FL_TLS_ENABLED'            'configure' 'Enable TLS encryption (YES|NO)'                             'NO'
-    # Phase 6: GPU
-    'ONEAPP_FL_GPU_ENABLED'            'configure' 'Enable GPU passthrough (YES|NO)'                            'NO'
-    'ONEAPP_FL_CUDA_VISIBLE_DEVICES'   'configure' 'GPU device IDs visible to container'                        'all'
-    'ONEAPP_FL_GPU_MEMORY_FRACTION'    'configure' 'GPU memory fraction for PyTorch (0.0-1.0)'                  '0.8'
-    # Phase 7: Multi-site federation
-    'ONEAPP_FL_GRPC_KEEPALIVE_TIME'    'configure' 'gRPC keepalive interval in seconds'                         '60'
-    'ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT' 'configure' 'gRPC keepalive ACK timeout in seconds'                      '20'
-    # Phase 8: Monitoring
-    'ONEAPP_FL_LOG_FORMAT'             'configure' 'Log output format (text|json)'                              'text'
-    'ONEAPP_FL_DCGM_ENABLED'           'configure' 'Enable DCGM GPU metrics exporter (YES|NO)'                  'NO'
-    # Phase 9: Edge
-    'ONEAPP_FL_EDGE_BACKOFF'           'configure' 'Edge discovery retry backoff (exponential|fixed)'           'exponential'
-    'ONEAPP_FL_EDGE_MAX_BACKOFF'       'configure' 'Maximum backoff interval in seconds for edge discovery'     '300'
+    # Phase 2: TLS (secure by default)
+    'ONEAPP_FL_TLS_ENABLED'            'configure' 'Enable TLS encryption (YES|NO)'                             'YES'
 )
 
 ### Default Value Assignments #################################################
@@ -93,25 +73,15 @@ ONEAPP_FL_MAX_RETRIES="${ONEAPP_FL_MAX_RETRIES:-0}"
 ONEAPP_FL_MAX_WAIT_TIME="${ONEAPP_FL_MAX_WAIT_TIME:-0}"
 ONEAPP_FL_ISOLATION="${ONEAPP_FL_ISOLATION:-subprocess}"
 ONEAPP_FL_LOG_LEVEL="${ONEAPP_FL_LOG_LEVEL:-INFO}"
-ONEAPP_FL_TLS_ENABLED="${ONEAPP_FL_TLS_ENABLED:-NO}"
-ONEAPP_FL_LOG_FORMAT="${ONEAPP_FL_LOG_FORMAT:-text}"
-ONEAPP_FL_GPU_ENABLED="${ONEAPP_FL_GPU_ENABLED:-NO}"
-ONEAPP_FL_CUDA_VISIBLE_DEVICES="${ONEAPP_FL_CUDA_VISIBLE_DEVICES:-all}"
-ONEAPP_FL_GPU_MEMORY_FRACTION="${ONEAPP_FL_GPU_MEMORY_FRACTION:-0.8}"
-ONEAPP_FL_GRPC_KEEPALIVE_TIME="${ONEAPP_FL_GRPC_KEEPALIVE_TIME:-60}"
-ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT="${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT:-20}"
-ONEAPP_FL_DCGM_ENABLED="${ONEAPP_FL_DCGM_ENABLED:-NO}"
-ONEAPP_FL_EDGE_BACKOFF="${ONEAPP_FL_EDGE_BACKOFF:-exponential}"
-ONEAPP_FL_EDGE_MAX_BACKOFF="${ONEAPP_FL_EDGE_MAX_BACKOFF:-300}"
+ONEAPP_FL_TLS_ENABLED="${ONEAPP_FL_TLS_ENABLED:-YES}"
 
 ###############################################################################
 # Mandatory lifecycle functions -- called by the one-apps service manager
 ###############################################################################
 
 # service_install: runs once during Packer image build.
-# Installs Docker CE, pre-pulls the Flower SuperNode image, installs jq,
-# creates the /opt/flower directory tree, and optionally installs the
-# NVIDIA Container Toolkit if GPU hardware is detected on the build host.
+# Installs Docker CE, pre-pulls the Flower SuperNode image, installs jq, and
+# creates the /opt/flower directory tree.
 service_install()
 {
     mkdir -p "$ONE_SERVICE_SETUP_DIR"
@@ -119,20 +89,26 @@ service_install()
     msg info "Installing Docker CE"
     install_docker
 
-    msg info "Installing jq for JSON parsing"
-    if ! apt-get install -y jq curl netcat-openbsd; then
-        msg error "Failed to install jq/curl/netcat"
+    msg info "Installing jq, curl, netcat and the firewall stack (ufw + iptables)"
+    # iptables-persistent is intentionally omitted: harden_firewall re-applies
+    # rules on every boot, so persistence-to-disk is not required and the
+    # package's debconf dependencies can break non-interactive installs.
+    if ! apt-get install -y jq curl netcat-openbsd ufw iptables; then
+        msg error "Failed to install jq/curl/netcat/firewall packages"
         exit 1
     fi
 
-    msg info "Pre-pulling Flower SuperNode image flwr/supernode:${PREBAKED_VERSION}"
-    if ! docker pull "flwr/supernode:${PREBAKED_VERSION}"; then
-        msg error "Failed to pull flwr/supernode:${PREBAKED_VERSION}"
-        exit 1
-    fi
+    # Bake ONLY the default (pytorch) framework image to keep the qcow2 small
+    # enough for the marketplace CLONING timeout. tensorflow/sklearn are built
+    # lazily on first boot when ONEAPP_FL_FRAMEWORK selects them (see
+    # ensure_framework_image). The stock flwr/supernode image is NOT pulled --
+    # the appliance runs its own glibc-based framework images instead.
+    msg info "Building default framework image (pytorch)"
+    build_framework_image "pytorch"
 
-    msg info "Installing NVIDIA Container Toolkit (best-effort)"
-    install_nvidia_ctk || msg warning "NVIDIA CTK install skipped -- no GPU detected or repo unavailable"
+    # Reclaim the BuildKit cache (downloaded wheels) so it does not inflate the
+    # exported qcow2.
+    docker builder prune -af >/dev/null 2>&1 || true
 
     msg info "Creating /opt/flower directory structure"
     mkdir -p "${FLOWER_SCRIPTS_DIR}" "${FLOWER_CONFIG_DIR}" "${FLOWER_DATA_DIR}" "${FLOWER_CERTS_DIR}"
@@ -170,6 +146,11 @@ service_configure()
     mkdir -p "${FLOWER_DATA_DIR}" "${FLOWER_CERTS_DIR}" "${FLOWER_CONFIG_DIR}"
     chown -R 49999:49999 "${FLOWER_DATA_DIR}" "${FLOWER_CERTS_DIR}"
 
+    # Harden the host firewall: default-deny inbound, block outbound SMTP. The
+    # SuperNode publishes no inbound FL ports (it connects out to the SuperLink),
+    # so this mainly prevents a compromised training workload from sending spam.
+    harden_firewall
+
     # Step 7: SuperLink discovery
     SUPERLINK_ADDRESS=""
     if [ -n "${ONEAPP_FL_SUPERLINK_ADDRESS}" ]; then
@@ -205,6 +186,11 @@ service_configure()
     esac
     msg info "Using ML framework image: ${IMAGE_TAG}"
 
+    # Lazy build: only pytorch is baked into the image; build the selected
+    # framework image now if it is missing.
+    ensure_framework_image "${ONEAPP_FL_FRAMEWORK}" || \
+        msg warning "Could not build ${ONEAPP_FL_FRAMEWORK} image -- container start may fail"
+
     # Build TLS-related Docker flags
     TLS_FLAGS="--insecure"
     TLS_VOLUME_FLAGS=""
@@ -230,8 +216,10 @@ TLS_MODE='${TLS_MODE}'
 EOF
     chmod 600 "${FLOWER_CONFIG_DIR}/configure.state"
 
-    # Write service report
-    cat > "${ONE_SERVICE_REPORT:-/etc/one-appliance/config}" <<EOF
+    # Write service report (only when the framework provides the path; never
+    # fall back to /etc/one-appliance/config, which the one-apps tool owns).
+    if [ -n "${ONE_SERVICE_REPORT:-}" ]; then
+        cat > "${ONE_SERVICE_REPORT}" <<EOF
 [Flower SuperNode]
 superlink  = ${SUPERLINK_ADDRESS}
 version    = ${VERSION}
@@ -239,18 +227,18 @@ framework  = ${ONEAPP_FL_FRAMEWORK}
 image      = ${IMAGE_TAG}
 isolation  = ${ONEAPP_FL_ISOLATION}
 tls        = ${TLS_MODE}
-gpu        = ${ONEAPP_FL_GPU_ENABLED}
+firewall   = default-deny inbound, outbound SMTP blocked
 EOF
-    chmod 600 "${ONE_SERVICE_REPORT:-/etc/one-appliance/config}" 2>/dev/null
+        chmod 600 "${ONE_SERVICE_REPORT}" 2>/dev/null
+    fi
 
     msg info "CONFIGURATION FINISHED"
     return 0
 }
 
 # service_bootstrap: runs after configure, starts the container.
-# Waits for Docker, detects GPU, handles version overrides, starts the
-# systemd service, waits for health, publishes to OneGate, and optionally
-# starts the DCGM exporter sidecar.
+# Waits for Docker, handles version overrides, starts the systemd service,
+# waits for health, and publishes to OneGate.
 service_bootstrap()
 {
     msg info "--- SuperNode bootstrap stage ---"
@@ -266,12 +254,6 @@ service_bootstrap()
 
     # Step 8: wait for Docker daemon
     wait_for_docker || { msg error "Docker daemon not available"; exit 1; }
-
-    # Step 9: GPU detection
-    DOCKER_GPU_FLAGS=""
-    DOCKER_ENV_FLAGS=""
-    FL_GPU_AVAILABLE="NO"
-    detect_gpu
 
     # Step 10: handle version override
     if [ "${VERSION}" != "${PREBAKED_VERSION}" ]; then
@@ -290,23 +272,27 @@ service_bootstrap()
     # Create the container (Step 11 prep -- container creation separate from systemd start)
     docker rm -f "${FLOWER_CONTAINER}" 2>/dev/null || true
 
-    # Build the full docker create command
-    local create_cmd="docker create --name ${FLOWER_CONTAINER} --restart unless-stopped"
-    create_cmd+=" ${DOCKER_GPU_FLAGS}"
-    create_cmd+=" ${DOCKER_ENV_FLAGS}"
-    create_cmd+=" -v ${FLOWER_DATA_DIR}:/app/data:ro"
-    create_cmd+=" ${TLS_VOLUME_FLAGS}"
-    create_cmd+=" --env-file ${FLOWER_CONFIG_DIR}/supernode.env"
-    create_cmd+=" ${IMAGE_TAG}"
-    create_cmd+=" ${TLS_FLAGS}"
-    create_cmd+=" --superlink ${SUPERLINK_ADDRESS}"
-    create_cmd+=" --isolation ${ONEAPP_FL_ISOLATION}"
-    create_cmd+=" --node-config \"${ONEAPP_FL_NODE_CONFIG}\""
-    create_cmd+=" --max-retries ${ONEAPP_FL_MAX_RETRIES}"
-    create_cmd+=" --max-wait-time ${ONEAPP_FL_MAX_WAIT_TIME}"
+    # Build the docker command as an ARRAY (never eval a string): operator-
+    # supplied values such as ONEAPP_FL_NODE_CONFIG stay individual quoted
+    # elements, so they cannot inject shell commands during contextualization.
+    # The whitespace-bearing flag groups we generate ourselves (TLS flags)
+    # are intentionally left unquoted so they split into separate arguments.
+    local -a create_cmd=(docker create --name "${FLOWER_CONTAINER}" --restart unless-stopped)
+    create_cmd+=(-v "${FLOWER_DATA_DIR}:/app/data:ro")
+    # shellcheck disable=SC2206
+    [ -n "${TLS_VOLUME_FLAGS}" ]   && create_cmd+=(${TLS_VOLUME_FLAGS})
+    create_cmd+=(--env-file "${FLOWER_CONFIG_DIR}/supernode.env")
+    create_cmd+=("${IMAGE_TAG}")
+    # shellcheck disable=SC2206
+    create_cmd+=(${TLS_FLAGS})
+    create_cmd+=(--superlink "${SUPERLINK_ADDRESS}")
+    create_cmd+=(--isolation "${ONEAPP_FL_ISOLATION}")
+    create_cmd+=(--node-config "${ONEAPP_FL_NODE_CONFIG}")
+    create_cmd+=(--max-retries "${ONEAPP_FL_MAX_RETRIES}")
+    create_cmd+=(--max-wait-time "${ONEAPP_FL_MAX_WAIT_TIME}")
 
-    msg info "Creating container: ${create_cmd}"
-    eval "${create_cmd}" || { msg error "Failed to create container"; exit 1; }
+    msg info "Creating container: ${create_cmd[*]}"
+    "${create_cmd[@]}" || { msg error "Failed to create container"; exit 1; }
 
     # Step 11: start via systemd
     systemctl daemon-reload
@@ -321,14 +307,6 @@ service_bootstrap()
     publish_to_onegate "FL_NODE_ID" "${VMID:-unknown}"
     publish_to_onegate "FL_VERSION" "${VERSION}"
     publish_to_onegate "FL_FRAMEWORK" "${ONEAPP_FL_FRAMEWORK:-pytorch}"
-    publish_to_onegate "FL_GPU_AVAILABLE" "${FL_GPU_AVAILABLE}"
-
-    # Step 14a: start DCGM exporter sidecar if requested
-    if [ "${ONEAPP_FL_DCGM_ENABLED}" = "YES" ] && \
-       [ "${ONEAPP_FL_GPU_ENABLED}" = "YES" ] && \
-       [ "${FL_GPU_AVAILABLE}" = "YES" ]; then
-        start_dcgm_exporter
-    fi
 
     msg info "BOOTSTRAP FINISHED"
     return 0
@@ -343,8 +321,7 @@ service_help()
     msg info "  ONEAPP_FL_FRAMEWORK              ML framework: pytorch, tensorflow, sklearn (default: pytorch)"
     msg info "  ONEAPP_FL_SUPERLINK_ADDRESS      Static SuperLink address (host:port)"
     msg info "  ONEAPP_FL_NODE_CONFIG            key=value pairs for ClientApp"
-    msg info "  ONEAPP_FL_GPU_ENABLED            Enable GPU passthrough (YES/NO)"
-    msg info "  ONEAPP_FL_TLS_ENABLED            Enable TLS encryption (YES/NO)"
+    msg info "  ONEAPP_FL_TLS_ENABLED            Enable TLS encryption (default: YES)"
     msg info ""
     msg info "Logs: /var/log/one-appliance/"
     msg info "Container logs: docker logs flower-supernode"
@@ -388,25 +365,81 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_C
     msg info "Docker CE installed"
 }
 
-# install_nvidia_ctk: Best-effort install of the NVIDIA Container Toolkit.
-# Skips silently if no GPU is detected on the build host.
-install_nvidia_ctk()
+# build_framework_image: build ONE framework image on demand.
+# The official flwr/supernode image is Alpine (musl) which lacks the glibc that
+# PyTorch/TensorFlow manylinux wheels need, so we build from python:3.12-slim.
+# NumPy 2.x requires SSE4.1 (x86_v2) which some KVM VMs lack, so pin 1.26.4.
+# Only the default (pytorch) image is baked at build time; the others are built
+# lazily on first boot to keep the exported qcow2 within the marketplace
+# CLONING timeout.
+build_framework_image()
 {
-    # Only attempt if nvidia-smi is present on the build host
-    if ! command -v nvidia-smi &>/dev/null && ! lsmod 2>/dev/null | grep -q nvidia; then
-        return 1
+    local _framework="$1"
+    local VER="${PREBAKED_VERSION}"
+    local _tag="flower-supernode-${_framework}:${VER}"
+
+    case "${_framework}" in
+        pytorch)
+            msg info "Building ${_tag}"
+            docker build -t "${_tag}" - <<'DOCKERFILE'
+FROM python:3.12-slim
+RUN pip install --no-cache-dir \
+    'numpy==1.26.4' \
+    'flwr[simulation]==1.25.0' \
+    'torch==2.5.1+cpu' 'torchvision==0.20.1+cpu' \
+    --extra-index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir 'flwr-datasets[vision]>=0.4.0'
+ENTRYPOINT ["flower-supernode"]
+DOCKERFILE
+            ;;
+        tensorflow)
+            msg info "Building ${_tag}"
+            docker build -t "${_tag}" - <<'DOCKERFILE'
+FROM python:3.12-slim
+RUN pip install --no-cache-dir \
+    'numpy==1.26.4' \
+    'flwr[simulation]==1.25.0' \
+    'tensorflow-cpu==2.18.1' \
+    'flwr-datasets[vision]>=0.4.0'
+ENTRYPOINT ["flower-supernode"]
+DOCKERFILE
+            ;;
+        sklearn)
+            msg info "Building ${_tag}"
+            docker build -t "${_tag}" - <<'DOCKERFILE'
+FROM python:3.12-slim
+RUN pip install --no-cache-dir \
+    'numpy==1.26.4' \
+    'flwr[simulation]==1.25.0' \
+    'scikit-learn==1.5.2' \
+    'flwr-datasets[vision]>=0.4.0'
+ENTRYPOINT ["flower-supernode"]
+DOCKERFILE
+            ;;
+        *)
+            msg error "Unknown framework '${_framework}' -- cannot build image"
+            return 1
+            ;;
+    esac
+}
+
+# ensure_framework_image: build the selected framework image at boot if it is
+# not already present (lazy fetch for non-default frameworks).
+ensure_framework_image()
+{
+    local _framework="$1"
+    local _tag="flower-supernode-${_framework}:${PREBAKED_VERSION}"
+
+    if docker image inspect "${_tag}" >/dev/null 2>&1; then
+        return 0
     fi
 
-    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-        | gpg --batch --yes --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-        | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-        > /etc/apt/sources.list.d/nvidia-container-toolkit.list
-
-    apt-get update
-    apt-get install -y nvidia-container-toolkit || return 1
-    nvidia-ctk runtime configure --runtime=docker || return 1
-    msg info "NVIDIA Container Toolkit installed"
+    msg info "Framework image ${_tag} not baked -- building it now (first boot)"
+    if ! build_framework_image "${_framework}"; then
+        msg error "Failed to build framework image ${_tag}"
+        return 1
+    fi
+    docker builder prune -af >/dev/null 2>&1 || true
 }
 
 # validate_config: Fail-fast validation of all context variables.
@@ -433,6 +466,16 @@ validate_config()
     if [ -n "${ONEAPP_FL_SUPERLINK_ADDRESS}" ] && \
        ! [[ "${ONEAPP_FL_SUPERLINK_ADDRESS}" =~ ^[^:]+:[0-9]+$ ]]; then
         msg error "Invalid ONEAPP_FL_SUPERLINK_ADDRESS: '${ONEAPP_FL_SUPERLINK_ADDRESS}'. Expected host:port"
+        errors=$((errors + 1))
+    fi
+
+    # FL_NODE_CONFIG: defense-in-depth denylist. The container is started via an
+    # argv array (no eval), so injection is already impossible; this only blocks
+    # shell metacharacters as belt-and-suspenders while still allowing the full
+    # set of valid Flower run-config values (paths, quotes, colons, etc.).
+    if [ -n "${ONEAPP_FL_NODE_CONFIG}" ] && \
+       [[ "${ONEAPP_FL_NODE_CONFIG}" == *[\$\`\;\|\&\<\>\(\)\\]* || "${ONEAPP_FL_NODE_CONFIG}" == *$'\n'* ]]; then
+        msg error "Invalid ONEAPP_FL_NODE_CONFIG: '${ONEAPP_FL_NODE_CONFIG}'. Must not contain shell metacharacters (\$ \` ; | & < > ( ) \\ or newlines)"
         errors=$((errors + 1))
     fi
 
@@ -469,70 +512,6 @@ validate_config()
            errors=$((errors + 1)) ;;
     esac
 
-    # FL_LOG_FORMAT: enum
-    case "${ONEAPP_FL_LOG_FORMAT}" in
-        text|json) ;;
-        *) msg error "Invalid ONEAPP_FL_LOG_FORMAT: '${ONEAPP_FL_LOG_FORMAT}'. Must be text or json"
-           errors=$((errors + 1)) ;;
-    esac
-
-    # FL_GPU_ENABLED: boolean
-    case "${ONEAPP_FL_GPU_ENABLED}" in
-        YES|NO) ;;
-        *) msg error "Invalid ONEAPP_FL_GPU_ENABLED: '${ONEAPP_FL_GPU_ENABLED}'. Must be YES or NO"
-           errors=$((errors + 1)) ;;
-    esac
-
-    # FL_CUDA_VISIBLE_DEVICES: 'all' or comma-separated integers
-    if [ "${ONEAPP_FL_CUDA_VISIBLE_DEVICES}" != "all" ] && \
-       ! [[ "${ONEAPP_FL_CUDA_VISIBLE_DEVICES}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
-        msg error "Invalid ONEAPP_FL_CUDA_VISIBLE_DEVICES: '${ONEAPP_FL_CUDA_VISIBLE_DEVICES}'. Must be 'all' or comma-separated GPU IDs"
-        errors=$((errors + 1))
-    fi
-
-    # FL_GRPC_KEEPALIVE_TIME: positive integer
-    if ! [[ "${ONEAPP_FL_GRPC_KEEPALIVE_TIME}" =~ ^[1-9][0-9]*$ ]]; then
-        msg error "Invalid ONEAPP_FL_GRPC_KEEPALIVE_TIME: '${ONEAPP_FL_GRPC_KEEPALIVE_TIME}'. Must be a positive integer"
-        errors=$((errors + 1))
-    fi
-
-    # FL_GRPC_KEEPALIVE_TIMEOUT: positive integer, less than keepalive_time
-    if ! [[ "${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
-        msg error "Invalid ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT: '${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}'. Must be a positive integer"
-        errors=$((errors + 1))
-    elif [ "${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}" -ge "${ONEAPP_FL_GRPC_KEEPALIVE_TIME}" ] 2>/dev/null; then
-        msg error "ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT (${ONEAPP_FL_GRPC_KEEPALIVE_TIMEOUT}) must be < ONEAPP_FL_GRPC_KEEPALIVE_TIME (${ONEAPP_FL_GRPC_KEEPALIVE_TIME})"
-        errors=$((errors + 1))
-    fi
-
-    # FL_DCGM_ENABLED: boolean
-    case "${ONEAPP_FL_DCGM_ENABLED}" in
-        YES|NO) ;;
-        *) msg error "Invalid ONEAPP_FL_DCGM_ENABLED: '${ONEAPP_FL_DCGM_ENABLED}'. Must be YES or NO"
-           errors=$((errors + 1)) ;;
-    esac
-
-    # FL_EDGE_BACKOFF: enum
-    case "${ONEAPP_FL_EDGE_BACKOFF}" in
-        exponential|fixed) ;;
-        *) msg error "Invalid ONEAPP_FL_EDGE_BACKOFF: '${ONEAPP_FL_EDGE_BACKOFF}'. Must be exponential or fixed"
-           errors=$((errors + 1)) ;;
-    esac
-
-    # FL_EDGE_MAX_BACKOFF: positive integer
-    if ! [[ "${ONEAPP_FL_EDGE_MAX_BACKOFF}" =~ ^[1-9][0-9]*$ ]]; then
-        msg error "Invalid ONEAPP_FL_EDGE_MAX_BACKOFF: '${ONEAPP_FL_EDGE_MAX_BACKOFF}'. Must be a positive integer"
-        errors=$((errors + 1))
-    fi
-
-    # Cross-check warnings (non-fatal)
-    if [ "${ONEAPP_FL_DCGM_ENABLED}" = "YES" ] && [ "${ONEAPP_FL_GPU_ENABLED}" != "YES" ]; then
-        msg warning "ONEAPP_FL_DCGM_ENABLED=YES but ONEAPP_FL_GPU_ENABLED is not YES; DCGM will not start"
-    fi
-    if [ "${ONEAPP_FL_GRPC_KEEPALIVE_TIME}" -lt 10 ] 2>/dev/null; then
-        msg warning "ONEAPP_FL_GRPC_KEEPALIVE_TIME=${ONEAPP_FL_GRPC_KEEPALIVE_TIME} is aggressive; may cause excessive network traffic"
-    fi
-
     if [ "${errors}" -gt 0 ]; then
         msg error "${errors} configuration error(s). Aborting boot."
         return 1
@@ -543,7 +522,7 @@ validate_config()
 }
 
 # discover_superlink: Resolve the SuperLink Fleet API address via OneGate.
-# Implements the retry loop from spec/02 Section 6d with edge backoff support.
+# Implements the retry loop from spec/02 Section 6d.
 # Outputs the discovered address on stdout; returns non-zero on failure.
 discover_superlink()
 {
@@ -592,13 +571,14 @@ discover_superlink()
     fi
     msg info "Found SuperLink VM ID: ${superlink_vmid}" >&2
 
-    # Step 2: Retry loop — query SuperLink VM directly for FL_ENDPOINT
+    # Step 2: Retry loop — query SuperLink VM directly for FL_ENDPOINT.
+    # Bounded: up to 30 attempts with a fixed 10s wait between them.
     local max_retries=30
     local interval=10
     local attempt=1
     local fl_endpoint=""
 
-    while [ "${attempt}" -le "${max_retries}" ] || [ "${ONEAPP_FL_EDGE_BACKOFF}" = "exponential" ]; do
+    while [ "${attempt}" -le "${max_retries}" ]; do
         # Use onegate CLI for cross-VM query (curl /vm/<id> not supported)
         local vm_json
         vm_json=$(onegate vm show "${superlink_vmid}" --json 2>/dev/null)
@@ -626,53 +606,13 @@ discover_superlink()
             return 0
         fi
 
-        # Fixed mode: bounded retries
-        if [ "${ONEAPP_FL_EDGE_BACKOFF}" = "fixed" ] && [ "${attempt}" -ge "${max_retries}" ]; then
-            break
-        fi
-
-        # Exponential mode: unbounded retries with increasing backoff
-        if [ "${ONEAPP_FL_EDGE_BACKOFF}" = "exponential" ]; then
-            interval=$((interval * 2))
-            if [ "${interval}" -gt "${ONEAPP_FL_EDGE_MAX_BACKOFF}" ]; then
-                interval="${ONEAPP_FL_EDGE_MAX_BACKOFF}"
-            fi
-        fi
-
         msg info "SuperLink not ready, waiting ${interval}s... (attempt ${attempt})" >&2
         sleep "${interval}"
         attempt=$((attempt + 1))
     done
 
-    msg error "SuperLink discovery timed out after ${attempt} attempts"
+    msg error "SuperLink discovery timed out after ${max_retries} attempts"
     return 1
-}
-
-# detect_gpu: Check GPU availability when ONEAPP_FL_GPU_ENABLED=YES.
-# Sets DOCKER_GPU_FLAGS, DOCKER_ENV_FLAGS, and FL_GPU_AVAILABLE.
-detect_gpu()
-{
-    if [ "${ONEAPP_FL_GPU_ENABLED}" != "YES" ]; then
-        DOCKER_GPU_FLAGS=""
-        FL_GPU_AVAILABLE="NO"
-        return 0
-    fi
-
-    if lsmod | grep -q nvidia && nvidia-smi >/dev/null 2>&1; then
-        DOCKER_GPU_FLAGS="--gpus all"
-        FL_GPU_AVAILABLE="YES"
-
-        if [ "${ONEAPP_FL_CUDA_VISIBLE_DEVICES}" != "all" ]; then
-            DOCKER_ENV_FLAGS="-e CUDA_VISIBLE_DEVICES=${ONEAPP_FL_CUDA_VISIBLE_DEVICES}"
-        fi
-
-        msg info "GPU detected; container will launch with GPU access"
-    else
-        DOCKER_GPU_FLAGS=""
-        FL_GPU_AVAILABLE="NO"
-        msg warning "ONEAPP_FL_GPU_ENABLED=YES but GPU not available (nvidia-smi failed or module not loaded)"
-        msg warning "Falling back to CPU-only training"
-    fi
 }
 
 # setup_tls_trust: Determine TLS mode and retrieve CA certificate if needed.
@@ -718,46 +658,49 @@ setup_tls_trust()
 }
 
 # retrieve_ca_cert: Obtain and validate the CA certificate for TLS trust.
-# Tries OneGate FL_CA_CERT first, falls back to FL_SSL_CA_CERTFILE context var.
+# Retrieves the FL_CA_CERT published by the SuperLink via OneGate.
 retrieve_ca_cert()
 {
     local cert_path="${FLOWER_CERTS_DIR}/ca.crt"
 
-    # Path A: operator-provided CA via CONTEXT (FL_SSL_CA_CERTFILE base64)
-    if [ -n "${ONEAPP_FL_SSL_CA_CERTFILE:-}" ]; then
-        msg info "Using operator-provided CA certificate from CONTEXT"
-        echo "${ONEAPP_FL_SSL_CA_CERTFILE}" | base64 -d > "${cert_path}" 2>/dev/null
-        finalize_ca_cert "${cert_path}"
-        return $?
-    fi
-
-    # Path B: retrieve from OneGate (FL_CA_CERT on SuperLink VM)
+    # Retrieve from OneGate (FL_CA_CERT published on the SuperLink VM).
+    # The plain GET /service response does not reliably include the SuperLink's
+    # full USER_TEMPLATE, so resolve the SuperLink VM id from /service and then
+    # query that VM directly with `onegate vm show <id> --json` (the same robust
+    # path discover_superlink uses). Retry briefly to absorb publish timing.
     if [ -n "${ONEGATE_ENDPOINT:-}" ]; then
         local onegate_token="${TOKENTXT:-}"
 
         if [ -n "${onegate_token}" ]; then
-            local service_json
+            local service_json superlink_vmid
             service_json=$(curl -s "${ONEGATE_ENDPOINT}/service" \
                 -H "X-ONEGATE-TOKEN: ${onegate_token}" \
                 -H "X-ONEGATE-VMID: ${VMID:-}" 2>/dev/null)
-
-            local ca_b64
-            ca_b64=$(echo "${service_json}" | jq -r '
+            superlink_vmid=$(echo "${service_json}" | jq -r '
                 .SERVICE.roles[]
                 | select(.name == "superlink")
-                | .nodes[0].vm_info.VM.USER_TEMPLATE.FL_CA_CERT // empty
+                | .nodes[0].vm_info.VM.ID // empty
             ' 2>/dev/null)
 
-            if [ -n "${ca_b64}" ]; then
-                msg info "CA certificate retrieved from OneGate"
-                echo "${ca_b64}" | base64 -d > "${cert_path}" 2>/dev/null
-                finalize_ca_cert "${cert_path}"
-                return $?
+            if [ -n "${superlink_vmid}" ]; then
+                local _attempt ca_b64 vm_json
+                for _attempt in $(seq 1 12); do
+                    vm_json=$(onegate vm show "${superlink_vmid}" --json 2>/dev/null)
+                    ca_b64=$(echo "${vm_json}" | jq -r '.VM.USER_TEMPLATE.FL_CA_CERT // empty' 2>/dev/null)
+                    if [ -n "${ca_b64}" ]; then
+                        msg info "CA certificate retrieved from OneGate (SuperLink VM ${superlink_vmid})"
+                        echo "${ca_b64}" | base64 -d > "${cert_path}" 2>/dev/null
+                        finalize_ca_cert "${cert_path}"
+                        return $?
+                    fi
+                    msg info "Waiting for SuperLink to publish FL_CA_CERT (attempt ${_attempt})"
+                    sleep 5
+                done
             fi
         fi
     fi
 
-    msg error "TLS enabled but no CA certificate available (set FL_SSL_CA_CERTFILE or ensure SuperLink publishes FL_CA_CERT)"
+    msg error "TLS enabled but no CA certificate available (ensure the SuperLink publishes FL_CA_CERT)"
     exit 1
 }
 
@@ -819,12 +762,6 @@ generate_env_file()
     cat > "${FLOWER_CONFIG_DIR}/supernode.env" <<EOF
 FLWR_LOG_LEVEL=${ONEAPP_FL_LOG_LEVEL}
 EOF
-
-    # GPU memory fraction passed as env var for PyTorch framework variant
-    if [ "${ONEAPP_FL_GPU_ENABLED}" = "YES" ]; then
-        echo "FL_GPU_MEMORY_FRACTION=${ONEAPP_FL_GPU_MEMORY_FRACTION}" \
-            >> "${FLOWER_CONFIG_DIR}/supernode.env"
-    fi
 
     chmod 600 "${FLOWER_CONFIG_DIR}/supernode.env"
     msg info "Generated ${FLOWER_CONFIG_DIR}/supernode.env"
@@ -920,52 +857,75 @@ publish_to_onegate()
     fi
 }
 
-# start_dcgm_exporter: Start the DCGM GPU metrics exporter sidecar container.
-# Pulls the image at boot (not pre-baked) to keep the base QCOW2 image lean.
-# Non-fatal on failure -- degraded monitoring, training continues.
-start_dcgm_exporter()
+# get_primary_ip: first non-loopback IPv4 address (primary route interface).
+get_primary_ip()
 {
-    local dcgm_image="nvcr.io/nvidia/k8s/dcgm-exporter:4.5.1-4.8.0-distroless"
-
-    msg info "Pulling DCGM Exporter image (boot-time pull)"
-    if ! docker pull "${dcgm_image}" 2>/dev/null; then
-        msg warning "Failed to pull DCGM Exporter image; GPU metrics unavailable"
+    local _ip
+    _ip=$(ip -o -f inet route show to default 2>/dev/null | awk '{print $5; exit}')
+    if [ -n "${_ip}" ]; then
+        ip -o -f inet addr show dev "${_ip}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
         return 0
     fi
+    hostname -I 2>/dev/null | awk '{print $1}'
+}
 
-    docker rm -f "${DCGM_CONTAINER}" 2>/dev/null || true
-    if ! docker run -d \
-        --name "${DCGM_CONTAINER}" \
-        --restart unless-stopped \
-        --gpus all \
-        --cap-add SYS_ADMIN \
-        -p 9400:9400 \
-        "${dcgm_image}"; then
-        msg warning "Failed to start DCGM Exporter; GPU metrics unavailable"
-        return 0
+# get_primary_cidr: connected subnet of the default-route interface. Anchoring
+# to that interface is required because once Docker is up, docker0's
+# 172.17.0.0/16 link route can sort ahead of the real FL subnet and would
+# otherwise scope the firewall to the wrong network.
+get_primary_cidr()
+{
+    local _if _cidr
+    _if=$(ip -o -f inet route show to default 2>/dev/null | awk '{print $5; exit}')
+    [ -n "${_if}" ] && _cidr=$(ip -o -f inet route show scope link dev "${_if}" 2>/dev/null | awk '{print $1; exit}')
+    echo "${_cidr}"
+}
+
+# harden_firewall: default-deny inbound (allow SSH), block outbound SMTP, and
+# scope any Flower ports to the FL private subnet. Idempotent and
+# best-effort so it never aborts the boot. The SuperNode publishes no inbound
+# FL ports, so this primarily stops a compromised training workload from being
+# used to relay spam (the cause of the prior Scaleway abuse report).
+harden_firewall()
+{
+    msg info "Hardening host firewall (default-deny inbound, SMTP egress block)"
+
+    FL_PRIVATE_CIDR=$(get_primary_cidr)
+    [ -z "${FL_PRIVATE_CIDR}" ] && FL_PRIVATE_CIDR="$(get_primary_ip)/24"
+    local _ext_if
+    _ext_if=$(ip -o -f inet route show to default 2>/dev/null | awk '{print $5; exit}')
+
+    if command -v ufw >/dev/null 2>&1; then
+        ufw --force reset      >/dev/null 2>&1 || true
+        ufw default deny incoming  >/dev/null 2>&1 || true
+        ufw default allow outgoing >/dev/null 2>&1 || true
+        ufw allow 22/tcp comment 'SSH' >/dev/null 2>&1 || true
+        ufw logging low        >/dev/null 2>&1 || true
+        ufw --force enable     >/dev/null 2>&1 || true
     fi
 
-    # Write a systemd unit so DCGM lifecycle is tied to the SuperNode
-    cat > /etc/systemd/system/dcgm-exporter.service <<'EOF'
-[Unit]
-Description=DCGM GPU Metrics Exporter
-After=docker.service flower-supernode.service
-Requires=docker.service
-PartOf=flower-supernode.service
+    if command -v iptables >/dev/null 2>&1; then
+        iptables -L DOCKER-USER >/dev/null 2>&1 || iptables -N DOCKER-USER 2>/dev/null || true
 
-[Service]
-Type=simple
-Restart=on-failure
-RestartSec=10
-ExecStartPre=-/usr/bin/docker rm -f dcgm-exporter
-ExecStart=/usr/bin/docker start -a dcgm-exporter
-ExecStop=/usr/bin/docker stop -t 10 dcgm-exporter
+        iptables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+            || iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        iptables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+            || iptables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
 
-[Install]
-WantedBy=multi-user.target
-EOF
+        if [ -n "${_ext_if}" ]; then
+            iptables -C DOCKER-USER -i "${_ext_if}" ! -s "${FL_PRIVATE_CIDR}" -p tcp -m multiport --dports 9091,9092,9093,9101,9400 -j DROP 2>/dev/null \
+                || iptables -I DOCKER-USER -i "${_ext_if}" ! -s "${FL_PRIVATE_CIDR}" -p tcp -m multiport --dports 9091,9092,9093,9101,9400 -j DROP 2>/dev/null || true
+        fi
+    fi
 
-    systemctl daemon-reload
-    systemctl enable dcgm-exporter.service
-    msg info "DCGM Exporter started on port 9400"
+    if command -v ip6tables >/dev/null 2>&1; then
+        ip6tables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+            || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+    fi
+
+    if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent save >/dev/null 2>&1 || true
+    fi
+
+    msg info "Firewall hardened (FL ports limited to ${FL_PRIVATE_CIDR}, SMTP egress blocked)"
 }

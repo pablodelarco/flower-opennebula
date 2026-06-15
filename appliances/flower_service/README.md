@@ -6,8 +6,17 @@ The service deploys one SuperLink coordinator and N SuperNode training clients. 
 
 The following roles are defined:
 
-* **SuperLink**: Flower coordinator that manages federated training rounds, aggregates model updates, and exposes the Fleet API for SuperNode connections. Supports 6 aggregation strategies: FedAvg, FedProx, FedAdam, Krum, Bulyan, and FedTrimmedAvg.
-* **SuperNode**: Flower training client with three pre-built ML framework containers -- PyTorch 2.6.0, TensorFlow 2.18.1, and scikit-learn. Set `ONEAPP_FL_FRAMEWORK` at deployment time to select which framework boots.
+* **SuperLink**: Flower coordinator that aggregates model updates and exposes the Fleet API for SuperNode connections. The aggregation strategy (FedAvg, FedProx, FedAdam and others) and the number of rounds are defined in the Flower App Bundle you submit with `flwr run`, not on the appliance.
+* **SuperNode**: Flower training client with PyTorch 2.5.1 (CPU) pre-baked. TensorFlow 2.18.1 and scikit-learn are built automatically on first boot when selected. Set `ONEAPP_FL_FRAMEWORK` at deployment time to select the framework.
+
+## Security
+
+This appliance is hardened by default so it cannot be abused (for example as a spam relay) if a workload is ever compromised:
+
+* **TLS is on by default** between the SuperLink and SuperNodes. The SuperLink auto-generates a CA and server certificate and publishes the CA over OneGate; SuperNodes retrieve and trust it automatically. No manual certificate handling is required.
+* **No Flower port is exposed on `0.0.0.0`.** The Fleet API (9092) is bound to the private FL network, and the Control API (9093) is bound to `127.0.0.1` only. Because the Control API executes the code you submit, reach it through an SSH tunnel: `ssh -L 9093:localhost:9093 root@<superlink-ip>`.
+* **A default-deny host firewall** (UFW + `DOCKER-USER` rules) allows only SSH inbound and restricts the FL ports to the private subnet.
+* **Outbound SMTP (ports 25/465/587) is blocked** on every VM, so a node can never send mail.
 
 ## Downloading and Deploying the Service
 
@@ -28,11 +37,9 @@ The following roles are defined:
    | Parameter | Description | Default |
    |-----------|-------------|---------|
    | `ONEAPP_FL_FRAMEWORK` | ML framework: `pytorch`, `tensorflow`, `sklearn` | `pytorch` |
-   | `ONEAPP_FL_NUM_ROUNDS` | Number of federated training rounds | `3` |
-   | `ONEAPP_FL_STRATEGY` | Aggregation strategy: `FedAvg`, `FedProx`, `FedAdam`, `Krum`, `Bulyan`, `FedTrimmedAvg` | `FedAvg` |
-   | `ONEAPP_FL_MIN_AVAILABLE_CLIENTS` | Minimum SuperNodes required to start a round | `2` |
-   | `ONEAPP_FL_TLS_ENABLED` | Encrypt SuperLink-SuperNode communication | `NO` |
-   | `ONEAPP_FL_GPU_ENABLED` | Enable GPU passthrough for training | `NO` |
+   | `ONEAPP_FL_TLS_ENABLED` | Encrypt SuperLink-SuperNode communication | `YES` |
+
+   The aggregation strategy and the number of training rounds are **not** appliance settings: they are part of the Flower App Bundle you submit with `flwr run --run-config ...`. The stock SuperLink does not read them from the environment.
 
 5. Instantiate the service:
 
@@ -53,11 +60,11 @@ Once the service is RUNNING, the cluster is idle and waiting for a Flower Applic
 
 ## Components
 
-| Component | Version |
-|-----------|---------|
-| Flower    | 1.25.0  |
-| PyTorch   | 2.6.0   |
-| TensorFlow | 2.18.1 |
-| scikit-learn | 1.4+ |
-| Ubuntu    | 24.04 LTS |
-| Docker CE | 27+    |
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Flower    | 1.25.0  | `flwr/superlink` container; `flwr[simulation]` in framework images |
+| PyTorch   | 2.5.1 (CPU) | Pre-baked into the SuperNode image |
+| TensorFlow | 2.18.1 | Built on first boot when selected |
+| scikit-learn | 1.5.2 | Built on first boot when selected |
+| Ubuntu    | 24.04 LTS | |
+| Docker CE | 27+    | |

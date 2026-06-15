@@ -7,10 +7,10 @@ description: |-
   (federated learning client).
 
   Deploys a SuperNode VM that trains locally on private data and sends
-  only model weights to the SuperLink coordinator. Includes PyTorch,
-  TensorFlow, and scikit-learn pre-baked -- select the framework at
-  deployment time via `ONEAPP_FL_FRAMEWORK`. SuperNodes auto-discover
-  the SuperLink via OneGate and reconnect automatically on failure.
+  only model weights to the SuperLink coordinator. PyTorch is pre-baked;
+  TensorFlow and scikit-learn are built automatically on first boot when
+  selected via `ONEAPP_FL_FRAMEWORK`. SuperNodes auto-discover the SuperLink
+  via OneGate, trust its CA over TLS, and reconnect automatically on failure.
 
   Part of the **Flower Federated Learning** appliance set.
   Imported automatically when you export the
@@ -33,7 +33,7 @@ os-id: Ubuntu
 os-release: '24.04 LTS'
 os-arch: x86_64
 hypervisor: KVM
-opennebula_version: 6.8, 6.10, 7.0
+opennebula_version: 6.8, 6.10, 7.0, 7.2
 opennebula_template:
   context:
     token: 'YES'
@@ -43,20 +43,15 @@ opennebula_template:
     oneapp_flower_version: "$ONEAPP_FLOWER_VERSION"
     oneapp_fl_tls_enabled: "$ONEAPP_FL_TLS_ENABLED"
     oneapp_fl_log_level: "$ONEAPP_FL_LOG_LEVEL"
-    oneapp_fl_log_format: "$ONEAPP_FL_LOG_FORMAT"
     oneapp_fl_framework: "$ONEAPP_FL_FRAMEWORK"
     oneapp_fl_node_config: "$ONEAPP_FL_NODE_CONFIG"
-    oneapp_fl_gpu_enabled: "$ONEAPP_FL_GPU_ENABLED"
-    oneapp_fl_cuda_visible_devices: "$ONEAPP_FL_CUDA_VISIBLE_DEVICES"
-    oneapp_fl_gpu_memory_fraction: "$ONEAPP_FL_GPU_MEMORY_FRACTION"
-    oneapp_fl_dcgm_enabled: "$ONEAPP_FL_DCGM_ENABLED"
   cpu: '2'
   memory: '4096'
   graphics:
     listen: 0.0.0.0
     type: vnc
   inputs_order: >-
-    ONEAPP_FL_FRAMEWORK,ONEAPP_FL_GPU_ENABLED,ONEAPP_FL_NODE_CONFIG,ONEAPP_FL_LOG_LEVEL
+    ONEAPP_FL_FRAMEWORK,ONEAPP_FL_NODE_CONFIG,ONEAPP_FL_TLS_ENABLED,ONEAPP_FL_LOG_LEVEL
   os:
     arch: x86_64
   user_inputs:
@@ -64,12 +59,7 @@ opennebula_template:
     oneapp_fl_framework: "O|list|ML framework for training|pytorch,tensorflow,sklearn|pytorch"
     oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||YES"
     oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
-    oneapp_fl_log_format: "O|list|Log output format|text,json|text"
     oneapp_fl_node_config: "O|text|Space-separated key=value node config||"
-    oneapp_fl_gpu_enabled: "O|boolean|Enable GPU passthrough||NO"
-    oneapp_fl_cuda_visible_devices: "O|text|CUDA devices (all or comma-separated IDs)||all"
-    oneapp_fl_gpu_memory_fraction: "O|number-float|GPU memory fraction per client||0.8"
-    oneapp_fl_dcgm_enabled: "O|boolean|Enable DCGM GPU metrics exporter||NO"
 logo: flower.png
 disks:
 - "Flower SuperNode 1.25.0 OS disk"
