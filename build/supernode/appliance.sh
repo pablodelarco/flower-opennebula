@@ -64,16 +64,23 @@ ONE_SERVICE_PARAMS=(
 )
 
 ### Default Value Assignments #################################################
-
-ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.25.0}"
-ONEAPP_FL_FRAMEWORK="${ONEAPP_FL_FRAMEWORK:-pytorch}"
-ONEAPP_FL_SUPERLINK_ADDRESS="${ONEAPP_FL_SUPERLINK_ADDRESS:-}"
-ONEAPP_FL_NODE_CONFIG="${ONEAPP_FL_NODE_CONFIG:-}"
-ONEAPP_FL_MAX_RETRIES="${ONEAPP_FL_MAX_RETRIES:-0}"
-ONEAPP_FL_MAX_WAIT_TIME="${ONEAPP_FL_MAX_WAIT_TIME:-0}"
-ONEAPP_FL_ISOLATION="${ONEAPP_FL_ISOLATION:-subprocess}"
-ONEAPP_FL_LOG_LEVEL="${ONEAPP_FL_LOG_LEVEL:-INFO}"
-ONEAPP_FL_TLS_ENABLED="${ONEAPP_FL_TLS_ENABLED:-YES}"
+# Applied at load AND re-applied after re-sourcing one_env in service_configure.
+# A OneFlow service only supplies the inputs it exposes (framework, TLS); any
+# other context var the VM template references arrives as an EMPTY string, which
+# would otherwise clobber these defaults and fail validation (empty log level,
+# empty image tag). Re-applying with :- restores the defaults for empty values.
+apply_config_defaults() {
+    ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.25.0}"
+    ONEAPP_FL_FRAMEWORK="${ONEAPP_FL_FRAMEWORK:-pytorch}"
+    ONEAPP_FL_SUPERLINK_ADDRESS="${ONEAPP_FL_SUPERLINK_ADDRESS:-}"
+    ONEAPP_FL_NODE_CONFIG="${ONEAPP_FL_NODE_CONFIG:-}"
+    ONEAPP_FL_MAX_RETRIES="${ONEAPP_FL_MAX_RETRIES:-0}"
+    ONEAPP_FL_MAX_WAIT_TIME="${ONEAPP_FL_MAX_WAIT_TIME:-0}"
+    ONEAPP_FL_ISOLATION="${ONEAPP_FL_ISOLATION:-subprocess}"
+    ONEAPP_FL_LOG_LEVEL="${ONEAPP_FL_LOG_LEVEL:-INFO}"
+    ONEAPP_FL_TLS_ENABLED="${ONEAPP_FL_TLS_ENABLED:-YES}"
+}
+apply_config_defaults
 
 ###############################################################################
 # Mandatory lifecycle functions -- called by the one-apps service manager
@@ -133,10 +140,13 @@ service_configure()
 {
     msg info "--- SuperNode configure stage ---"
 
-    # Step 2: source one-context environment
+    # Step 2: source one-context environment, then re-apply defaults. Sourcing
+    # one_env imports the raw context, where a OneFlow service leaves unsupplied
+    # inputs as empty strings; apply_config_defaults restores their defaults.
     if [ -f /run/one-context/one_env ]; then
         # shellcheck disable=SC1091
         . /run/one-context/one_env
+        apply_config_defaults
     fi
 
     # Step 3: validate configuration
