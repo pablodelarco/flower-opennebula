@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 
 class SimpleCNN(nn.Module):
-    """Lightweight CNN for CIFAR-10 (~878K parameters).
+    """Lightweight CNN for CIFAR-10 (~1.24M parameters).
 
     Architecture:
         Conv2d(3→32, 5×5, pad=1) → ReLU → MaxPool(2)

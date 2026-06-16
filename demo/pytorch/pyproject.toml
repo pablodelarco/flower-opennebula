@@ -38,7 +38,11 @@ default = "opennebula"
 
 [tool.flwr.federations.opennebula]
 address = "127.0.0.1:9093"
-insecure = true
+# TLS is on by default on the appliance. Copy the SuperLink CA into this
+# directory (scp root@<superlink-ip>:/opt/flower/certs/ca.crt ./ca.crt) and
+# reach the localhost-bound Control API through an SSH tunnel. For a cluster
+# deployed with ONEAPP_FL_TLS_ENABLED=NO, replace the line below with: insecure = true
+root-certificates = "ca.crt"
 
 [tool.flwr.federations.local-sim]
 options.num-supernodes = 2

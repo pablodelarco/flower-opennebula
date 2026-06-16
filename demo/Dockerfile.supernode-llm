@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir --user "numpy==1.26.4"
 # Install Flower SuperNode + PyTorch CPU
 RUN pip install --no-cache-dir --user \
     "flwr[simulation]==1.25.0" \
-    torch==2.6.0+cpu \
+    torch==2.5.1+cpu \
     --index-url https://download.pytorch.org/whl/cpu \
     --extra-index-url https://pypi.org/simple/
 

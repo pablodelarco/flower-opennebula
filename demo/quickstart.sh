@@ -11,9 +11,12 @@ set -euo pipefail
 
 # ── Constants ────────────────────────────────────────────────────────────────
 SUPERLINK_PORT=9093
+FLEET_PORT=9092
 CONNECTIVITY_TIMEOUT=5
 DEPLOY_WAIT_INTERVAL=10
 DEPLOY_WAIT_MAX=180
+SSH_USER="${FL_SSH_USER:-root}"
+SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -23,6 +26,9 @@ AUTO=false
 SKIP_CLUSTER=false
 SERVICE_ID=""
 SUPERLINK=""
+SUPERLINK_IP=""
+CLUSTER_TLS="YES"     # appliance default; auto-detected from the cluster when possible
+TUNNEL_SOCK=""
 DEMO_DIR=""
 CLUSTER_FRAMEWORK=""
 SUPERNODE_IPS=""
@@ -213,8 +219,9 @@ discover_cluster() {
         sl_port="${SUPERLINK##*:}"
         : "${sl_port:=$SUPERLINK_PORT}"
         SUPERLINK="${sl_host}:${sl_port}"
+        SUPERLINK_IP="$sl_host"
         info "Using provided SuperLink: $SUPERLINK"
-        check_superlink_reachable "$sl_host" "$sl_port"
+        check_superlink_reachable "$sl_host"
         return
     fi
 
@@ -343,18 +350,23 @@ extract_superlink_ip() {
         exit 1
     fi
 
+    SUPERLINK_IP="$superlink_ip"
     SUPERLINK="${superlink_ip}:${SUPERLINK_PORT}"
     success "SuperLink: $SUPERLINK"
 
-    # Extract framework from cluster template
+    # Extract framework from the service's deploy-time values
     CLUSTER_FRAMEWORK="$(echo "$show_json" \
-        | jq -r '.DOCUMENT.TEMPLATE.BODY.roles[]
-                  | select(.name == "supernode")
-                  | .vm_template_contents' 2>/dev/null \
-        | grep -oP 'ONEAPP_FL_FRAMEWORK\s*=\s*"\$?(\K[^"]+)' | head -1)" || true
+        | jq -r '.DOCUMENT.TEMPLATE.BODY.custom_attrs_values.ONEAPP_FL_FRAMEWORK // empty' 2>/dev/null)" || true
     if [[ -n "$CLUSTER_FRAMEWORK" ]]; then
         info "Cluster framework: $CLUSTER_FRAMEWORK"
     fi
+
+    # Detect TLS (default YES; only an explicit NO disables it). Secure by default.
+    local tls_val
+    tls_val="$(echo "$show_json" \
+        | jq -r '.DOCUMENT.TEMPLATE.BODY.custom_attrs_values.ONEAPP_FL_TLS_ENABLED // empty' 2>/dev/null)" || true
+    if [[ "$tls_val" == "NO" ]]; then CLUSTER_TLS="NO"; else CLUSTER_TLS="YES"; fi
+    info "Cluster TLS: $CLUSTER_TLS"
 
     # Extract SuperNode IPs
     local sn_vm_ids
@@ -376,7 +388,7 @@ extract_superlink_ip() {
     # Show cluster overview
     info "Cluster: 1 SuperLink + ${#ips[@]} SuperNodes"
 
-    check_superlink_reachable "$superlink_ip" "$SUPERLINK_PORT"
+    check_superlink_reachable "$superlink_ip"
 }
 
 wait_for_service_running() {
@@ -413,22 +425,29 @@ wait_for_service_running() {
 }
 
 check_superlink_reachable() {
-    local host="$1" port="$2"
+    local host="$1"
 
-    if ! command -v nc &>/dev/null; then
-        warn "Skipping connectivity check (nc not available)"
-        return
+    # The Control API (9093) is bound to localhost on the SuperLink, so we reach
+    # it through an SSH tunnel. Verify SSH access (needed for the tunnel and the
+    # TLS CA) and that the Fleet API (9092) is up.
+    info "Checking SSH access to SuperLink ($host)..."
+    if ssh $SSH_OPTS "${SSH_USER}@${host}" true 2>/dev/null; then
+        success "SSH to SuperLink OK"
+    else
+        warn "Cannot SSH to ${SSH_USER}@${host}"
+        hint "Training needs SSH to the SuperLink (for the TLS CA and the Control API tunnel)."
+        hint "Add your SSH key to your OpenNebula user profile, and check: ssh ${SSH_USER}@${host} docker ps"
+        if ! $AUTO; then
+            prompt_yn "Continue anyway?" "n" || exit 1
+        fi
     fi
 
-    info "Checking connectivity to ${host}:${port}..."
-    if nc -z -w "$CONNECTIVITY_TIMEOUT" "$host" "$port" 2>/dev/null; then
-        success "SuperLink is reachable"
-    else
-        warn "Cannot reach ${host}:${port}"
-        hint "The cluster may still be starting containers (wait ~30s and retry)."
-        hint "Or check: ssh root@${host} docker ps"
-        if ! $AUTO; then
-            prompt_yn "Continue anyway?" "y" || exit 1
+    if command -v nc &>/dev/null; then
+        if nc -z -w "$CONNECTIVITY_TIMEOUT" "$host" "$FLEET_PORT" 2>/dev/null; then
+            success "Fleet API ($FLEET_PORT) reachable"
+        else
+            warn "Fleet API ($FLEET_PORT) not reachable on ${host} (SuperNodes connect here)."
+            hint "Containers may still be starting; wait ~30s and retry."
         fi
     fi
 }
@@ -441,7 +460,15 @@ select_framework() {
     local demo_base="$SCRIPT_DIR"
 
     for dir in "$demo_base"/*/; do
-        [[ -f "${dir}pyproject.toml" ]] && demos+=("$(basename "$dir")")
+        [[ -f "${dir}pyproject.toml" ]] || continue
+        local name
+        name="$(basename "$dir")"
+        # The LLM demo runs in local simulation only: a deployed cluster builds
+        # pytorch/tensorflow/sklearn SuperNode images, never the LLM image.
+        if [[ "$name" == "llm" ]] && ! $SKIP_CLUSTER; then
+            continue
+        fi
+        demos+=("$name")
     done
 
     if [[ ${#demos[@]} -eq 0 ]]; then
@@ -543,50 +570,75 @@ configure_federation() {
         return
     fi
 
-    local sl_host="${SUPERLINK%%:*}"
-    local sl_port="${SUPERLINK##*:}"
-    local address="${sl_host}:${sl_port}"
+    # The demo's pyproject.toml federation 'opennebula' already targets
+    # 127.0.0.1:9093 (reached via the SSH tunnel opened in stage 7). Here we only
+    # handle TLS: fetch the SuperLink CA for secure mode, or switch the demo to
+    # insecure if the cluster was deployed with TLS disabled.
+    local pyproject="$DEMO_DIR/pyproject.toml"
 
-    # Flower 1.25+ stores connection config in ~/.flwr/config.toml
-    local flwr_config="$HOME/.flwr/config.toml"
-
-    if [[ -f "$flwr_config" ]]; then
-        info "Patching SuperLink address in $flwr_config..."
-
-        if grep -q '\[superlink\.opennebula\]' "$flwr_config"; then
-            # Replace existing address under [superlink.opennebula]
-            sed -i '/\[superlink\.opennebula\]/,/^\[/{s|address = ".*"|address = "'"$address"'"|;}' "$flwr_config"
-            success "Updated address → $address"
-        else
-            # Add new [superlink.opennebula] section
-            printf '\n[superlink.opennebula]\naddress = "%s"\ninsecure = true\n' "$address" >> "$flwr_config"
-            success "Added [superlink.opennebula] → $address"
-        fi
-
-        # Ensure opennebula is the default federation
-        if grep -q '^default = ' "$flwr_config"; then
-            sed -i 's|^default = ".*"|default = "opennebula"|' "$flwr_config"
-        fi
-    else
-        # First run — create the config file
-        info "Creating $flwr_config..."
-        mkdir -p "$(dirname "$flwr_config")"
-        cat > "$flwr_config" <<TOML
-[superlink]
-default = "opennebula"
-
-[superlink.opennebula]
-address = "$address"
-insecure = true
-
-[superlink.local-sim]
-options.num-supernodes = 2
-TOML
-        success "Created Flower config with address → $address"
+    if [[ "$CLUSTER_TLS" == "NO" ]]; then
+        warn "Cluster has TLS disabled — configuring an insecure client connection"
+        sed -i 's|^root-certificates = .*|insecure = true|' "$pyproject"
+        success "Federation set to insecure (matches the cluster)"
+        return
     fi
 
-    info "Federation config:"
-    grep -A3 '\[superlink\.opennebula\]' "$flwr_config" | head -5
+    # TLS enabled (default): retrieve the SuperLink CA into the demo directory
+    if [[ -z "$SUPERLINK_IP" ]]; then
+        warn "No SuperLink IP known — cannot fetch the TLS CA automatically"
+        hint "Copy it manually: scp ${SSH_USER}@<superlink-ip>:/opt/flower/certs/ca.crt $DEMO_DIR/ca.crt"
+        return
+    fi
+
+    info "Fetching the SuperLink CA certificate (TLS is enabled)..."
+    if scp $SSH_OPTS "${SSH_USER}@${SUPERLINK_IP}:/opt/flower/certs/ca.crt" "$DEMO_DIR/ca.crt" 2>/dev/null; then
+        # Restore secure mode in case a previous run switched it to insecure
+        if grep -q '^insecure = true' "$pyproject"; then
+            sed -i 's|^insecure = true|root-certificates = "ca.crt"|' "$pyproject"
+        fi
+        success "CA certificate saved to $DEMO_DIR/ca.crt"
+    else
+        error "Could not copy the CA from ${SSH_USER}@${SUPERLINK_IP}:/opt/flower/certs/ca.crt"
+        hint "Check SSH access, then copy it manually into $DEMO_DIR/ca.crt"
+        if ! $AUTO; then
+            prompt_yn "Continue anyway? (training will fail without the CA)" "n" || exit 1
+        fi
+    fi
+}
+
+# ── Control API tunnel (9093 is bound to localhost on the SuperLink) ──────────
+open_control_tunnel() {
+    [[ -z "$SUPERLINK_IP" ]] && return 1
+
+    # Reuse an existing local listener on 9093 if one is already there
+    if command -v nc &>/dev/null && nc -z -w 2 127.0.0.1 "$SUPERLINK_PORT" 2>/dev/null; then
+        info "Control API already reachable on 127.0.0.1:${SUPERLINK_PORT} (reusing)"
+        return 0
+    fi
+
+    info "Opening SSH tunnel to the SuperLink Control API..."
+    TUNNEL_SOCK="$(mktemp -u "${TMPDIR:-/tmp}/flwr-tunnel.XXXXXX")"
+    ssh $SSH_OPTS -f -N -M -S "$TUNNEL_SOCK" \
+        -L "127.0.0.1:${SUPERLINK_PORT}:127.0.0.1:${SUPERLINK_PORT}" \
+        "${SSH_USER}@${SUPERLINK_IP}" 2>/dev/null || { TUNNEL_SOCK=""; return 1; }
+
+    local i
+    for i in 1 2 3 4 5; do
+        if ! command -v nc &>/dev/null || nc -z -w 2 127.0.0.1 "$SUPERLINK_PORT" 2>/dev/null; then
+            success "Tunnel established (127.0.0.1:${SUPERLINK_PORT} → SuperLink)"
+            return 0
+        fi
+        sleep 1
+    done
+    warn "Tunnel did not come up in time"
+    return 1
+}
+
+close_control_tunnel() {
+    if [[ -n "$TUNNEL_SOCK" ]]; then
+        ssh -S "$TUNNEL_SOCK" -O exit "${SSH_USER}@${SUPERLINK_IP}" 2>/dev/null || true
+        TUNNEL_SOCK=""
+    fi
 }
 
 # ── Stage 6: Data selection ──────────────────────────────────────────────────
@@ -663,10 +715,14 @@ run_on_cluster() {
     info "SuperLink: $SUPERLINK"
     echo
 
-    # Submit the run (returns immediately after uploading the FAB)
-    local run_output
-    run_output="$(cd "$DEMO_DIR" && flwr run . 2>&1)"
-    local rc=$?
+    open_control_tunnel || die "Could not open the Control API tunnel to the SuperLink ($SUPERLINK_IP)."
+
+    # Submit the run through the tunnel. flwr run reads address 127.0.0.1:9093 and
+    # the TLS root-certificates from the demo's pyproject.toml.
+    local run_output rc
+    run_output="$(cd "$DEMO_DIR" && flwr run . opennebula 2>&1)"; rc=$?
+
+    close_control_tunnel
 
     echo "$run_output"
     echo
@@ -675,10 +731,10 @@ run_on_cluster() {
         error "Failed to submit training run."
         echo
         echo -e "${BOLD}Troubleshooting:${RESET}"
-        hint "1. Check SuperLink is reachable: nc -z ${SUPERLINK%%:*} ${SUPERLINK##*:}"
-        hint "2. Check containers: ssh root@${SUPERLINK%%:*} docker ps"
-        hint "3. Check SuperLink logs: ssh root@${SUPERLINK%%:*} docker logs flower-superlink"
-        hint "4. Verify address: grep -A2 'superlink.opennebula' ~/.flwr/config.toml"
+        hint "1. Check SSH to the SuperLink: ssh ${SSH_USER}@${SUPERLINK_IP} docker ps"
+        hint "2. Check SuperLink logs:       ssh ${SSH_USER}@${SUPERLINK_IP} docker logs flower-superlink"
+        hint "3. TLS: ensure $DEMO_DIR/ca.crt exists (re-run, or scp it from the SuperLink)"
+        hint "4. Confirm the federation:     grep -A4 'federations.opennebula' $DEMO_DIR/pyproject.toml"
         exit 1
     fi
 
@@ -744,6 +800,7 @@ main() {
     echo -e "${DIM}From deployed cluster to running training in minutes${RESET}"
 
     parse_args "$@"
+    trap close_control_tunnel EXIT
     check_prerequisites      # Stage 1
     discover_cluster         # Stage 2
     select_framework         # Stage 3

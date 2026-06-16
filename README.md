@@ -80,28 +80,23 @@ TLS is on by default, and the Control API (`9093`) is bound to `localhost` on th
 # Find the SuperLink IP
 oneflow show <service-id>
 
-# Copy the CA certificate the SuperLink generated (your SSH key is already trusted)
+# Copy into the demo dir the CA the SuperLink generated (your SSH key is already trusted)
+cd demo/pytorch        # or demo/tensorflow, demo/sklearn
 scp root@<superlink-ip>:/opt/flower/certs/ca.crt ./ca.crt
 
 # Open a tunnel to the localhost-bound Control API, and leave it running
 ssh -L 9093:127.0.0.1:9093 root@<superlink-ip>
 ```
 
-Then point a demo at the tunnel and the CA, and run it:
+The demos are already configured for this (the `opennebula` federation points at `127.0.0.1:9093` with `root-certificates = "ca.crt"`), so once the CA is in place and the tunnel is up, just run:
 
 ```bash
-cd demo/pytorch        # or demo/tensorflow, demo/sklearn
-
-# In pyproject.toml, under [tool.flwr.federations.opennebula]:
-#   address           = "127.0.0.1:9093"
-#   root-certificates = "ca.crt"
-
 flwr run . opennebula
 ```
 
 `flwr run` packages your code into a Flower App Bundle, uploads it to the SuperLink, and the SuperLink distributes it to every SuperNode. Change your code and re-run; no image rebuild needed. Per-round loss and accuracy print in the output.
 
-> If your cluster is on a trusted private link and you deployed with `ONEAPP_FL_TLS_ENABLED=NO`, drop the CA step and set `insecure = true` instead. For a quick local test with no cluster at all, run `bash demo/quickstart.sh --skip-cluster` (Flower simulation, 2 virtual nodes).
+> Prefer one command? `bash demo/quickstart.sh` does all of the above (discovery, CA, tunnel, run) for you. For a quick local test with no cluster at all, `bash demo/quickstart.sh --skip-cluster` runs a Flower simulation with 2 virtual nodes. If you deployed with `ONEAPP_FL_TLS_ENABLED=NO`, replace `root-certificates = "ca.crt"` with `insecure = true` in the demo's `pyproject.toml`.
 
 In our testing, 3 rounds of FedAvg on CIFAR-10 with 2 SuperNodes brought distributed loss from **~1.30 to ~0.92**, with only model weights crossing the network.
 

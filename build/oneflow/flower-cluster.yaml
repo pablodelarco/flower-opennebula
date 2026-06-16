@@ -1,13 +1,17 @@
 ---
-# Flower Federated Learning — OneFlow Service Template
-# Deploys a SuperLink coordinator + N SuperNode training nodes
+# Flower Federated Learning - OneFlow Service Template (reference)
+# Deploys a SuperLink coordinator + N SuperNode training nodes.
 #
-# Usage:
-#   oneflow-template create flower-cluster.json   (convert YAML→JSON first)
-#   oneflow-template instantiate <template_id>
+# For the supported, ready-to-import definitions use the marketplace appliance
+# (appliances/flower_service/), which ships these objects with image references
+# already wired. This file is a hand-editable starting point.
 #
-# References:
-#   spec/08-single-site-orchestration.md
+# Two manual steps are required before it can be instantiated:
+#   1. Replace both `vm_template: 0` placeholders with your real VM template IDs.
+#   2. oneflow-template create consumes JSON, not YAML, so convert first:
+#        yq -o=json '.' flower-cluster.yaml > flower-cluster.json   # or any YAML->JSON tool
+#        oneflow-template create flower-cluster.json
+#        oneflow-template instantiate <template_id>
 
 type: 'SERVICE_TEMPLATE'
 

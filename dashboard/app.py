@@ -10,6 +10,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import tempfile
 import threading
@@ -62,7 +63,9 @@ _superlink_ip_cache: str = ""
 
 
 class TrainingRequest(BaseModel):
-    framework: str = PydField(..., pattern=r"^(pytorch|tensorflow|sklearn|llm)$")
+    # pytorch/tensorflow/sklearn are the frameworks the appliance builds.
+    # The LLM demo runs in local simulation only and is not deployable here.
+    framework: str = PydField(..., pattern=r"^(pytorch|tensorflow|sklearn)$")
     num_rounds: int = PydField(3, ge=1, le=100)
     strategy: str = PydField("FedAvg")
     local_epochs: int = PydField(1, ge=1, le=50)
@@ -70,10 +73,6 @@ class TrainingRequest(BaseModel):
     min_fit_clients: int = PydField(2, ge=1)
     min_available_clients: int = PydField(2, ge=1)
     extra_config: dict = PydField(default_factory=dict)
-    learning_rate: float = PydField(5e-5, ge=1e-6, le=1e-2)
-    lora_rank: int = PydField(16, ge=4, le=64)
-    max_steps: int = PydField(10, ge=1, le=100)
-    seq_length: int = PydField(512, ge=64, le=2048)
 
 
 def _reader_thread(proc, lines_deque):
@@ -154,6 +153,60 @@ def _ssh(ip: str, cmd: str, timeout: int = 8) -> tuple[int, str]:
     return _run(f"ssh {SSH_OPTS} {SSH_USER}@{ip} {repr(cmd)}", timeout=timeout)
 
 
+# The SuperLink binds its Control API (9093) to localhost for safety, so the
+# dashboard reaches it through an SSH port-forward on this host.
+_CONTROL_PORT = 9093
+_control_tunnel_sock = ""
+
+
+def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:
+    """True if a TCP connection to host:port succeeds."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_ca(superlink_ip: str, framework_dir: Path) -> None:
+    """Copy the SuperLink CA into the demo dir so `flwr run` can verify TLS."""
+    if not superlink_ip:
+        return
+    _run(
+        f"scp {SSH_OPTS} {SSH_USER}@{superlink_ip}:/opt/flower/certs/ca.crt "
+        f"{framework_dir}/ca.crt",
+        timeout=20,
+    )
+
+
+def _ensure_control_tunnel(superlink_ip: str) -> bool:
+    """Ensure 127.0.0.1:9093 on this host forwards to the SuperLink Control API.
+
+    Idempotent: reuses an existing listener/tunnel. Returns True if reachable.
+    """
+    global _control_tunnel_sock
+    if not superlink_ip:
+        return False
+    if _port_open("127.0.0.1", _CONTROL_PORT):
+        return True
+    sock = f"/tmp/flwr-dashboard-tunnel-{superlink_ip}.sock"
+    # Port is closed, so any socket file here is stale (the master died). Clear it
+    # so `ssh -M` can recreate the tunnel.
+    _run(f"rm -f {sock}", timeout=5)
+    _run(
+        f"ssh {SSH_OPTS} -f -N -M -S {sock} "
+        f"-L 127.0.0.1:{_CONTROL_PORT}:127.0.0.1:{_CONTROL_PORT} "
+        f"{SSH_USER}@{superlink_ip}",
+        timeout=15,
+    )
+    _control_tunnel_sock = sock
+    for _ in range(5):
+        if _port_open("127.0.0.1", _CONTROL_PORT):
+            return True
+        time.sleep(1)
+    return False
+
+
 # ---------------------------------------------------------------------------
 # SuperNode framework switching
 # ---------------------------------------------------------------------------
@@ -180,23 +233,40 @@ def _switch_supernode_framework(
             })
             continue
 
+        # The appliance only builds the framework image selected at deploy time.
+        # If the target image is absent, switching cannot work here — surface a
+        # clear message instead of a cryptic 'docker run' failure.
+        rc_img, _ = _ssh(node.ip, f"docker image inspect {image} >/dev/null 2>&1", timeout=15)
+        if rc_img != 0:
+            results.append({
+                "node": node.name, "ip": node.ip,
+                "switched": False, "success": False,
+                "message": f"image {image} not present; redeploy the cluster with framework '{framework}'",
+            })
+            continue
+
+        # Match the appliance's TLS posture: connect securely when the SuperNode
+        # has the SuperLink CA, otherwise fall back to insecure.
+        rc_tls, _ = _ssh(node.ip, "test -f /opt/flower/certs/ca.crt", timeout=8)
+        if rc_tls == 0:
+            tls_mount = "-v /opt/flower/certs/ca.crt:/app/ca.crt:ro "
+            conn_args = "--root-certificates /app/ca.crt"
+        else:
+            tls_mount = ""
+            conn_args = "--insecure"
+
         sl_addr = superlink_ip or node.superlink_address
         docker_run = (
             f"docker stop {SUPERNODE_CONTAINER} 2>/dev/null; "
             f"docker rm {SUPERNODE_CONTAINER} 2>/dev/null; "
             f"docker run -d --name {SUPERNODE_CONTAINER} --restart unless-stopped "
-            f"-v /opt/flower/data:/app/data:ro "
+            f"-v /opt/flower/data:/app/data:ro {tls_mount}"
             f"{image} "
-            f"--insecure --superlink {sl_addr}:9092 "
+            f"{conn_args} --superlink {sl_addr}:9092 "
             f"--isolation subprocess "
             f"--max-retries 0 --max-wait-time 0"
         )
         rc, out = _ssh(node.ip, docker_run, timeout=30)
-        if rc == 0 and framework != "llm":
-            # Install runtime deps missing from base images (LLM image has all deps)
-            _ssh(node.ip,
-                 f"docker exec {SUPERNODE_CONTAINER} pip install -q 'flwr-datasets[vision]'",
-                 timeout=120)
         results.append({
             "node": node.name, "ip": node.ip,
             "switched": True, "success": rc == 0,
@@ -296,7 +366,7 @@ def collect_container_info(node: NodeInfo) -> NodeInfo:
             node.flower_version = parts[2].split(":")[-1] if ":" in parts[2] else parts[2]
             # Detect framework from Docker image name
             image_name = parts[2].lower()
-            for fw in ("pytorch", "tensorflow", "sklearn", "llm"):
+            for fw in ("pytorch", "tensorflow", "sklearn"):
                 if fw in image_name:
                     node.framework = fw
                     break
@@ -309,14 +379,14 @@ def collect_container_info(node: NodeInfo) -> NodeInfo:
 MODEL_INFO = {
     "pytorch": {
         "architecture": "Conv2d(3\u219232,5\u00d75) \u2192 MaxPool \u2192 Conv2d(32\u219264,5\u00d75) \u2192 MaxPool \u2192 FC(2304\u2192512) \u2192 FC(512\u219210)",
-        "parameters": "~878K",
-        "framework": "PyTorch 2.6.0",
+        "parameters": "~1.24M",
+        "framework": "PyTorch 2.5.1",
         "dataset": "CIFAR-10",
         "strategy": "FedAvg",
     },
     "tensorflow": {
         "architecture": "Conv2D(32,5\u00d75) \u2192 MaxPool \u2192 Conv2D(64,5\u00d75) \u2192 MaxPool \u2192 Dense(512) \u2192 Dense(10)",
-        "parameters": "~880K",
+        "parameters": "~2.16M",
         "framework": "TensorFlow 2.18.1",
         "dataset": "CIFAR-10",
         "strategy": "FedAvg",
@@ -324,15 +394,8 @@ MODEL_INFO = {
     "sklearn": {
         "architecture": "MLPClassifier: Input(3072) \u2192 Hidden(512) \u2192 Output(10)",
         "parameters": "~1.6M",
-        "framework": "scikit-learn 1.4+",
+        "framework": "scikit-learn 1.5.2",
         "dataset": "CIFAR-10 (flattened)",
-        "strategy": "FedAvg",
-    },
-    "llm": {
-        "architecture": "Qwen2-0.5B-Instruct + LoRA (q_proj, v_proj)",
-        "parameters": "~1.3M trainable / 494M total",
-        "framework": "PyTorch + PEFT + TRL",
-        "dataset": "Alpaca-GPT4",
         "strategy": "FedAvg",
     },
 }
@@ -605,31 +668,26 @@ async def start_training(req: TrainingRequest):
             return f'{k}="{v}"'
         return f"{k}={v}"
 
-    if req.framework == "llm":
-        config_parts = [
-            _cfg("num-server-rounds", req.num_rounds),
-            _cfg("learning-rate", req.learning_rate),
-            _cfg("lora-rank", req.lora_rank),
-            _cfg("lora-alpha", req.lora_rank * 2),
-            _cfg("max-steps", req.max_steps),
-            _cfg("seq-length", req.seq_length),
-            _cfg("batch-size", req.batch_size),
-            _cfg("strategy", req.strategy),
-            _cfg("min-fit-clients", req.min_fit_clients),
-            _cfg("min-available-clients", req.min_available_clients),
-        ]
-    else:
-        config_parts = [
-            _cfg("num-server-rounds", req.num_rounds),
-            _cfg("local-epochs", req.local_epochs),
-            _cfg("batch-size", req.batch_size),
-            _cfg("strategy", req.strategy),
-            _cfg("min-fit-clients", req.min_fit_clients),
-            _cfg("min-available-clients", req.min_available_clients),
-        ]
+    config_parts = [
+        _cfg("num-server-rounds", req.num_rounds),
+        _cfg("local-epochs", req.local_epochs),
+        _cfg("batch-size", req.batch_size),
+        _cfg("strategy", req.strategy),
+        _cfg("min-fit-clients", req.min_fit_clients),
+        _cfg("min-available-clients", req.min_available_clients),
+    ]
     for k, v in req.extra_config.items():
         config_parts.append(_cfg(k, v))
     run_config_str = " ".join(config_parts)
+
+    # `flwr run` connects to the Control API at 127.0.0.1:9093 over TLS. Trust the
+    # SuperLink CA and forward the localhost-bound Control API to this host first.
+    _ensure_ca(superlink_ip, DEMO_BASE / req.framework)
+    if not _ensure_control_tunnel(superlink_ip):
+        raise HTTPException(
+            status_code=502,
+            detail="Cannot reach the SuperLink Control API (9093). Check SSH access to the SuperLink.",
+        )
 
     cmd = [str(FLWR_BIN), "run", ".", "opennebula", "--run-config", run_config_str]
     proc = subprocess.Popen(

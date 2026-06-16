@@ -6,7 +6,7 @@ from tensorflow import keras
 
 
 def SimpleCNN() -> keras.Model:
-    """Lightweight CNN for CIFAR-10 (~880K parameters).
+    """Lightweight CNN for CIFAR-10 (~2.16M parameters).
 
     Architecture:
         Conv2D(32, 5×5, same) → ReLU → MaxPool(2)
