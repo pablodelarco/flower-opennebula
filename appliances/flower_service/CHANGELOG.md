@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service discovery
 - SuperNode ships PyTorch 2.5.1 (CPU) pre-baked; TensorFlow 2.18.1 and
   scikit-learn 1.5.2 are built automatically on first boot when selected,
-  keeping the base image small enough for marketplace certification
+  keeping the base image small enough for marketplace certification. SuperNodes
+  default to 8 GB RAM to give PyTorch training enough headroom
 
 ### Security
 

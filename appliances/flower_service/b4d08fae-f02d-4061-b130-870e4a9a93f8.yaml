@@ -46,7 +46,7 @@ opennebula_template:
     oneapp_fl_framework: "$ONEAPP_FL_FRAMEWORK"
     oneapp_fl_node_config: "$ONEAPP_FL_NODE_CONFIG"
   cpu: '2'
-  memory: '4096'
+  memory: '8192'
   graphics:
     listen: 0.0.0.0
     type: vnc

@@ -28,7 +28,7 @@ This appliance is hardened by default so it cannot be abused (for example as a s
 
    This automatically imports the dependent VM templates and OS disk images.
 
-2. Adjust the service template to your needs. You can set the CPU, RAM, and disk size for each role's VM template in FireEdge or via the CLI.
+2. Adjust the service template to your needs. You can set the CPU, RAM, and disk size for each role's VM template in FireEdge or via the CLI. SuperNodes default to 8 GB RAM so PyTorch training has headroom; lighter workloads (for example scikit-learn) run comfortably in less.
 
 3. Configure networks for the service template by selecting an existing private network that all FL cluster VMs will share.
 
