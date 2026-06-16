@@ -1,264 +1,290 @@
 # Flower + OpenNebula
 
-> Train a shared model across multiple sites without moving raw data. One-click deploy on OpenNebula.
+> Train one shared model across many sites without moving the data. Deploy a [Flower](https://flower.ai/) federated learning cluster on OpenNebula in a few clicks.
 
 [![Flower](https://img.shields.io/badge/Flower-1.25.0-blue)](https://flower.ai/)
-[![OpenNebula](https://img.shields.io/badge/OpenNebula-7.0+-brightgreen)](https://opennebula.io/)
+[![OpenNebula](https://img.shields.io/badge/OpenNebula-6.8+-brightgreen)](https://opennebula.io/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange)](LICENSE)
 
-Pre-built OpenNebula marketplace appliances that deploy a [Flower](https://flower.ai/) federated learning cluster. Each node trains on its own private data (hospital scans, factory sensors, user devices) and only shares model weight updates (~3.5 MB/round) — raw data never leaves its source VM.
+Each node trains on its own private data (hospital scans, factory sensors, user devices) and shares only model weight updates. Raw data never leaves the VM it lives on. This repo ships two OpenNebula marketplace appliances and a OneFlow service that wire a Flower cluster together for you, hardened and TLS-encrypted by default.
 
 ```
-  ┌─────────────────────────────────────────────────────┐
-  │                 OpenNebula Cloud                     │
-  │                                                     │
-  │    ┌──────────────┐                                 │
-  │    │  SuperLink   │  Coordinates rounds,            │
-  │    │  (1 VM)      │  aggregates model weights       │
-  │    │  :9092 Fleet │                                 │
-  │    │  :9093 Ctrl  │                                 │
-  │    └──────┬───────┘                                 │
-  │           │ gRPC (weights only, ~3.5 MB/round)      │
-  │     ┌─────┴─────┐                                   │
-  │     │           │                                   │
-  │  ┌──▼───────┐ ┌─▼────────┐                          │
-  │  │SuperNode │ │SuperNode │  Train locally on        │
-  │  │  VM #1   │ │  VM #2   │  private data            │
-  │  │ [data]   │ │ [data]   │                          │
-  │  └──────────┘ └──────────┘                          │
-  └─────────────────────────────────────────────────────┘
+                       OpenNebula  (one shared private network)
+
+                        ┌──────────────────────────┐
+                        │        SuperLink          │   coordinates rounds,
+                        │   1 VM · 4 GB · 2 vCPU     │   aggregates weights
+                        │                           │
+                        │   :9092  Fleet API ───────┼──► SuperNodes connect in
+                        │   :9093  Control API      │    (private NIC, TLS)
+                        │          (localhost only) │
+                        └─────────────┬─────────────┘
+                          weights only │  (a few MB / round)
+                    ┌─────────────────┴─────────────────┐
+                    │                                   │
+           ┌────────▼─────────┐               ┌─────────▼────────┐
+           │    SuperNode     │               │    SuperNode     │
+           │  8 GB · 2 vCPU   │      ...       │  8 GB · 2 vCPU   │   2-10 nodes,
+           │  trains locally  │               │  trains locally  │   auto-scaling
+           │  [private data]  │               │  [private data]  │
+           └──────────────────┘               └──────────────────┘
 ```
 
-SuperNode images include **PyTorch, TensorFlow, and scikit-learn** — set `ONEAPP_FL_FRAMEWORK` to pick one at deploy time.
+The **SuperLink** boots first, generates its TLS certificate, and announces itself through OneGate. The **SuperNodes** boot next, auto-discover the SuperLink, fetch its CA certificate, and connect. You then push training code with `flwr run`; the SuperLink distributes it to every SuperNode. No data ever crosses the wire, only model weights.
 
-**Validated:** 3 rounds of FedAvg on CIFAR-10, 2 SuperNodes (2 vCPU / 4 GB each) — loss dropped **1.27 → 0.94**. Only model weights crossed the network.
+## What you get
 
-## Quick Start
+| Component | Version | Notes |
+|-----------|---------|-------|
+| Flower | 1.25.0 | `flwr/superlink` container, managed by systemd |
+| PyTorch | 2.5.1 (CPU) | Pre-baked into the SuperNode image |
+| TensorFlow | 2.18.1 (CPU) | Built on first boot when selected |
+| scikit-learn | 1.5.2 | Built on first boot when selected |
+| Ubuntu | 24.04 LTS | |
+| Docker CE | 27+ | |
 
-**Prerequisites:** OpenNebula 7.0+ with CLI access, Python 3.11+, SSH key in your OpenNebula profile.
+Pick the framework at deploy time with `ONEAPP_FL_FRAMEWORK`. Only PyTorch is pre-baked; TensorFlow and scikit-learn build automatically on the first boot of a SuperNode that selects them (this keeps the image small enough for marketplace certification). The aggregation strategy and round count are **not** appliance settings; you choose them per run in your Flower App Bundle.
 
-### Step 1: Import Appliances
+## Quick start
 
-**From the marketplace** (recommended): FireEdge → Storage → Apps → "Flower FL 1.25.0" → Export.
+**You need:** OpenNebula 6.8+ with OneFlow and OneGate, your SSH key in your OpenNebula user profile, and Python 3.11+ with the `flwr` CLI (`pip install flwr`) on your own machine.
 
-**From source**: see "Building from source" under [Going Further](#going-further).
+### 1. Import the appliance
 
-### Step 2: Deploy the Cluster
+From the OpenNebula Community Marketplace (FireEdge → Storage → Apps → "Service Flower FL 1.25.0" → Export), or from the CLI:
 
 ```bash
-# Deploy — SuperLink boots first, SuperNodes auto-discover via OneGate
-oneflow-template instantiate <service-template-id>
+onemarketapp export 'Service Flower FL 1.25.0' 'Service Flower FL' --datastore default
+```
 
-# Monitor until RUNNING
+This imports the OneFlow service template plus the SuperLink and SuperNode VM templates and OS-disk images. To build the images yourself instead, see [Build from source](#build-from-source).
+
+### 2. Deploy the cluster
+
+Instantiate the service, choosing a **private network** that every cluster VM will share. Optionally set the framework and TLS in the deploy form.
+
+```bash
+oneflow-template instantiate 'Service Flower FL'
+
+# Watch it come up: SuperLink first, then SuperNodes auto-discover it
 watch -n 5 oneflow show <service-id>
 ```
 
-To select a framework: `--user_inputs '{"ONEAPP_FL_FRAMEWORK": "pytorch"}'`
+When the service reaches `RUNNING`, the cluster is up and idle, waiting for training code.
 
-### Step 3: Run Federated Training
+### 3. Run a training
 
-The cluster is now running but idle. The quickstart script handles the rest — finds your cluster, sets up Python, patches the config, and runs training:
+TLS is on by default, and the Control API (`9093`) is bound to `localhost` on the SuperLink so it is never exposed to the network. So you do two things a plain Flower tutorial skips: tunnel to the Control API, and trust the SuperLink's CA.
 
 ```bash
-bash demo/quickstart.sh
+# Find the SuperLink IP
+oneflow show <service-id>
+
+# Copy the CA certificate the SuperLink generated (your SSH key is already trusted)
+scp root@<superlink-ip>:/opt/flower/certs/ca.crt ./ca.crt
+
+# Open a tunnel to the localhost-bound Control API, and leave it running
+ssh -L 9093:127.0.0.1:9093 root@<superlink-ip>
 ```
 
-Options: `--skip-cluster` (local simulation only), `--superlink IP:PORT` (skip discovery), `--auto` (non-interactive). Run `--help` for details.
-
-<details>
-<summary><strong>Manual steps</strong> (if you prefer not to use the quickstart)</summary>
-
-You need Python 3.11+ and `flwr` CLI (`pip install flwr`) on your local machine.
-
-Three included demos, each training a CIFAR-10 classifier with FedAvg:
-
-| Demo | Model | Framework |
-|------|-------|-----------|
-| `demo/pytorch/` | SimpleCNN (~878K params) | PyTorch 2.6.0 |
-| `demo/tensorflow/` | Sequential CNN (~880K) | TensorFlow 2.18.1 |
-| `demo/sklearn/` | MLPClassifier (~1.6M) | scikit-learn 1.4+ |
+Then point a demo at the tunnel and the CA, and run it:
 
 ```bash
-cd demo/pytorch       # or demo/tensorflow, demo/sklearn
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
+cd demo/pytorch        # or demo/tensorflow, demo/sklearn
 
-# Edit pyproject.toml: set address = "<superlink-ip>:9093"
+# In pyproject.toml, under [tool.flwr.federations.opennebula]:
+#   address           = "127.0.0.1:9093"
+#   root-certificates = "ca.crt"
+
 flwr run . opennebula
 ```
 
-`flwr run` packages your code into a FAB, uploads it to the SuperLink, which distributes it to every SuperNode. Change code and re-run — no Docker rebuild needed.
+`flwr run` packages your code into a Flower App Bundle, uploads it to the SuperLink, and the SuperLink distributes it to every SuperNode. Change your code and re-run; no image rebuild needed. Per-round loss and accuracy print in the output.
 
-**Local simulation** (no cluster needed): `flwr run . local-sim`
+> If your cluster is on a trusted private link and you deployed with `ONEAPP_FL_TLS_ENABLED=NO`, drop the CA step and set `insecure = true` instead. For a quick local test with no cluster at all, run `bash demo/quickstart.sh --skip-cluster` (Flower simulation, 2 virtual nodes).
 
-</details>
+In our testing, 3 rounds of FedAvg on CIFAR-10 with 2 SuperNodes brought distributed loss from **~1.30 to ~0.92**, with only model weights crossing the network.
 
-## Going Further
+## Configuration
+
+Two settings appear in the service deploy form:
+
+| Parameter | Values | Default | Applies to |
+|-----------|--------|---------|------------|
+| `ONEAPP_FL_FRAMEWORK` | `pytorch`, `tensorflow`, `sklearn` | `pytorch` | SuperNodes |
+| `ONEAPP_FL_TLS_ENABLED` | `YES`, `NO` | `YES` | Both roles |
+
+Each role's VM template exposes a few more advanced context variables (edit the template, or set them in FireEdge before instantiating):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ONEAPP_FLOWER_VERSION` | `1.25.0` | Flower image tag (images are pre-baked at 1.25.0) |
+| `ONEAPP_FL_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `ONEAPP_FL_ISOLATION` | `subprocess` | Flower app isolation: `subprocess` or `process` |
+| `ONEAPP_FL_DATABASE` | `state/state.db` | SuperLink state DB path (SuperLink only) |
+| `ONEAPP_FL_SUPERLINK_ADDRESS` | _(auto)_ | SuperNode only. `host:port` for a static SuperLink; empty means auto-discover via OneGate |
+| `ONEAPP_FL_NODE_CONFIG` | _(auto)_ | SuperNode only. `key=value …`; empty auto-computes `partition-id` / `num-partitions` |
+| `ONEAPP_FL_MAX_RETRIES` | `0` | SuperNode reconnect attempts (`0` = unlimited) |
+| `ONEAPP_FL_MAX_WAIT_TIME` | `0` | SuperNode connect timeout, seconds (`0` = unlimited) |
+
+Strategy and round count live in your App Bundle, not here. Override them per run without redeploying:
+
+```bash
+flwr run . opennebula --run-config "num-server-rounds=10 strategy=FedProx"
+```
+
+## Security
+
+The appliance is hardened by default so it cannot be turned into an attack platform even if a training workload is compromised (an earlier unhardened deployment was abused as a spam relay; this design closes that off).
+
+- **TLS on by default.** The SuperLink generates its own CA and server certificate, publishes the CA over OneGate, and SuperNodes fetch and trust it automatically. No manual certificate handling. If the CA cannot be retrieved, a SuperNode fails closed rather than falling back to plaintext.
+- **No Flower port on `0.0.0.0`.** The Fleet API (`9092`) binds the private NIC, the Control API (`9093`) binds `127.0.0.1` only (it runs the code you submit, so reach it through the SSH tunnel above), and the internal ServerAppIo port (`9091`) is never published.
+- **Default-deny host firewall.** UFW allows only inbound SSH; `DOCKER-USER` iptables rules restrict the Flower ports to the cluster's private subnet.
+- **Outbound SMTP blocked.** Ports 25/465/587 are rejected on the host and container, IPv4 and IPv6, so a node can never send mail.
+- **No injection surface.** Containers run as a non-root user and are launched from an argument array (never `eval`), so values like `ONEAPP_FL_NODE_CONFIG` can't smuggle in shell commands.
+
+The SuperLink reuses its certificate across reboots so SuperNodes keep trusting the same CA. There is currently no hook to supply your own certificates; the CA is always self-generated.
+
+## The demos
+
+Each demo is a self-contained Flower app that trains a CIFAR-10 classifier with FedAvg (`num-server-rounds = 3`, 2 clients) and runs unchanged against the cluster or in local simulation.
+
+| Demo | Model | Framework |
+|------|-------|-----------|
+| `demo/pytorch/` | Small CNN (~1.2M params) | PyTorch |
+| `demo/tensorflow/` | Small CNN (~2.2M params) | TensorFlow |
+| `demo/sklearn/` | MLPClassifier (~1.6M params) | scikit-learn |
+| `demo/llm/` | Qwen2-0.5B + LoRA | PyTorch + transformers |
+
+Run any of the first three against your cluster with the [Quick start](#3-run-a-training) flow, or in simulation with `flwr run . local-sim`. The **LLM demo is local-simulation only**: the deployed appliance builds PyTorch/TensorFlow/scikit-learn images, not the LLM image, so run it with `flwr run . local-sim`.
+
+## Going further
 
 <details>
 <summary><strong>Bring your own data</strong></summary>
 
-The demos auto-download CIFAR-10 — convenient for testing, but not production FL.
-
-Pre-provision each SuperNode with its own data partition:
+The demos auto-download CIFAR-10, which is fine for testing but not real FL. Pre-stage each SuperNode with its own partition:
 
 ```bash
 scp -r ./hospital_a_scans/ root@<supernode-1-ip>:/opt/flower/data/
 scp -r ./hospital_b_scans/ root@<supernode-2-ip>:/opt/flower/data/
 ```
 
-Data is mounted read-only into the container at `/app/data`. Modify your `client_app.py` to load from there:
+The directory is mounted read-only into the container at `/app/data`. Load it in your `client_app.py`:
 
 ```python
 import os
 from torchvision import datasets, transforms
 
 data_dir = os.environ.get("FL_DATA_DIR", "/app/data")
-train_dataset = datasets.ImageFolder(data_dir, transform=transforms.ToTensor())
+dataset = datasets.ImageFolder(data_dir, transform=transforms.ToTensor())
 ```
 
-Each SuperNode gets different data — the model learns across sites without data moving.
+Each SuperNode sees only its own data; the model learns across all sites.
 
 </details>
 
 <details>
-<summary><strong>Retrieve the trained model</strong></summary>
+<summary><strong>Scale the cluster</strong></summary>
 
-Training loss and accuracy print directly in `flwr run` output. For persisting checkpoints:
+The SuperNode role auto-scales between 2 and 10 nodes. Add nodes at any time; they boot, discover the SuperLink, and join automatically:
 
-1. Set `ONEAPP_FL_CHECKPOINT_ENABLED=YES` on the SuperLink VM
-2. After training: `scp root@<superlink-ip>:/opt/flower/checkpoints/checkpoint_latest.npz ./`
+```bash
+oneflow scale <service-id> supernode 5
+```
 
 </details>
 
 <details>
-<summary><strong>Multi-site deployment (Tailscale)</strong></summary>
+<summary><strong>Multi-site deployment with Tailscale</strong></summary>
 
-In production, SuperNodes sit in different organizations' LANs. [Tailscale](https://tailscale.com/) (WireGuard mesh VPN) makes cross-site connectivity trivial:
-
-```
-Hospital A                         Hospital B                      Hospital C
-┌──────────────┐                   ┌──────────────┐                ┌──────────────┐
-│ SuperLink    │                   │ SuperNode #1 │                │ SuperNode #2 │
-│ ts: 100.x.a  │◄── tailnet ────► │ ts: 100.x.b  │◄── mesh ────► │ ts: 100.x.c  │
-└──────────────┘   (encrypted)     └──────────────┘                └──────────────┘
-```
+In production, SuperNodes sit in different organizations' networks. [Tailscale](https://tailscale.com/) (a WireGuard mesh VPN) makes cross-site connectivity simple:
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up --authkey=tskey-auth-<YOUR_KEY> --hostname=flower-superlink
 ```
 
-Set `ONEAPP_FL_SUPERLINK_ADDRESS = 100.x.a:9092` on SuperNodes (OneGate is zone-local).
+OneGate discovery is zone-local, so point remote SuperNodes at the SuperLink's tailnet address explicitly:
 
-TLS is optional with Tailscale (traffic is already WireGuard-encrypted). For compliance: `ONEAPP_FL_TLS_ENABLED=YES` + `ONEAPP_FL_CERT_EXTRA_SAN=IP:<tailscale-ip>`.
+```
+ONEAPP_FL_SUPERLINK_ADDRESS = 100.x.a:9092
+```
+
+The auto-generated certificate only covers the SuperLink's local IPs, not its Tailscale IP, so TLS will not validate over the tailnet as shipped. Since WireGuard already encrypts every hop, run cross-site clusters with `ONEAPP_FL_TLS_ENABLED=NO` and rely on the tunnel for confidentiality.
 
 </details>
 
 <details>
 <summary><strong>Monitoring dashboard</strong></summary>
 
+A FastAPI dashboard (animated cluster topology, per-round metrics, node health, start/stop training) lives in `dashboard/`. Run it on the OpenNebula frontend, where it has the `onevm` CLI and SSH access to the VMs:
+
 ```bash
 cd dashboard && pip install fastapi uvicorn
 python -m uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
-Animated SVG cluster topology, per-round metrics, node health, dark/light mode.
+</details>
+
+<details>
+<summary><strong>Get the trained model out</strong></summary>
+
+There is no checkpoint appliance setting. `flwr run` prints per-round loss and accuracy live. To persist the aggregated global model, save it in your `server_app.py` strategy, the standard Flower pattern, for example by subclassing `FedAvg` and writing the parameters in `aggregate_fit`. The model is yours to handle in your own app code.
 
 </details>
 
 <details>
-<summary><strong>Customization</strong></summary>
+<summary><strong>Build from source</strong></summary>
 
-- **TLS** — `ONEAPP_FL_TLS_ENABLED=YES` (default). Auto-generates self-signed CA, or bring your own.
-- **GPU passthrough** — `ONEAPP_FL_GPU_ENABLED=YES` on SuperNodes with PCI-passthrough.
-- **Scaling** — `oneflow scale <service-id> supernode 5`. New nodes join automatically.
-- **Edge** — Lightweight SuperNodes (<2 GB) on intermittent WAN.
-
-**Runtime overrides** — change rounds or strategy without redeploying:
-
-```bash
-flwr run . opennebula --run-config "num-server-rounds=10 strategy=FedProx"
-```
-
-**Aggregation strategies** — swap in `server_app.py` (no client-side changes):
-
-| | FedAvg (default) | FedProx | FedAdam |
-|---|---|---|---|
-| **Best for** | IID data | Non-IID data | Large-scale |
-| **Extra params** | None | `proximal_mu` | `eta`, `tau`, `beta_1`, `beta_2` |
-
-</details>
-
-<details>
-<summary><strong>Production checklist</strong></summary>
-
-- [ ] TLS enabled (default since v1.25.0, or set `ONEAPP_FL_TLS_ENABLED=YES`)
-- [ ] Operator-provided certificates (replace auto-generated self-signed)
-- [ ] Checkpointing enabled (`ONEAPP_FL_CHECKPOINT_ENABLED=YES`)
-- [ ] Training data pre-staged on each SuperNode (`/opt/flower/data/`)
-- [ ] Smoke test: `flwr run . opennebula --run-config "num-server-rounds=1"`
-- [ ] Monitoring: Prometheus at SuperLink `:9090/metrics`
-- [ ] Appropriate `MIN_AVAILABLE_CLIENTS` for your node count
-
-</details>
-
-<details>
-<summary><strong>Building from source</strong></summary>
-
-**Requires:** x86_64 with KVM, 30 GB disk, Packer >= 1.9, QEMU/KVM, genisoimage, jq, make.
+**Requires:** x86_64 with KVM, ~30 GB disk, Packer ≥ 1.9, QEMU/KVM, `genisoimage`, `jq`, `make`, and the one-apps `ubuntu2404.qcow2` base image.
 
 ```bash
 cd build
-
-# Build both images
-make all INPUT_DIR=./images ONE_APPS_DIR=../../one-apps
-
-# Or individually
-make flower-superlink INPUT_DIR=./images ONE_APPS_DIR=../../one-apps   # ~15 min
-make flower-supernode INPUT_DIR=./images ONE_APPS_DIR=../../one-apps   # ~20 min
+make all INPUT_DIR=./images ONE_APPS_DIR=../../one-apps   # both images
+# or individually:
+make flower-superlink INPUT_DIR=./images ONE_APPS_DIR=../../one-apps
+make flower-supernode INPUT_DIR=./images ONE_APPS_DIR=../../one-apps
 ```
 
-Output: `build/export/flower-superlink.qcow2` and `build/export/flower-supernode.qcow2`
-
-Upload to OpenNebula:
+Output: `build/export/flower-superlink.qcow2` and `build/export/flower-supernode.qcow2`. Upload them and register the templates:
 
 ```bash
-cp build/export/*.qcow2 /var/tmp/   # RESTRICTED_DIRS blocks /root
+cp build/export/*.qcow2 /var/tmp/        # RESTRICTED_DIRS blocks /root
 
-oneimage create --name "Flower SuperLink v1.25.0" \
+oneimage create --name "Flower SuperLink 1.25.0" \
     --path /var/tmp/flower-superlink.qcow2 --type OS --driver qcow2 --datastore default
-
-oneimage create --name "Flower SuperNode v1.25.0" \
+oneimage create --name "Flower SuperNode 1.25.0" \
     --path /var/tmp/flower-supernode.qcow2 --type OS --driver qcow2 --datastore default
 ```
 
-Then register the OneFlow service: `oneflow-template create build/oneflow/flower-cluster.yaml`
+For the OneFlow service, the marketplace YAMLs in `appliances/flower_service/` are the canonical definitions. The reference template at `build/oneflow/flower-cluster.yaml` is a starting point: convert it to JSON and fill in your real VM template IDs (it ships with `vm_template: 0` placeholders) before `oneflow-template create`.
 
 </details>
 
 <details>
 <summary><strong>Troubleshooting</strong></summary>
 
-| Problem | Fix |
+| Symptom | Fix |
 |---------|-----|
-| VM stuck in `BOOT` | Check `onevm show <id>` for CONTEXT errors. Ensure `NETWORK=YES`. |
-| VMs unreachable from frontend | Assign gateway IP to bridge + NAT rule. |
-| SuperNode can't find SuperLink | Verify same network. Check `onevm show <superlink-id>`. |
-| `flwr run` connection refused | Address = `<superlink-ip>:9093` in `pyproject.toml`. |
-| `bytes_sent/bytes_recv cannot be zero` | Clear state: stop SuperLink, `rm /opt/flower/state/state.db`, restart all. |
-| Container exit 137 | OOM — increase VM RAM. |
-| Tailscale nodes don't see each other | Verify same tailnet: `tailscale status` on both. |
+| `flwr run` connection refused | The Control API is `127.0.0.1:9093`. Open the SSH tunnel and target `127.0.0.1:9093`. |
+| TLS handshake fails | Trust the SuperLink CA: `root-certificates = "ca.crt"` from `/opt/flower/certs/ca.crt`, not `insecure = true`. |
+| SuperNode can't find SuperLink | Same private network? Check `onevm show <superlink-id>` for `FL_ENDPOINT`, or set `ONEAPP_FL_SUPERLINK_ADDRESS`. |
+| Container `exit 137` | Out of memory. PyTorch needs the 8 GB SuperNode default; raise RAM for heavier models. |
+| `bytes_sent/bytes_recv cannot be zero` | Stale state. Stop the SuperLink, `rm /opt/flower/state/state.db`, restart. |
+| Service stuck in `DEPLOYING` | SuperNodes need OneGate. Ensure guests can reach the host's OneGate (port 5030) and that `ONEGATE_ENDPOINT` is an IP, not a hostname. |
+| VM stuck in `BOOT` | Check `onevm show <id>` for CONTEXT errors; ensure the template has `NETWORK=YES`. |
 
 </details>
 
-## Project Structure
+## Project structure
 
 ```
-build/          Packer images, Docker stacks, OneFlow template, Makefile
-appliances/     OpenNebula marketplace appliance files
-dashboard/      FastAPI monitoring dashboard with SVG topology
-demo/           PyTorch, TensorFlow, scikit-learn CIFAR-10 demos
+appliances/   OpenNebula marketplace appliance definitions (the published artifact)
+apps-code/    Packer build for the two marketplace images
+build/         Local image build (Makefile, Packer, OneFlow reference template)
+demo/          PyTorch, TensorFlow, scikit-learn, and LLM Flower apps
+dashboard/     FastAPI monitoring and control dashboard
 ```
 
 ## License
