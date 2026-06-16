@@ -4,7 +4,7 @@ version: 1.25.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   VM template for the [Flower](https://flower.ai/) SuperNode appliance
-  (federated learning client).
+  (federated learning client). Docs: [flower.ai/docs](https://flower.ai/docs/).
 
   Deploys a SuperNode VM that trains locally on private data and sends
   only model weights to the SuperLink coordinator. PyTorch is pre-baked;

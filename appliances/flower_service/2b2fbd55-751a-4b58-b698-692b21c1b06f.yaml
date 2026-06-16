@@ -4,7 +4,7 @@ version: 1.25.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   OS disk image for the [Flower](https://flower.ai/) SuperLink appliance
-  (federated learning coordinator).
+  (federated learning coordinator). Docs: [flower.ai/docs](https://flower.ai/docs/).
 
   Ubuntu 24.04 LTS with Docker CE and the `flwr/superlink:1.25.0` container
   pre-pulled. At boot, OpenNebula contextualization configures the SuperLink:

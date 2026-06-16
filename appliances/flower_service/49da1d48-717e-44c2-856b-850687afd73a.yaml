@@ -4,7 +4,7 @@ version: 1.25.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   VM template for the [Flower](https://flower.ai/) SuperLink appliance
-  (federated learning coordinator).
+  (federated learning coordinator). Docs: [flower.ai/docs](https://flower.ai/docs/).
 
   Deploys a SuperLink VM that coordinates federated training, aggregates
   model updates from SuperNodes, and publishes its endpoint to OneGate for

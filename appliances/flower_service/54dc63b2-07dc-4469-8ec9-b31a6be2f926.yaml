@@ -4,7 +4,7 @@ version: 1.25.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   OS disk image for the [Flower](https://flower.ai/) SuperNode appliance
-  (federated learning client).
+  (federated learning client). Docs: [flower.ai/docs](https://flower.ai/docs/).
 
   Ubuntu 24.04 LTS with Docker CE and a pre-built PyTorch 2.5.1 (CPU) training
   container. TensorFlow 2.18.1 and scikit-learn are built automatically on

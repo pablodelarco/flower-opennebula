@@ -3,31 +3,28 @@ name: Service Flower FL 1.25.0
 version: 1.25.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
-  Privacy-preserving [Flower](https://flower.ai/) federated learning cluster
-  deployed as an OpenNebula service, orchestrated by
-  [OneFlow](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/appflow_elasticity.html).
+  [Flower](https://flower.ai/) is a federated learning framework: train one
+  shared model across many sites while each node keeps its own data private.
+  This appliance runs a complete Flower cluster on OpenNebula, orchestrated by
+  OneFlow: a SuperLink coordinator plus a scalable pool of SuperNode training
+  clients that auto-discover it through OneGate. Only model weights are shared,
+  so raw training data never leaves a SuperNode.
 
-  Deploys one SuperLink coordinator and N SuperNode training clients.
-  The SuperLink boots first, publishes its endpoint to OneGate, and reports
-  READY. SuperNodes then start, auto-discover the SuperLink, and connect
-  to the Fleet API. Raw training data never leaves the SuperNode VMs --
-  only model weights are transmitted.
-
-  **Features:**
-  - Run any Flower strategy and round count from the App Bundle you submit
-    with `flwr run` (FedAvg, FedProx, FedAdam and more are defined in your code)
-  - PyTorch pre-baked; TensorFlow and scikit-learn built automatically on first
-    boot when selected
-  - Automatic SuperLink discovery via OneGate
-  - Secure by default: TLS between SuperLink and SuperNodes, a default-deny host
-    firewall, and outbound SMTP blocked so a node can never send mail
+  **Features**
+  - Secure by default: TLS between SuperLink and SuperNodes, plus a default-deny host firewall
+  - Multi-framework: PyTorch pre-baked, TensorFlow and scikit-learn built on demand
+  - Bring any Flower app and strategy (FedAvg, FedProx, FedAdam, and more) with `flwr run`
   - Auto-scaling from 2 to 10 SuperNodes
 
-  Requires
+  **Flower resources**
+  - Website: [flower.ai](https://flower.ai/)
+  - Documentation: [flower.ai/docs](https://flower.ai/docs/)
+
+  Requires the OpenNebula
   [OneFlow](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/overview.html)
   and
   [OneGate](https://docs.opennebula.io/stable/management_and_operations/multivm_service_management/onegate_usage.html)
-  OpenNebula components.
+  components.
 
   Based on VM templates:
   - [Flower SuperLink 1.25.0](49da1d48-717e-44c2-856b-850687afd73a)
