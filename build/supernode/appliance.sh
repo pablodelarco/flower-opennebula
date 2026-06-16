@@ -158,7 +158,7 @@ service_configure()
 
     # Harden the host firewall: default-deny inbound, block outbound SMTP. The
     # SuperNode publishes no inbound FL ports (it connects out to the SuperLink),
-    # so this mainly prevents a compromised training workload from sending spam.
+    # so this mainly blocks unsolicited outbound mail from a compromised workload.
     harden_firewall
 
     # Step 7: SuperLink discovery
@@ -894,8 +894,8 @@ get_primary_cidr()
 # harden_firewall: default-deny inbound (allow SSH), block outbound SMTP, and
 # scope any Flower ports to the FL private subnet. Idempotent and
 # best-effort so it never aborts the boot. The SuperNode publishes no inbound
-# FL ports, so this primarily stops a compromised training workload from being
-# used to relay spam (the cause of the prior Scaleway abuse report).
+# FL ports, so this primarily blocks unsolicited outbound mail from a
+# compromised training workload.
 harden_firewall()
 {
     msg info "Hardening host firewall (default-deny inbound, SMTP egress block)"

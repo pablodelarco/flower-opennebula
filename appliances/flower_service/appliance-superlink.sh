@@ -139,7 +139,7 @@ service_configure() {
     # 6. Harden the host firewall (default-deny inbound, restrict the FL ports
     #    to the private network, block outbound SMTP). Re-applied every boot
     #    because ONE_SERVICE_RECONFIGURABLE=true. This is the load-bearing
-    #    control that prevents the appliance from being conscripted into spam.
+    #    control that blocks unsolicited outbound mail from the appliance.
     harden_firewall
 
     # 7. Write service report
@@ -640,10 +640,10 @@ get_primary_cidr() {
 
 # ==========================================================================
 #  HELPER: harden_firewall  (default-deny inbound + FL-port scoping + SMTP
-#  egress block). Idempotent; re-applied on every configure/boot. This is the
-#  control that prevents the appliance from being abused as a spam relay even
-#  if a workload is compromised. All commands are best-effort so a firewall
-#  hiccup never aborts the boot.
+#  egress block). Idempotent; re-applied on every configure/boot. This blocks
+#  unsolicited outbound mail from the appliance even if a workload is
+#  compromised. All commands are best-effort so a firewall hiccup never aborts
+#  the boot.
 # ==========================================================================
 harden_firewall() {
     msg info "Hardening host firewall (default-deny inbound, SMTP egress block)"
@@ -669,8 +669,8 @@ harden_firewall() {
     if command -v iptables >/dev/null 2>&1; then
         iptables -L DOCKER-USER >/dev/null 2>&1 || iptables -N DOCKER-USER 2>/dev/null || true
 
-        # Block all outbound SMTP (the direct spam vector) for both host and
-        # container traffic. The appliance never sends mail.
+        # Block all outbound SMTP for both host and container traffic.
+        # The appliance never sends mail.
         iptables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
             || iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
         iptables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \

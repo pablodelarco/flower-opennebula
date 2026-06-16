@@ -20,7 +20,7 @@ description: |-
     boot when selected
   - Automatic SuperLink discovery via OneGate
   - Secure by default: TLS between SuperLink and SuperNodes, a default-deny host
-    firewall, and outbound SMTP blocked so a node can never be used to relay spam
+    firewall, and outbound SMTP blocked so a node can never send mail
   - Auto-scaling from 2 to 10 SuperNodes
 
   Requires

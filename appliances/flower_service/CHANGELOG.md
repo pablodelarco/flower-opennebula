@@ -30,6 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closing the unauthenticated remote-code-execution surface
 - Default-deny host firewall (UFW + `DOCKER-USER` rules) restricting the FL
   ports to the private subnet, plus an outbound SMTP (25/465/587) block so a
-  compromised node cannot be used to send spam
+  compromised node cannot send mail
 - SuperNode container is started from an argument array instead of `eval`,
   removing a root command-injection path via `ONEAPP_FL_NODE_CONFIG`

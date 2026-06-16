@@ -130,7 +130,7 @@ flwr run . opennebula --run-config "num-server-rounds=10 strategy=FedProx"
 
 ## Security
 
-The appliance is hardened by default so it cannot be turned into an attack platform even if a training workload is compromised (an earlier unhardened deployment was abused as a spam relay; this design closes that off).
+The appliance is hardened by default so it cannot be turned into an attack platform even if a training workload is compromised.
 
 - **TLS on by default.** The SuperLink generates its own CA and server certificate, publishes the CA over OneGate, and SuperNodes fetch and trust it automatically. No manual certificate handling. If the CA cannot be retrieved, a SuperNode fails closed rather than falling back to plaintext.
 - **No Flower port on `0.0.0.0`.** The Fleet API (`9092`) binds the private NIC, the Control API (`9093`) binds `127.0.0.1` only (it runs the code you submit, so reach it through the SSH tunnel above), and the internal ServerAppIo port (`9091`) is never published.

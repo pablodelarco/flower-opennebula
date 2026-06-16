@@ -11,7 +11,7 @@ The following roles are defined:
 
 ## Security
 
-This appliance is hardened by default so it cannot be abused (for example as a spam relay) if a workload is ever compromised:
+This appliance is hardened by default to limit the blast radius if a workload is ever compromised:
 
 * **TLS is on by default** between the SuperLink and SuperNodes. The SuperLink auto-generates a CA and server certificate and publishes the CA over OneGate; SuperNodes retrieve and trust it automatically. No manual certificate handling is required.
 * **No Flower port is exposed on `0.0.0.0`.** The Fleet API (9092) is bound to the private FL network, and the Control API (9093) is bound to `127.0.0.1` only. Because the Control API executes the code you submit, reach it through an SSH tunnel: `ssh -L 9093:localhost:9093 root@<superlink-ip>`.
