@@ -165,14 +165,12 @@ scp -r ./hospital_a_scans/ root@<supernode-1-ip>:/opt/flower/data/
 scp -r ./hospital_b_scans/ root@<supernode-2-ip>:/opt/flower/data/
 ```
 
-The directory is mounted read-only into the container at `/app/data`. Load it in your `client_app.py`:
+The host's `/opt/flower/data` is mounted read-only into the container at `/app/data`. Load it in your `client_app.py`:
 
 ```python
-import os
 from torchvision import datasets, transforms
 
-data_dir = os.environ.get("FL_DATA_DIR", "/app/data")
-dataset = datasets.ImageFolder(data_dir, transform=transforms.ToTensor())
+dataset = datasets.ImageFolder("/app/data", transform=transforms.ToTensor())
 ```
 
 Each SuperNode sees only its own data; the model learns across all sites.
@@ -277,9 +275,9 @@ For the OneFlow service, the marketplace YAMLs in `appliances/flower_service/` a
 ```
 appliances/   OpenNebula marketplace appliance definitions (the published artifact)
 apps-code/    Packer build for the two marketplace images
-build/         Local image build (Makefile, Packer, OneFlow reference template)
-demo/          PyTorch, TensorFlow, scikit-learn, and LLM Flower apps
-dashboard/     FastAPI monitoring and control dashboard
+build/        Local image build (Makefile, Packer, OneFlow reference template)
+demo/         PyTorch, TensorFlow, scikit-learn, plus a local-simulation LLM app
+dashboard/    FastAPI monitoring and control dashboard
 ```
 
 ## License
