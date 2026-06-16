@@ -260,10 +260,17 @@ install_docker() {
     apt-get update -qq
     apt-get install -y -qq ca-certificates curl gnupg >/dev/null
 
-    # Add Docker GPG key
+    # Add Docker GPG key, verifying its published fingerprint before trusting it
+    # (avoids trust-on-first-use of whatever key is served at fetch time).
     install -m 0755 -d /etc/apt/keyrings
+    local _docker_fpr="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+    if ! gpg --show-keys --with-colons --with-fingerprint /etc/apt/keyrings/docker.gpg \
+        | awk -F: '/^fpr:/{print $10}' | grep -qx "${_docker_fpr}"; then
+        msg error "Docker GPG key fingerprint mismatch -- aborting (expected ${_docker_fpr})"
+        exit 1
+    fi
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     # Add Docker APT repository
@@ -308,6 +315,24 @@ validate_config() {
         YES|NO) ;;
         *) msg error "ONEAPP_FL_TLS_ENABLED='${ONEAPP_FL_TLS_ENABLED}' -- must be YES or NO"
            _errors=$((_errors + 1)) ;;
+    esac
+
+    # Version: strict semver (parity with the SuperNode). Blocks any value with a
+    # newline/space/metacharacter from reaching the image tag and docker pull args
+    # that are interpolated into the root-owned systemd unit.
+    if [ -n "${ONEAPP_FLOWER_VERSION}" ] && \
+       ! [[ "${ONEAPP_FLOWER_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        msg error "ONEAPP_FLOWER_VERSION='${ONEAPP_FLOWER_VERSION}' -- must be semver X.Y.Z"
+        _errors=$((_errors + 1))
+    fi
+
+    # State DB path: relative path, safe character set only. Rejects empty,
+    # absolute/parent paths, and any newline/space/shell/systemd metacharacter so
+    # the value cannot inject a directive into the systemd unit (ExecStart sink).
+    case "${ONEAPP_FL_DATABASE}" in
+        ''|/*|*..*|*[!A-Za-z0-9._/-]*)
+            msg error "ONEAPP_FL_DATABASE='${ONEAPP_FL_DATABASE}' -- must be a relative path using [A-Za-z0-9._/-]"
+            _errors=$((_errors + 1)) ;;
     esac
 
     # Abort on any validation error
@@ -474,20 +499,31 @@ generate_systemd_unit() {
     # rather than risk an unintended 0.0.0.0 bind. The firewall is a backstop.
     [ -z "${_vm_ip}" ] && _vm_ip="127.0.0.1"
 
-    # Build ExecStart command as an array to avoid empty-line continuation bugs
+    # Defense in depth: strip any newline/CR from context values before they are
+    # interpolated into the unit, so a value cannot inject a sibling systemd
+    # directive even if validate_config is ever bypassed.
+    local _ver _db _iso
+    _ver=$(printf '%s' "${ONEAPP_FLOWER_VERSION}" | tr -d '\r\n')
+    _db=$(printf '%s' "${ONEAPP_FL_DATABASE}" | tr -d '\r\n')
+    _iso=$(printf '%s' "${ONEAPP_FL_ISOLATION}" | tr -d '\r\n')
+
+    # Build ExecStart command as an array to avoid empty-line continuation bugs.
+    # Container hardening: drop all Linux capabilities and forbid privilege
+    # escalation so a compromised workload cannot craft raw packets or gain root.
     local _exec_parts=()
     _exec_parts+=("/usr/bin/docker run --name flower-superlink")
+    _exec_parts+=("  --cap-drop ALL --security-opt no-new-privileges")
     _exec_parts+=("  --env-file ${FLOWER_ENV_FILE}")
     _exec_parts+=("  -p ${_vm_ip}:9092:9092 -p 127.0.0.1:9093:9093")
     _exec_parts+=("  -v ${FLOWER_STATE_DIR}:/app/state")
     [ -n "${_tls_docker_flags}" ]   && _exec_parts+=("  ${_tls_docker_flags}")
-    _exec_parts+=("  flwr/superlink:${ONEAPP_FLOWER_VERSION}")
+    _exec_parts+=("  flwr/superlink:${_ver}")
     _exec_parts+=("  ${_tls_flower_flags}")
-    _exec_parts+=("  --isolation ${ONEAPP_FL_ISOLATION}")
+    _exec_parts+=("  --isolation ${_iso}")
     # Pin the in-container Fleet API bind to 9092 so the host publish
     # (9092:9092) maps correctly.
     _exec_parts+=("  --fleet-api-address 0.0.0.0:9092")
-    _exec_parts+=("  --database ${ONEAPP_FL_DATABASE}")
+    _exec_parts+=("  --database ${_db}")
 
     # Join with backslash-newline continuations
     local _exec_start
@@ -690,6 +726,12 @@ harden_firewall() {
     if command -v ip6tables >/dev/null 2>&1; then
         ip6tables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
             || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        # Symmetry with IPv4: also block container-originated SMTP over IPv6 when
+        # Docker IPv6 is enabled (the DOCKER-USER chain then exists).
+        if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
+            ip6tables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+                || ip6tables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        fi
     fi
 
     # Persist so the rules survive a reboot even before configure re-runs.

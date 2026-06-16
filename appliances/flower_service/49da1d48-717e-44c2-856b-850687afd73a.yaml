@@ -40,6 +40,7 @@ opennebula_template:
     token: 'YES'
     network: 'YES'
     report_ready: 'YES'
+    username_password_reset: 'YES'
     ssh_public_key: "$USER[SSH_PUBLIC_KEY]"
     oneapp_flower_version: "$ONEAPP_FLOWER_VERSION"
     oneapp_fl_tls_enabled: "$ONEAPP_FL_TLS_ENABLED"

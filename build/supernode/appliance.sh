@@ -175,6 +175,15 @@ service_configure()
         fi
     fi
 
+    # Validate the resolved SuperLink address (static OR OneGate-discovered)
+    # before it is persisted or used. The discovered value comes from a peer VM's
+    # OneGate template and is otherwise unvalidated; rejecting anything that is not
+    # host:port stops a metacharacter from breaking out of configure.state.
+    if ! [[ "${SUPERLINK_ADDRESS}" =~ ^[A-Za-z0-9._-]+:[0-9]+$ ]]; then
+        msg error "SuperLink address failed validation: '${SUPERLINK_ADDRESS}'"
+        exit 1
+    fi
+
     # TLS setup: determine mode and retrieve CA cert if needed
     TLS_MODE="disabled"
     setup_tls_trust
@@ -198,8 +207,12 @@ service_configure()
 
     # Lazy build: only pytorch is baked into the image; build the selected
     # framework image now if it is missing.
-    ensure_framework_image "${ONEAPP_FL_FRAMEWORK}" || \
-        msg warning "Could not build ${ONEAPP_FL_FRAMEWORK} image -- container start may fail"
+    # Fail closed: a tampered or failed framework build must abort the boot
+    # rather than silently start a container against a half-built image.
+    ensure_framework_image "${ONEAPP_FL_FRAMEWORK}" || {
+        msg error "Could not build ${ONEAPP_FL_FRAMEWORK} image -- aborting"
+        exit 1
+    }
 
     # Build TLS-related Docker flags
     TLS_FLAGS="--insecure"
@@ -215,15 +228,18 @@ service_configure()
     # Step 6: generate systemd unit
     generate_systemd_unit
 
-    # Persist variables needed by service_bootstrap (separate process invocation)
-    cat > "${FLOWER_CONFIG_DIR}/configure.state" <<EOF
-SUPERLINK_ADDRESS='${SUPERLINK_ADDRESS}'
-VERSION='${VERSION}'
-IMAGE_TAG='${IMAGE_TAG}'
-TLS_FLAGS='${TLS_FLAGS}'
-TLS_VOLUME_FLAGS='${TLS_VOLUME_FLAGS}'
-TLS_MODE='${TLS_MODE}'
-EOF
+    # Persist variables needed by service_bootstrap (separate process invocation).
+    # Use printf '%q' so every value round-trips safely when the file is sourced,
+    # even if it contains a quote or metacharacter (defence in depth alongside the
+    # host:port validation above).
+    {
+        printf 'SUPERLINK_ADDRESS=%q\n' "${SUPERLINK_ADDRESS}"
+        printf 'VERSION=%q\n'           "${VERSION}"
+        printf 'IMAGE_TAG=%q\n'         "${IMAGE_TAG}"
+        printf 'TLS_FLAGS=%q\n'         "${TLS_FLAGS}"
+        printf 'TLS_VOLUME_FLAGS=%q\n'  "${TLS_VOLUME_FLAGS}"
+        printf 'TLS_MODE=%q\n'          "${TLS_MODE}"
+    } > "${FLOWER_CONFIG_DIR}/configure.state"
     chmod 600 "${FLOWER_CONFIG_DIR}/configure.state"
 
     # Write service report (only when the framework provides the path; never
@@ -288,6 +304,10 @@ service_bootstrap()
     # The whitespace-bearing flag groups we generate ourselves (TLS flags)
     # are intentionally left unquoted so they split into separate arguments.
     local -a create_cmd=(docker create --name "${FLOWER_CONTAINER}" --restart unless-stopped)
+    # Container hardening: drop all Linux capabilities and forbid privilege
+    # escalation so a compromised training workload cannot craft raw packets,
+    # scan the FL subnet, or escalate to root.
+    create_cmd+=(--cap-drop ALL --security-opt no-new-privileges)
     create_cmd+=(-v "${FLOWER_DATA_DIR}:/app/data:ro")
     # shellcheck disable=SC2206
     [ -n "${TLS_VOLUME_FLAGS}" ]   && create_cmd+=(${TLS_VOLUME_FLAGS})
@@ -357,8 +377,16 @@ install_docker()
     apt-get install -y ca-certificates curl gnupg
 
     install -m 0755 -d /etc/apt/keyrings
+    local _docker_fpr="9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         | gpg --batch --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+    # Verify the published Docker GPG fingerprint before trusting the key
+    # (avoids trust-on-first-use of whatever key is served at fetch time).
+    if ! gpg --show-keys --with-colons --with-fingerprint /etc/apt/keyrings/docker.gpg \
+        | awk -F: '/^fpr:/{print $10}' | grep -qx "${_docker_fpr}"; then
+        msg error "Docker GPG key fingerprint mismatch -- aborting (expected ${_docker_fpr})"
+        exit 1
+    fi
     chmod a+r /etc/apt/keyrings/docker.gpg
 
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
@@ -474,7 +502,7 @@ validate_config()
 
     # FL_SUPERLINK_ADDRESS: host:port if set
     if [ -n "${ONEAPP_FL_SUPERLINK_ADDRESS}" ] && \
-       ! [[ "${ONEAPP_FL_SUPERLINK_ADDRESS}" =~ ^[^:]+:[0-9]+$ ]]; then
+       ! [[ "${ONEAPP_FL_SUPERLINK_ADDRESS}" =~ ^[A-Za-z0-9._-]+:[0-9]+$ ]]; then
         msg error "Invalid ONEAPP_FL_SUPERLINK_ADDRESS: '${ONEAPP_FL_SUPERLINK_ADDRESS}'. Expected host:port"
         errors=$((errors + 1))
     fi
@@ -931,6 +959,12 @@ harden_firewall()
     if command -v ip6tables >/dev/null 2>&1; then
         ip6tables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
             || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        # Symmetry with IPv4: also block container-originated SMTP over IPv6 when
+        # Docker IPv6 is enabled (the DOCKER-USER chain then exists).
+        if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
+            ip6tables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
+                || ip6tables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        fi
     fi
 
     if command -v netfilter-persistent >/dev/null 2>&1; then
