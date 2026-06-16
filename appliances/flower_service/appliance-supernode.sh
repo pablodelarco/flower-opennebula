@@ -945,10 +945,10 @@ harden_firewall()
     if command -v iptables >/dev/null 2>&1; then
         iptables -L DOCKER-USER >/dev/null 2>&1 || iptables -N DOCKER-USER 2>/dev/null || true
 
-        iptables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-            || iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
-        iptables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-            || iptables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        iptables -C OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+            || iptables -A OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
+        iptables -C DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+            || iptables -I DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
 
         if [ -n "${_ext_if}" ]; then
             iptables -C DOCKER-USER -i "${_ext_if}" ! -s "${FL_PRIVATE_CIDR}" -p tcp -m multiport --dports 9091,9092,9093,9101,9400 -j DROP 2>/dev/null \
@@ -957,13 +957,13 @@ harden_firewall()
     fi
 
     if command -v ip6tables >/dev/null 2>&1; then
-        ip6tables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-            || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        ip6tables -C OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+            || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
         # Symmetry with IPv4: also block container-originated SMTP over IPv6 when
         # Docker IPv6 is enabled (the DOCKER-USER chain then exists).
         if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
-            ip6tables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-                || ip6tables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+            ip6tables -C DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+                || ip6tables -I DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
         fi
     fi
 

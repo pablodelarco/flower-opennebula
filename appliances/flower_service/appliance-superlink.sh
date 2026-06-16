@@ -154,6 +154,7 @@ service_configure() {
     _report+="Submit training: push a Flower App Bundle with 'flwr run' against the Control API\n"
     if [ -n "${ONE_SERVICE_REPORT:-}" ]; then
         echo -e "${_report}" > "${ONE_SERVICE_REPORT}"
+        chmod 600 "${ONE_SERVICE_REPORT}" 2>/dev/null || true
     fi
 
     msg info "Flower SuperLink configuration complete"
@@ -707,10 +708,10 @@ harden_firewall() {
 
         # Block all outbound SMTP for both host and container traffic.
         # The appliance never sends mail.
-        iptables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-            || iptables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
-        iptables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-            || iptables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        iptables -C OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+            || iptables -A OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
+        iptables -C DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+            || iptables -I DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
 
         # Restrict the published Flower ports to the FL private subnet, but only
         # for traffic arriving on the EXTERNAL interface. The -i match is
@@ -724,13 +725,13 @@ harden_firewall() {
     fi
 
     if command -v ip6tables >/dev/null 2>&1; then
-        ip6tables -C OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-            || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+        ip6tables -C OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+            || ip6tables -A OUTPUT -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
         # Symmetry with IPv4: also block container-originated SMTP over IPv6 when
         # Docker IPv6 is enabled (the DOCKER-USER chain then exists).
         if ip6tables -L DOCKER-USER >/dev/null 2>&1; then
-            ip6tables -C DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null \
-                || ip6tables -I DOCKER-USER -p tcp -m multiport --dports 25,465,587 -j REJECT 2>/dev/null || true
+            ip6tables -C DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null \
+                || ip6tables -I DOCKER-USER -p tcp -m multiport --dports 25,26,465,587,2525 -j REJECT 2>/dev/null || true
         fi
     fi
 
