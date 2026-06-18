@@ -28,6 +28,33 @@ os-release: '24.04 LTS'
 os-arch: x86_64
 hypervisor: KVM
 opennebula_version: 6.8, 6.10, 7.0, 7.2
+opennebula_template:
+  context:
+    token: 'YES'
+    network: 'YES'
+    report_ready: 'YES'
+    username_password_reset: 'YES'
+    ssh_public_key: "$USER[SSH_PUBLIC_KEY]"
+    oneapp_fl_superlink_address: "$ONEAPP_FL_SUPERLINK_ADDRESS"
+    oneapp_fl_framework: "$ONEAPP_FL_FRAMEWORK"
+    oneapp_fl_tls_enabled: "$ONEAPP_FL_TLS_ENABLED"
+    oneapp_fl_node_config: "$ONEAPP_FL_NODE_CONFIG"
+    oneapp_fl_log_level: "$ONEAPP_FL_LOG_LEVEL"
+  cpu: '2'
+  memory: '8192'
+  graphics:
+    listen: 0.0.0.0
+    type: vnc
+  inputs_order: >-
+    ONEAPP_FL_SUPERLINK_ADDRESS,ONEAPP_FL_FRAMEWORK,ONEAPP_FL_NODE_CONFIG,ONEAPP_FL_TLS_ENABLED,ONEAPP_FL_LOG_LEVEL
+  os:
+    arch: x86_64
+  user_inputs:
+    oneapp_fl_superlink_address: "O|text|SuperLink Fleet API address (host:port). Leave empty to auto-discover via OneGate in a OneFlow service||"
+    oneapp_fl_framework: "O|list|ML framework for training|pytorch,tensorflow,sklearn|pytorch"
+    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||YES"
+    oneapp_fl_node_config: "O|text|Space-separated key=value node config||"
+    oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
 logo: flower.png
 images:
 - name: flower_supernode_os

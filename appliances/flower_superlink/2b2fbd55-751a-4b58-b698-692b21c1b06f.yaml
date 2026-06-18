@@ -31,6 +31,29 @@ os-release: '24.04 LTS'
 os-arch: x86_64
 hypervisor: KVM
 opennebula_version: 6.8, 6.10, 7.0, 7.2
+opennebula_template:
+  context:
+    token: 'YES'
+    network: 'YES'
+    report_ready: 'YES'
+    username_password_reset: 'YES'
+    ssh_public_key: "$USER[SSH_PUBLIC_KEY]"
+    oneapp_flower_version: "$ONEAPP_FLOWER_VERSION"
+    oneapp_fl_tls_enabled: "$ONEAPP_FL_TLS_ENABLED"
+    oneapp_fl_log_level: "$ONEAPP_FL_LOG_LEVEL"
+  cpu: '2'
+  memory: '4096'
+  graphics:
+    listen: 0.0.0.0
+    type: vnc
+  inputs_order: >-
+    ONEAPP_FL_TLS_ENABLED,ONEAPP_FL_LOG_LEVEL,ONEAPP_FLOWER_VERSION
+  os:
+    arch: x86_64
+  user_inputs:
+    oneapp_flower_version: "O|text|Flower Docker image version tag||1.25.0"
+    oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||YES"
+    oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
 logo: flower.png
 images:
 - name: flower_superlink_os
