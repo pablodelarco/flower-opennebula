@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir --user "numpy==1.26.4"
 
 # Install Flower SuperNode + scikit-learn + datasets
 RUN pip install --no-cache-dir --user \
-    "flwr[simulation]==1.25.0" \
+    "flwr[simulation]==1.31.0" \
     "scikit-learn>=1.4.0" \
     "flwr-datasets[vision]>=0.4.0"
 

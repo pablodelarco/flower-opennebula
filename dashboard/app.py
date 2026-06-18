@@ -40,7 +40,7 @@ SUPERNODE_CONTAINER = "flower-supernode"
 
 DEMO_BASE = Path(__file__).parent.parent / "demo"
 FLWR_BIN = DEMO_BASE / ".venv" / "bin" / "flwr"
-SUPERNODE_IMAGE_TAG = "1.25.0"
+SUPERNODE_IMAGE_TAG = "1.31.0"
 
 
 # ---------------------------------------------------------------------------
