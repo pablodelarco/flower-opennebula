@@ -1,0 +1,56 @@
+---
+# Flower SuperNode - build/test metadata.
+# Drives the do-tests/readiness pipeline: ":name" is built as the DISTRO and
+# booted by lib/community/app_handler.rb as a single image.
+#
+# The SuperNode is a federated-learning CLIENT: it dials OUT to a SuperLink and
+# has no inbound ports. For standalone certification it must be given a
+# syntactically valid SuperLink address (otherwise service_configure aborts),
+# so a loopback placeholder is used and TLS is disabled. With the default
+# ONEAPP_FL_MAX_RETRIES=0 (unlimited) the container stays running while it
+# retries the (intentionally unreachable) coordinator, which is what the
+# certification asserts. A real deployment sets the actual SuperLink address
+# (or lets OneGate discover it) via the instantiation wizard / the OneFlow
+# service.
+
+:app:
+  :name: flower_supernode
+  :type: service
+  :os:
+    :type: linux
+    :base: ubuntu2404
+  :hypervisor: KVM
+  :context:
+    :prefixed: true
+    :params:
+      :ONEAPP_FL_FRAMEWORK: 'pytorch'
+      :ONEAPP_FL_SUPERLINK_ADDRESS: '127.0.0.1:9092'
+      :ONEAPP_FL_TLS_ENABLED: 'NO'
+      :ONEAPP_FL_LOG_LEVEL: 'INFO'
+
+:one:
+  :template:
+    NAME: base
+    TEMPLATE:
+      ARCH: x86_64
+      CONTEXT:
+        NETWORK: 'YES'
+        SET_HOSTNAME: "$NAME"
+        SSH_PUBLIC_KEY: "$USER[SSH_PUBLIC_KEY]"
+      CPU: '2'
+      CPU_MODEL:
+        MODEL: host-passthrough
+      GRAPHICS:
+        LISTEN: 0.0.0.0
+        TYPE: vnc
+      MEMORY: '8192'
+      NIC:
+        NETWORK: service
+      NIC_DEFAULT:
+        MODEL: virtio
+  :datastore_name: default
+  :timeout: '600'
+
+:infra:
+  :disk_format: qcow2
+  :apps_path: /var/tmp

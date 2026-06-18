@@ -121,7 +121,7 @@ build {
 
   # Flower SuperLink appliance lifecycle script
   provisioner "file" {
-    source      = "../../appliances/flower_service/appliance-superlink.sh"
+    source      = "../../appliances/flower_superlink/appliance-superlink.sh"
     destination = "/etc/one-appliance/service.d/appliance.sh"
   }
 

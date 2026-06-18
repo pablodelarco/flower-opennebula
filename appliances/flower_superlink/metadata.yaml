@@ -1,11 +1,11 @@
 ---
-# Flower Federated Learning - build/test metadata
-# Follows the one-apps / marketplace-community convention. Drives the
-# do-tests pipeline: ":name" is built as DISTROS, ":os.base" as REQUIREMENTS.
-# Flower ships two images, so both distros are listed here.
+# Flower SuperLink - build/test metadata.
+# Drives the do-tests/readiness pipeline: ":name" is built as the DISTRO and
+# booted by lib/community/app_handler.rb as a single image. The SuperLink is
+# the federated-learning coordinator and boots standalone (no dependencies).
 
 :app:
-  :name: flower_superlink flower_supernode
+  :name: flower_superlink
   :type: service
   :os:
     :type: linux
@@ -14,8 +14,9 @@
   :context:
     :prefixed: true
     :params:
-      :ONEAPP_FL_FRAMEWORK: 'pytorch'
+      :ONEAPP_FLOWER_VERSION: '1.25.0'
       :ONEAPP_FL_TLS_ENABLED: 'YES'
+      :ONEAPP_FL_LOG_LEVEL: 'INFO'
 
 :one:
   :template:
@@ -32,13 +33,13 @@
       GRAPHICS:
         LISTEN: 0.0.0.0
         TYPE: vnc
-      MEMORY: '8192'
+      MEMORY: '4096'
       NIC:
         NETWORK: service
       NIC_DEFAULT:
         MODEL: virtio
   :datastore_name: default
-  :timeout: '120'
+  :timeout: '600'
 
 :infra:
   :disk_format: qcow2

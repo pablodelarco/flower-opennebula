@@ -124,7 +124,7 @@ build {
 
   # Flower SuperNode appliance lifecycle script
   provisioner "file" {
-    source      = "../../appliances/flower_service/appliance-supernode.sh"
+    source      = "../../appliances/flower_supernode/appliance-supernode.sh"
     destination = "/etc/one-appliance/service.d/appliance.sh"
   }
 
