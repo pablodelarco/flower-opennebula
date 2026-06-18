@@ -72,6 +72,17 @@ build {
     script = "../scripts/81-configure-ssh.sh"
   }
 
+  # Step 1b: Remove needrestart. On Ubuntu 24.04 it hooks apt and restarts
+  # ssh.service mid-install, which drops Packer's SSH connection and fails the
+  # build with "Script disconnected unexpectedly". Removing it keeps apt from
+  # bouncing services during service-install.
+  provisioner "shell" {
+    inline = [
+      "export DEBIAN_FRONTEND=noninteractive",
+      "apt-get remove -y needrestart || true",
+    ]
+  }
+
   # Step 2: Install one-context package (OpenNebula contextualization)
   provisioner "shell" {
     inline = ["mkdir -p /context"]
