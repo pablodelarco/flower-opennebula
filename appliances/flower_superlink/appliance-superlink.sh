@@ -246,7 +246,7 @@ HELP
 service_cleanup() {
     # No-op: the one-appliance framework calls cleanup between lifecycle stages,
     # but we must not destroy the container/service that bootstrap just started.
-    # Container lifecycle is managed by systemd (Restart=on-failure).
+    # Container lifecycle is managed by systemd (Restart=always).
     :
 }
 
@@ -539,7 +539,10 @@ Requires=docker.service
 
 [Service]
 Type=simple
-Restart=on-failure
+# Restart=always: a downed coordinator takes the whole federation with it,
+# so always respawn. ExecStartPre's 'docker rm -f' makes this name-conflict
+# safe on every restart.
+Restart=always
 RestartSec=10
 TimeoutStartSec=120
 
@@ -595,7 +598,7 @@ wait_for_superlink() {
             # one-apps framework from writing the ready MOTD and would block the
             # OneFlow ready_status_gate, leaving the VM unreachable for debugging.
             # Report the degraded state and let the service stay up so systemd
-            # (Restart=on-failure) and the operator can recover.
+            # (Restart=always) and the operator can recover.
             msg warning "SuperLink Fleet API not listening after ${_timeout}s -- continuing; check 'journalctl -u flower-superlink'"
             publish_to_onegate "NO" "health_check_timeout" || true
             return 0

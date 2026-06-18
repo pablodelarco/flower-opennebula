@@ -303,7 +303,14 @@ service_bootstrap()
     # elements, so they cannot inject shell commands during contextualization.
     # The whitespace-bearing flag groups we generate ourselves (TLS flags)
     # are intentionally left unquoted so they split into separate arguments.
-    local -a create_cmd=(docker create --name "${FLOWER_CONTAINER}" --restart unless-stopped)
+    #
+    # No Docker-side restart policy: systemd is the single lifecycle owner
+    # (see generate_systemd_unit, Restart=always). Stacking a Docker
+    # '--restart' policy on top of the systemd 'docker start -a' unit makes
+    # the two managers fight: on a SuperLink bounce the attach exits cleanly,
+    # systemd's ExecStop then stops the container, and 'unless-stopped' honors
+    # that stop permanently, leaving the node dead and the federation degraded.
+    local -a create_cmd=(docker create --name "${FLOWER_CONTAINER}")
     # Container hardening: drop all Linux capabilities and forbid privilege
     # escalation so a compromised training workload cannot craft raw packets,
     # scan the FL subnet, or escalate to root.
@@ -362,7 +369,7 @@ service_cleanup()
 {
     # No-op: the one-appliance framework calls cleanup between lifecycle stages,
     # but we must not destroy the container that bootstrap just created.
-    # Container lifecycle is managed by systemd (Restart=on-failure).
+    # Container lifecycle is managed by systemd (Restart=always).
     :
 }
 
@@ -817,7 +824,11 @@ Requires=docker.service
 
 [Service]
 Type=simple
-Restart=on-failure
+# Restart=always (not on-failure): a SuperLink restart makes the attached
+# 'docker start -a' exit cleanly (code 0), which on-failure would ignore,
+# leaving the node down. Always-restart lets the SuperNode rejoin the
+# federation on its own once the SuperLink is back.
+Restart=always
 RestartSec=10
 TimeoutStartSec=120
 ExecStart=/usr/bin/docker start -a flower-supernode
