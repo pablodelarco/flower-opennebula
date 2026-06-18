@@ -17,7 +17,7 @@ FLOWER_CONFIG_DIR="${FLOWER_DIR}/config"
 FLOWER_CERTS_DIR="${FLOWER_DIR}/certs"
 FLOWER_DATA_DIR="${FLOWER_DIR}/data"
 FLOWER_CONTAINER="flower-supernode"
-PREBAKED_VERSION="1.25.0"
+PREBAKED_VERSION="1.31.0"
 ONE_SERVICE_SETUP_DIR="/opt/one-appliance"
 
 ### Appliance Metadata ########################################################
@@ -51,7 +51,7 @@ ONE_SERVICE_RECONFIGURABLE=true
 
 ONE_SERVICE_PARAMS=(
     # Phase 1: Base architecture
-    'ONEAPP_FLOWER_VERSION'            'configure' 'Flower Docker image version tag'                            '1.25.0'
+    'ONEAPP_FLOWER_VERSION'            'configure' 'Flower Docker image version tag'                            '1.31.0'
     'ONEAPP_FL_FRAMEWORK'              'configure' 'ML framework (pytorch|tensorflow|sklearn)'                  'pytorch'
     'ONEAPP_FL_SUPERLINK_ADDRESS'      'configure' 'SuperLink Fleet API address (host:port)'                    ''
     'ONEAPP_FL_NODE_CONFIG'            'configure' 'Space-separated key=value node config'                      ''
@@ -70,7 +70,7 @@ ONE_SERVICE_PARAMS=(
 # would otherwise clobber these defaults and fail validation (empty log level,
 # empty image tag). Re-applying with :- restores the defaults for empty values.
 apply_config_defaults() {
-    ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.25.0}"
+    ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.31.0}"
     ONEAPP_FL_FRAMEWORK="${ONEAPP_FL_FRAMEWORK:-pytorch}"
     ONEAPP_FL_SUPERLINK_ADDRESS="${ONEAPP_FL_SUPERLINK_ADDRESS:-}"
     ONEAPP_FL_NODE_CONFIG="${ONEAPP_FL_NODE_CONFIG:-}"
@@ -354,7 +354,7 @@ service_help()
     msg info "Flower SuperNode appliance -- Federated Learning client node"
     msg info ""
     msg info "Context variables:"
-    msg info "  ONEAPP_FLOWER_VERSION            Flower version (default: 1.25.0)"
+    msg info "  ONEAPP_FLOWER_VERSION            Flower version (default: 1.31.0)"
     msg info "  ONEAPP_FL_FRAMEWORK              ML framework: pytorch, tensorflow, sklearn (default: pytorch)"
     msg info "  ONEAPP_FL_SUPERLINK_ADDRESS      Static SuperLink address (host:port)"
     msg info "  ONEAPP_FL_NODE_CONFIG            key=value pairs for ClientApp"
@@ -430,7 +430,7 @@ build_framework_image()
 FROM python:3.12-slim
 RUN pip install --no-cache-dir \
     'numpy==1.26.4' \
-    'flwr[simulation]==1.25.0' \
+    'flwr[simulation]==1.31.0' \
     'torch==2.5.1+cpu' 'torchvision==0.20.1+cpu' \
     --extra-index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir 'flwr-datasets[vision]>=0.4.0'
@@ -443,7 +443,7 @@ DOCKERFILE
 FROM python:3.12-slim
 RUN pip install --no-cache-dir \
     'numpy==1.26.4' \
-    'flwr[simulation]==1.25.0' \
+    'flwr[simulation]==1.31.0' \
     'tensorflow-cpu==2.18.1' \
     'flwr-datasets[vision]>=0.4.0'
 ENTRYPOINT ["flower-supernode"]
@@ -455,7 +455,7 @@ DOCKERFILE
 FROM python:3.12-slim
 RUN pip install --no-cache-dir \
     'numpy==1.26.4' \
-    'flwr[simulation]==1.25.0' \
+    'flwr[simulation]==1.31.0' \
     'scikit-learn==1.5.2' \
     'flwr-datasets[vision]>=0.4.0'
 ENTRYPOINT ["flower-supernode"]

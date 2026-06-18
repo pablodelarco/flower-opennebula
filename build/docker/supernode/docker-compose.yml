@@ -1,6 +1,6 @@
 services:
   supernode:
-    image: flwr/supernode:${FLOWER_VERSION:-1.25.0}
+    image: flwr/supernode:${FLOWER_VERSION:-1.31.0}
     container_name: flower-supernode
     volumes:
       - /opt/flower/data:/app/data:ro

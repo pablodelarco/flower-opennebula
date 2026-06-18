@@ -163,10 +163,10 @@ build {
   provisioner "shell" {
     inline = [
       "systemctl start docker",
-      "docker build -t flower-supernode-pytorch:1.25.0 -f /tmp/Dockerfile.supernode-pytorch /tmp",
-      "docker build -t flower-supernode-tensorflow:1.25.0 -f /tmp/Dockerfile.supernode-tensorflow /tmp",
-      "docker build -t flower-supernode-sklearn:1.25.0 -f /tmp/Dockerfile.supernode-sklearn /tmp",
-      "docker build -t flower-supernode-llm:1.25.0 -f /tmp/Dockerfile.supernode-llm /tmp",
+      "docker build -t flower-supernode-pytorch:1.31.0 -f /tmp/Dockerfile.supernode-pytorch /tmp",
+      "docker build -t flower-supernode-tensorflow:1.31.0 -f /tmp/Dockerfile.supernode-tensorflow /tmp",
+      "docker build -t flower-supernode-sklearn:1.31.0 -f /tmp/Dockerfile.supernode-sklearn /tmp",
+      "docker build -t flower-supernode-llm:1.31.0 -f /tmp/Dockerfile.supernode-llm /tmp",
       "docker image prune -f",
       "rm -f /tmp/Dockerfile.supernode-*",
       "systemctl stop docker",

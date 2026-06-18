@@ -1,12 +1,12 @@
 ---
-name: Flower SuperLink 1.25.0 OS disk
-version: 1.25.0-1.0.0
+name: Flower SuperLink 1.31.0 OS disk
+version: 1.31.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   OS disk image for the [Flower](https://flower.ai/) SuperLink appliance
   (federated learning coordinator). Docs: [flower.ai/docs](https://flower.ai/docs/).
 
-  Ubuntu 24.04 LTS with Docker CE and the `flwr/superlink:1.25.0` container
+  Ubuntu 24.04 LTS with Docker CE and the `flwr/superlink:1.31.0` container
   pre-pulled. At boot, OpenNebula contextualization configures the SuperLink:
   TLS is enabled by default, the Control API is bound to localhost, and a
   default-deny firewall blocks outbound SMTP. The SuperLink publishes its
@@ -16,8 +16,8 @@ description: |-
 
   Part of the **Flower Federated Learning** appliance set.
   Imported automatically when you export the
-  [Service Flower FL 1.25.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
-short_description: Flower SuperLink appliance OS disk (Ubuntu 24.04 + Docker + flwr 1.25.0)
+  [Service Flower FL 1.31.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
+short_description: Flower SuperLink appliance OS disk (Ubuntu 24.04 + Docker + flwr 1.31.0)
 tags:
 - flower
 - federated-learning
@@ -51,13 +51,13 @@ opennebula_template:
   os:
     arch: x86_64
   user_inputs:
-    oneapp_flower_version: "O|text|Flower Docker image version tag||1.25.0"
+    oneapp_flower_version: "O|text|Flower Docker image version tag||1.31.0"
     oneapp_fl_tls_enabled: "O|boolean|Enable TLS encryption||YES"
     oneapp_fl_log_level: "O|list|Log verbosity|DEBUG,INFO,WARNING,ERROR|INFO"
 logo: flower.png
 images:
 - name: flower_superlink_os
-  url: 'https://PUBLISH_URL/flower-superlink-1.25.0.qcow2'
+  url: 'https://PUBLISH_URL/flower-superlink-1.31.0.qcow2'
   type: OS
   dev_prefix: vd
   driver: qcow2

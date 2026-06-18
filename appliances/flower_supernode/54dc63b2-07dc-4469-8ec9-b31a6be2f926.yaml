@@ -1,6 +1,6 @@
 ---
-name: Flower SuperNode 1.25.0 OS disk
-version: 1.25.0-1.0.0
+name: Flower SuperNode 1.31.0 OS disk
+version: 1.31.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   OS disk image for the [Flower](https://flower.ai/) SuperNode appliance
@@ -13,7 +13,7 @@ description: |-
 
   Part of the **Flower Federated Learning** appliance set.
   Imported automatically when you export the
-  [Service Flower FL 1.25.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
+  [Service Flower FL 1.31.0](8b437ffe-7b90-4dc0-a453-f0646b11ab09) service.
 short_description: Flower SuperNode appliance OS disk (Ubuntu 24.04 + Docker + PyTorch, TF/sklearn on demand)
 tags:
 - flower
@@ -58,7 +58,7 @@ opennebula_template:
 logo: flower.png
 images:
 - name: flower_supernode_os
-  url: 'https://PUBLISH_URL/flower-supernode-1.25.0.qcow2'
+  url: 'https://PUBLISH_URL/flower-supernode-1.31.0.qcow2'
   type: OS
   dev_prefix: vd
   driver: qcow2

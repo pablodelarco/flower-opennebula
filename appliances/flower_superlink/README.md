@@ -15,7 +15,7 @@ This same image is the SuperLink role of the **Flower FL** OneFlow service (see 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ONEAPP_FLOWER_VERSION` | `1.25.0` | `flwr/superlink` Docker image tag |
+| `ONEAPP_FLOWER_VERSION` | `1.31.0` | `flwr/superlink` Docker image tag |
 | `ONEAPP_FL_TLS_ENABLED` | `YES` | Enable TLS (a self-signed CA is generated on boot) |
 | `ONEAPP_FL_LOG_LEVEL` | `INFO` | Log verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`) |
 

@@ -28,7 +28,7 @@
 # one-apps service interface without altering the composed images.
 
 ONE_SERVICE_NAME='Service Flower FL - Federated Learning'
-ONE_SERVICE_VERSION='1.25.0'
+ONE_SERVICE_VERSION='1.31.0'
 ONE_SERVICE_BUILD=$(date +%s)
 ONE_SERVICE_SHORT_DESCRIPTION='OneFlow service composing Flower SuperLink + SuperNode for federated learning'
 ONE_SERVICE_DESCRIPTION=$(cat <<'EOF'

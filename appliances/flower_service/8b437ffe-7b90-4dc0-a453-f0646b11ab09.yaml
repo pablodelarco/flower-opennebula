@@ -1,6 +1,6 @@
 ---
-name: Service Flower FL 1.25.0
-version: 1.25.0-1.0.0
+name: Service Flower FL 1.31.0
+version: 1.31.0-1.0.0
 publisher: OpenNebula Systems
 description: |-
   [Flower](https://flower.ai/) is a federated learning framework: train one
@@ -27,8 +27,8 @@ description: |-
   components.
 
   Based on VM templates:
-  - [Flower SuperLink 1.25.0](49da1d48-717e-44c2-856b-850687afd73a)
-  - [Flower SuperNode 1.25.0](b4d08fae-f02d-4061-b130-870e4a9a93f8)
+  - [Flower SuperLink 1.31.0](49da1d48-717e-44c2-856b-850687afd73a)
+  - [Flower SuperNode 1.31.0](b4d08fae-f02d-4061-b130-870e4a9a93f8)
 short_description: Flower federated learning cluster (SuperLink + SuperNodes) orchestrated by OneFlow
 tags:
 - flower
@@ -43,8 +43,8 @@ hypervisor: KVM
 opennebula_version: 6.8, 6.10, 7.0, 7.2
 type: 'SERVICE_TEMPLATE'
 roles:
-  superlink: 'Flower SuperLink 1.25.0'
-  supernode: 'Flower SuperNode 1.25.0'
+  superlink: 'Flower SuperLink 1.31.0'
+  supernode: 'Flower SuperNode 1.31.0'
 opennebula_template:
   name: Service Flower FL
   deployment: straight

@@ -20,10 +20,10 @@ This appliance is hardened by default to limit the blast radius if a workload is
 
 ## Downloading and Deploying the Service
 
-1. Download the `Service Flower FL 1.25.0` appliance from the OpenNebula Community Marketplace:
+1. Download the `Service Flower FL 1.31.0` appliance from the OpenNebula Community Marketplace:
 
    ```shell
-   $ onemarketapp export 'Service Flower FL 1.25.0' 'Service Flower FL' --datastore default
+   $ onemarketapp export 'Service Flower FL 1.31.0' 'Service Flower FL' --datastore default
    ```
 
    This automatically imports the dependent VM templates and OS disk images.
@@ -62,7 +62,7 @@ Once the service is RUNNING, the cluster is idle and waiting for a Flower Applic
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| Flower    | 1.25.0  | `flwr/superlink` container; `flwr[simulation]` in framework images |
+| Flower    | 1.31.0  | `flwr/superlink` container; `flwr[simulation]` in framework images |
 | PyTorch   | 2.5.1 (CPU) | Pre-baked into the SuperNode image |
 | TensorFlow | 2.18.1 | Built on first boot when selected |
 | scikit-learn | 1.5.2 | Built on first boot when selected |

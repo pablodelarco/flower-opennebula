@@ -2,7 +2,7 @@
 
 > Train one shared model across many sites without moving the data. Deploy a [Flower](https://flower.ai/) federated learning cluster on OpenNebula in a few clicks.
 
-[![Flower](https://img.shields.io/badge/Flower-1.25.0-blue)](https://flower.ai/)
+[![Flower](https://img.shields.io/badge/Flower-1.31.0-blue)](https://flower.ai/)
 [![OpenNebula](https://img.shields.io/badge/OpenNebula-6.8+-brightgreen)](https://opennebula.io/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange)](LICENSE)
 
@@ -36,7 +36,7 @@ The **SuperLink** boots first, generates its TLS certificate, and announces itse
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| Flower | 1.25.0 | `flwr/superlink` container, managed by systemd |
+| Flower | 1.31.0 | `flwr/superlink` container, managed by systemd |
 | PyTorch | 2.5.1 (CPU) | Pre-baked into the SuperNode image |
 | TensorFlow | 2.18.1 (CPU) | Built on first boot when selected |
 | scikit-learn | 1.5.2 | Built on first boot when selected |
@@ -51,10 +51,10 @@ Pick the framework at deploy time with `ONEAPP_FL_FRAMEWORK`. Only PyTorch is pr
 
 ### 1. Import the appliance
 
-From the OpenNebula Community Marketplace (FireEdge → Storage → Apps → "Service Flower FL 1.25.0" → Export), or from the CLI:
+From the OpenNebula Community Marketplace (FireEdge → Storage → Apps → "Service Flower FL 1.31.0" → Export), or from the CLI:
 
 ```bash
-onemarketapp export 'Service Flower FL 1.25.0' 'Service Flower FL' --datastore default
+onemarketapp export 'Service Flower FL 1.31.0' 'Service Flower FL' --datastore default
 ```
 
 This imports the OneFlow service template plus the SuperLink and SuperNode VM templates and OS-disk images. To build the images yourself instead, see [Build from source](#build-from-source).
@@ -113,7 +113,7 @@ Each role's VM template exposes a few more advanced context variables (edit the 
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `ONEAPP_FLOWER_VERSION` | `1.25.0` | Flower image tag (images are pre-baked at 1.25.0) |
+| `ONEAPP_FLOWER_VERSION` | `1.31.0` | Flower image tag (images are pre-baked at 1.31.0) |
 | `ONEAPP_FL_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `ONEAPP_FL_ISOLATION` | `subprocess` | Flower app isolation: `subprocess` or `process` |
 | `ONEAPP_FL_DATABASE` | `state/state.db` | SuperLink state DB path (SuperLink only) |
@@ -245,9 +245,9 @@ Output: `build/export/flower-superlink.qcow2` and `build/export/flower-supernode
 ```bash
 cp build/export/*.qcow2 /var/tmp/        # RESTRICTED_DIRS blocks /root
 
-oneimage create --name "Flower SuperLink 1.25.0" \
+oneimage create --name "Flower SuperLink 1.31.0" \
     --path /var/tmp/flower-superlink.qcow2 --type OS --driver qcow2 --datastore default
-oneimage create --name "Flower SuperNode 1.25.0" \
+oneimage create --name "Flower SuperNode 1.31.0" \
     --path /var/tmp/flower-supernode.qcow2 --type OS --driver qcow2 --datastore default
 ```
 

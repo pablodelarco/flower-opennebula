@@ -1,6 +1,6 @@
 services:
   superlink:
-    image: flwr/superlink:${FLOWER_VERSION:-1.25.0}
+    image: flwr/superlink:${FLOWER_VERSION:-1.31.0}
     container_name: flower-superlink
     ports:
       - "9091:9091"  # SuperLink gRPC

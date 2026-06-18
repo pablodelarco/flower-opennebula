@@ -8,7 +8,7 @@
 # --------------------------------------------------------------------------
 
 ONE_SERVICE_NAME='Service Flower SuperLink - Federated Learning Coordinator'
-ONE_SERVICE_VERSION='1.25.0'
+ONE_SERVICE_VERSION='1.31.0'
 ONE_SERVICE_BUILD=$(date +%s)
 ONE_SERVICE_SHORT_DESCRIPTION='Flower SuperLink FL coordinator (Docker-in-VM)'
 ONE_SERVICE_DESCRIPTION='Flower federated learning SuperLink appliance. Runs the
@@ -33,7 +33,7 @@ ONE_SERVICE_PARAMS=(
     # the SuperLink process. The stock flwr/superlink image ignores any such
     # environment variables, so they are deliberately NOT exposed here to avoid
     # advertising knobs that have no effect. See README "Running training".
-    'ONEAPP_FLOWER_VERSION'           'configure' 'Flower Docker image version tag'                        '1.25.0'
+    'ONEAPP_FLOWER_VERSION'           'configure' 'Flower Docker image version tag'                        '1.31.0'
     'ONEAPP_FL_ISOLATION'             'configure' 'App execution isolation mode (subprocess|process)'      'subprocess'
     'ONEAPP_FL_DATABASE'              'configure' 'Database path for state persistence'                    'state/state.db'
     'ONEAPP_FL_LOG_LEVEL'             'configure' 'Log verbosity (DEBUG|INFO|WARNING|ERROR)'               'INFO'
@@ -45,7 +45,7 @@ ONE_SERVICE_PARAMS=(
 # --------------------------------------------------------------------------
 # Default value assignments
 # --------------------------------------------------------------------------
-ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.25.0}"
+ONEAPP_FLOWER_VERSION="${ONEAPP_FLOWER_VERSION:-1.31.0}"
 ONEAPP_FL_ISOLATION="${ONEAPP_FL_ISOLATION:-subprocess}"
 ONEAPP_FL_DATABASE="${ONEAPP_FL_DATABASE:-state/state.db}"
 ONEAPP_FL_LOG_LEVEL="${ONEAPP_FL_LOG_LEVEL:-INFO}"
@@ -212,7 +212,7 @@ This appliance runs the Flower federated learning SuperLink coordinator
 inside a Docker container managed by systemd.
 
 Key configuration variables (set via OpenNebula context):
-  ONEAPP_FLOWER_VERSION           Flower image tag (default: 1.25.0)
+  ONEAPP_FLOWER_VERSION           Flower image tag (default: 1.31.0)
   ONEAPP_FL_TLS_ENABLED           Enable TLS (default: YES)
   ONEAPP_FL_ISOLATION             App isolation: subprocess|process (default: subprocess)
 
@@ -246,7 +246,7 @@ HELP
 service_cleanup() {
     # No-op: the one-appliance framework calls cleanup between lifecycle stages,
     # but we must not destroy the container/service that bootstrap just started.
-    # Container lifecycle is managed by systemd (Restart=on-failure).
+    # Container lifecycle is managed by systemd (Restart=always).
     :
 }
 
@@ -539,7 +539,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-Restart=on-failure
+Restart=always
 RestartSec=10
 TimeoutStartSec=120
 
@@ -595,7 +595,7 @@ wait_for_superlink() {
             # one-apps framework from writing the ready MOTD and would block the
             # OneFlow ready_status_gate, leaving the VM unreachable for debugging.
             # Report the degraded state and let the service stay up so systemd
-            # (Restart=on-failure) and the operator can recover.
+            # (Restart=always) and the operator can recover.
             msg warning "SuperLink Fleet API not listening after ${_timeout}s -- continuing; check 'journalctl -u flower-superlink'"
             publish_to_onegate "NO" "health_check_timeout" || true
             return 0
